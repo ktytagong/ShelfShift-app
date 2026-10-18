@@ -109,7 +109,9 @@ def _validate(conn, run: dict, live: list[dict]) -> None:
 
 def write_settings(conn, run: dict, actor: dict, changes, expected_version: int) -> dict:
     """Write `changes` ({field: value}) to this sandbox's Policy, all or none (D-09, D-23). Returns the read_settings
-    shape plus `reevaluated`, the live case ids re-evaluated in case_id order. Only HQ writes (06.1 D-53): the role
+    shape plus `reevaluated`, the live case ids re-evaluated in case_id order; then every lot a person closed is
+    reassessed (api/closing.py `reassess_lots`: a successor only when its fingerprint changed; 07-CONTEXT D-24,
+    D-28). Only HQ writes (06.1 D-53): the role
     is the session row's (app._actor), never a body field; a store manager is 403 before anything is read."""
     if actor.get("role") != "hq":
         raise ApiError(403, "forbidden", HQ_ONLY)
@@ -135,4 +137,9 @@ def write_settings(conn, run: dict, actor: dict, changes, expected_version: int)
         db.log(conn, run["run_id"], run["day"], "settings_changed", case["case_id"], changes=changed,
                version=run["version"], actor=accounts.logged_actor(actor))
         cases.evaluate_case(conn, run, case)
+    # a closed lot whose decision inputs (the Policy among them) changed may get a successor (07-CONTEXT D-24, D-28)
+    from . import closing  # it reads cases at import
+    closed = db.rows(conn, f"SELECT * FROM cases c WHERE c.run_id = :r AND {closing.CLOSED_BY_PERSON} "
+                           f"ORDER BY c.case_id", r=run["run_id"])
+    closing.reassess_lots(conn, run, closed, "settings")
     return {**read_settings(conn, run), "reevaluated": [c["case_id"] for c in live]}

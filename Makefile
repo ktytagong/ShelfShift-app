@@ -40,13 +40,14 @@ lock:
 	uv pip compile requirements.in -o requirements.lock --python-version 3.12
 
 # test re-checks the .venv's interpreter, so a .venv built on a refused one (e.g. before this rule) is refused too.
-# The API suite needs Postgres, so it is left out here and runs under test-api; `make test` stays database-free and
-# keeps passing with Docker down (Phase 4 research Pitfall 7). The browser suite (tests/web) needs the database, an API
-# child and a built web/, so it is left out too and runs under its own target (D-09). The deployed journey
-# (tests/deployed) needs a running URL, so it is left out as well and runs under journey-deployed and compose-check.
+# The API and agent suites need Postgres, so they are left out here and run under test-api; `make test` stays
+# database-free and keeps passing with Docker down (Phase 4 research Pitfall 7), and ignores TESTS. The browser suite
+# (tests/web) needs the database, an API child and a built web/, so it is left out too and runs under its own target (D-09).
+# The deployed journey (tests/deployed) needs a running URL, so it is left out as well and runs under journey-deployed
+# and compose-check.
 test:
 	$(PY) -c "$(CHECK_PY)"
-	$(PY) -m pytest -q tests --ignore=tests/api --ignore=tests/web --ignore=tests/deployed
+	$(PY) -m pytest -q tests --ignore=tests/api --ignore=tests/web --ignore=tests/deployed --ignore=tests/agent
 
 # Starts the local Postgres 17 (shelfshift and shelfshift_test) and waits until its healthcheck passes (D-11).
 # Local only: Docker Desktop must be running; nothing here touches Google Cloud.
@@ -108,11 +109,16 @@ web-db:
 # Runs the browser suite in its own pytest invocation (never together with test-api, so each run drops one schema
 # once): the web test database, a production build of web/, then a real API child and vite preview on 127.0.0.1:18080
 # and :14173 driven by headless Chromium. Never run two test-web runs at once. WEB_TESTS narrows the run.
+# test_assistant.py swaps the session's API for one bound to its fake model (09-INTEGRATION), so the full run gives
+# it its own pytest process after the rest; the integrated root is the default binding, an explicit value wins.
+ASSISTANT_WEB := tests/web/test_assistant.py
+WEB_PYTEST = ASSISTANT_API_WORKTREE="$${ASSISTANT_API_WORKTREE:-$(CURDIR)}" DATABASE_URL=$(TEST_WEB_DB) $(PY) -m pytest -q -m "web and not live"
 test-web: web-db
 	$(PY) -c "$(CHECK_PY)"
 	test -d web/node_modules || npm --prefix web ci --no-audit --no-fund
 	npm --prefix web run build
-	DATABASE_URL=$(TEST_WEB_DB) $(PY) -m pytest -q -m "web and not live" $(WEB_TESTS)
+	$(WEB_PYTEST) $(WEB_TESTS) $(if $(filter tests/web,$(WEB_TESTS)),--ignore=$(ASSISTANT_WEB))
+	$(if $(filter tests/web,$(WEB_TESTS)),$(WEB_PYTEST) $(ASSISTANT_WEB))
 
 # The quick check after every change to web/: tsc, the node unit tests and the honesty scan of web/src. It needs no
 # database, no API and no browser, so it passes with Docker stopped.

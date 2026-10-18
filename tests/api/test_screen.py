@@ -215,16 +215,29 @@ def test_thresholds_come_from_reference_data(run, monkeypatch):
 
 
 def test_rejected_closed_and_executed_lots_are_never_screened_again(run, monkeypatch):
-    ended = {"milk-story": "REJECTED", "strawberry-cold-chain": "CLOSED", "bread-keep": "EXECUTED"}
+    """The sanctioned 07-12 rewrite (07-CONTEXT D-24, D-28; ESL-02's rule superseded for lots still at risk): a
+    REJECTED lot (rejected through the route, so its fingerprint and considered record are stored) is looked at again
+    but, re-screened the same morning with unchanged decision inputs and no D-28 reason, gets no new case; a CLOSED
+    case whose lot is gone (closed_as null) is never screened; an EXECUTED case's lot is never screened here (it goes
+    through its second look). Each lot keeps exactly one case."""
+    from api import workflow
+    from tests.api.conftest import seat
+    from tests.api.test_workflow import call
+    with db.tx() as conn:
+        rejected = db.one(conn, "SELECT * FROM cases WHERE run_id = :r AND tag = 'milk-story'", r=run["run_id"])
+    call(run, workflow.reject, seat(rejected["source_branch"]), rejected["case_id"], "Not this week")
+    ended = {"strawberry-cold-chain": "CLOSED", "bread-keep": "EXECUTED"}
     with db.tx() as conn:
         for tag, state in ended.items():
             db.run(conn, "UPDATE cases SET state = :s WHERE run_id = :r AND tag = :t", s=state, r=run["run_id"], t=tag)
-    lots = {lot_by_tag(run["run_id"], tag)["lot_id"] for tag in ended}
+    never = {lot_by_tag(run["run_id"], tag)["lot_id"] for tag in ended}
     screened = spy(monkeypatch, screen, "screen")
     open_now(run["run_id"])
-    assert not lots & {args[0].case_lot_id for args, _, _ in screened}
+    seen = {args[0].case_lot_id for args, _, _ in screened}
+    assert not never & seen
+    assert rejected["lot_id"] in seen  # looked at again, never hidden (D-24)
     with db.tx() as conn:
-        for lot_id in lots:
+        for lot_id in never | {rejected["lot_id"]}:
             assert db.one(conn, "SELECT count(*) AS n FROM cases WHERE run_id = :r AND lot_id = :l",
                           r=run["run_id"], l=lot_id)["n"] == 1
 

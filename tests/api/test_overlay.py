@@ -60,12 +60,16 @@ def case_inputs(run_id: str) -> dict:
 
 
 def views(run_id: str) -> dict:
-    """What a visitor reads: the board and every case detail (rolled back, so the template is never written)."""
+    """What a visitor reads: the board and every case detail (rolled back, so the template is never written). A
+    preloaded report's filed time is left out: a clone shifts it to its own creation (07-16, D-05, D-18)."""
     with db.tx() as conn:
         r = fresh(run_id)
         board = cases.board(conn, r)
         detail = {c["case_id"]: cases.detail(conn, r, c["case_id"]) for c in board}
         conn.rollback()
+    for d in detail.values():
+        d["reports"] = [{k: v for k, v in x.items() if not (k == "created_at" and x.get("provenance") == "simulated")}
+                        for x in d.get("reports") or []]
     return {"board": board, "detail": detail}
 
 

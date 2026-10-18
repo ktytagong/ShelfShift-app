@@ -1,16 +1,28 @@
 """The BASE oracle for quick 261017-tuf: verbatim copies of the view functions that quick changes, as they were at
 53bfe777 (quick 261017-l5q's tip), renamed old_*.
 
+Since the merge of build/verify (4cfa42d, Phase 7's server) into build/verify-web, the per-case path the copies hold
+is the merge's: `old_card` is build/verify's card at 4cfa42d verbatim (BASE's card plus Phase 7's per-card keys:
+the plan in force, review flags, lot holds, Required checks, filed reports, lot_status, predecessor and successor),
+and `old_board` and `old_board_page` carry build/verify's one change to theirs (the database clock read once and
+passed to each card). planning's copies are unchanged: build/verify changed nothing there. So the set-based path is
+held to the per-case path of both parents, byte for byte (07 D-31; 07-SCREENS-MERGE.md).
+
+07-19 (07-CONTEXT D-36; 07-SCREENS-MAP section 1) widens nav_counts' `tasks` by one term, a store's ACTIVE lot holds
+plus its open advisory tasks (api/tasklist.py open_beyond_checks), so the menu count is the Tasks page's six tiles
+summed. `old_nav_counts` takes that same term, called the same way, as the merge's copies took build/verify's one
+change: the comparison still holds BASE's stock-check and transfer terms to the set-based ones.
+
 Each copy calls the other old_* copies and the helpers this quick does not change, imported from api. `oracle()`
 installs the copies over cases.card, cases.board, cases.board_page, planning._entries, planning._network and
 planning.nav_counts, so that inside it views.session_info, planning.today, planning.schedule and cases.detail all run
 the BASE path. tests/api/test_view_identity.py compares the two paths byte for byte.
 
 This module is never collected (no test_ prefix) and never imported by api/. The only edits to the copied bodies are
-the old_* renames and `from . import flags` written as `from api import flags` (a relative import cannot work here).
-Never edit a body to match new output: the copies are the reference. The one exception is a change the user decided:
-quick 261018-h9t (2026-10-18) made a card's at-risk keys the case lot's own Keep waste, so old_card computes them the
-same way and the identity test keeps checking everything else.
+the old_* renames and `from . import flags` (and old_card's `from . import closing, ...`) written as `from api import
+...` (a relative import cannot work here). Never edit a body to match new output: the copies are the reference.
+The one exception is a change the user decided: quick 261018-h9t (2026-10-18) made a card's at-risk keys the case
+lot's own Keep waste, so old_card computes them the same way and the identity test keeps checking everything else.
 """
 from __future__ import annotations
 
@@ -18,10 +30,10 @@ import contextlib
 
 import pytest
 
-from api import bookings, cases, db, movement, overlay, planning, refdata, screen, stepkeys  # noqa: F401
-from api.cases import (COLUMNS, DUE_STATES, RISKS, _filtered, _scope, active_rec, badges, board_order,  # noqa: F401
-                       check_filters, decided_roles, due, execution_state, hold_info, lot_meta, next_owner,
-                       parse_plan, stage_counts, wait_view)
+from api import bookings, cases, db, movement, overlay, planning, realtime, refdata, reviewflags, screen, stepkeys  # noqa: F401
+from api.cases import (COLUMNS, DUE_STATES, LIVE_STATES, RISKS, TERMINAL, _filtered, _scope, active_rec,  # noqa: F401
+                       badges, board_order, check_filters, decided_roles, due, execution_state, hold_info, lot_meta,
+                       next_owner, parse_plan, stage_counts, wait_view)
 from api.errors import ApiError  # noqa: F401
 from api.planning import CHECK_STATES, COUNTS, _abs, _cards, _counts, scenario_date, today  # noqa: F401
 
@@ -103,52 +115,74 @@ def old_nav_counts(conn, run: dict, session: dict) -> dict:
         tasks = page["summary"]["stock_checks"] + sum(
             movement.transfers(conn, run, actor, direction=d, state=s)["total"]
             for d, s in (("outgoing", "planned"), ("incoming", "dispatched")))
+        from api import tasklist
+        tasks += tasklist.open_beyond_checks(conn, run, actor["branch"])  # 07-19's term (see the docstring)
     return {"today": len(page["cards"]),
             "board": sum(board["stage_counts"][k] for k in stepkeys.STAGES), "tasks": tasks}
 
 
-# --- BASE api/cases.py card (lines 465-500) ---
-def old_card(conn, run: dict, case: dict, requests: list[dict]) -> dict:
+# --- api/cases.py card at build/verify 4cfa42d (lines 581-636; BASE's card with Phase 7's per-card keys) ---
+def old_card(conn, run: dict, case: dict, requests: list[dict], now=None) -> dict:
     """One board card, every contract key present (04-API-CONTRACT Card), with the step, stage, owner, next action
-    and blocked keys computed once by api/stepkeys.py (06.1 D-23, D-24, D-54). `requests` may hold other cases'."""
+    and blocked keys computed once by api/stepkeys.py (06.1 D-23, D-24, D-54), and `lot_status`, `predecessor` and
+    `successor` (07-11: a rejected or cancelled plan's lot stays visible while at risk, api/closing.py; D-24). `requests` may hold other cases'
+    (stored rows or request views). `now` is the database's now() of the read (the board reads it once); a card
+    given stored rows with a deadline and no `now` reads it itself, so the badge's request rule (D-06) uses one clock."""
+    from api import closing, commitment, reports, selection  # they read this module: imported here
     ref = refdata.get(run["dataset_version"])
     rec = active_rec(conn, case)
     result = rec["result"] if rec else None
-    plan = parse_plan(result["recommended"]) if result else None
-    best = next(r for r in result["options"] if r["key"] == result["recommended"]) if result else None
+    key, _, chosen = selection.plan_in_force(case, rec)  # the selection bound to the version, else the recommended
+    plan = parse_plan(key) if key else None
+    by = selection.decide_by(case, rec)  # the plan in force's own deadline (07 review G, D-32)
+    best = next(r for r in result["options"] if r["key"] == key) if result else None
     risk = screen.lot_keep_waste(rec["engine_input"]) if rec else None
     decided = decided_roles(conn, case)
     holds = hold_info(conn, case)
     meta = lot_meta(conn, run, case)
     product = ref.products[case["sku"]]
     mine = [r for r in requests if r["case_id"] == case["case_id"]]
+    if now is None and any(r.get("due_at") is not None and "overdue" not in r for r in mine):
+        now = realtime.db_now(conn)
     steps = stepkeys.keys(conn, run, case, plan, decided, mine, execution_state(conn, case))
+    flags = reviewflags.open_for(conn, case["run_id"], case["case_id"]) if case["state"] in reviewflags.STATES else []
+    lot_holds = commitment.holds_on(conn, run, case) if case["state"] not in TERMINAL else []
+    required = commitment.required_ids(case, rec)
+    filed = reports.unconfirmed_for(conn, run, case["case_id"]) if case["state"] in LIVE_STATES else []  # D-16
+    if case["state"] in commitment.COMMIT_AHEAD:  # the commitment rule's blocks (07-CONTEXT D-12, D-13)
+        extra = [k for k, on in (("required_check", required), ("lot_hold", lot_holds)) if on]
+        steps = {**steps, "blocked": steps["blocked"] or bool(extra), "blocked_reasons": steps["blocked_reasons"] + extra}
     return {
         "case_id": case["case_id"], "key": case["key"], "tag": case["tag"], "origin": meta["origin"],
         "state": case["state"], "column": COLUMNS[case["state"]],
         "sku": case["sku"], "product": ref.names[case["sku"]], "zone": product.zone,
         "source": case["source_branch"], "dest": plan.dest if plan else None, "lot_id": case["lot_id"],
-        "suggested": result["recommended_label"] if result else None,
-        "suggested_key": result["recommended"] if result else None,
+        "suggested": (best["label"] if chosen else result["recommended_label"]) if result else None,  # in force
+        "suggested_key": key,
+        "selected_plan": selection.card_view(chosen),  # "Selected plan · {option}" (07-CONTEXT D-23)
         # quick 261018-h9t (user decision 2026-10-18): the at-risk keys are the case lot's own Keep waste
         "at_risk_units": None if risk is None else round(risk, 2),
         "at_risk_kg": None if risk is None else round(risk * product.kg_per_unit, 2),
         "at_risk_value": None if risk is None or product.price is None else round(risk * product.price, 2),
         "est_benefit": best["delta_vs_keep"] if best else None,
-        "due": due(result, ref) if case["state"] in DUE_STATES else None,
-        "decide_by": (result or {}).get("decide_by"), "markdown_step": (result or {}).get("markdown_step"),
+        "due": due({"decide_by": by}, ref) if case["state"] in DUE_STATES else None,
+        "decide_by": by, "markdown_step": (result or {}).get("markdown_step"),
         "act_before": (result or {}).get("act_before"),
         "wait": wait_view(result, rec["engine_input"] if rec else None),
         "rec_version": case["active_rec_version"],
         "next_owner": next_owner(case, plan, decided),
         "decisions": decided, "hold": holds,
-        "badges": badges(case, rec, holds, mine),
+        "badges": badges(case, rec, holds, mine, now, flags, lot_holds, required, filed),
         "reason": case["reason"] or case["missing_data"], "waiting_until_day": case["waiting_until_day"],
+        # closing never hides at-risk stock (07-CONTEXT D-24; api/closing.py label): "Needs decision", "Awaiting
+        # verification" or None on a plan a person closed; the case it follows and the case that follows it (07-12)
+        "lot_status": closing.label(conn, run, case) if closing.is_closed_by_person(case) else None,
+        "predecessor": case.get("predecessor"), "successor": closing.successor(conn, case),  # the links (07-12)
         **steps,
     }
 
 
-# --- BASE api/cases.py board (lines 503-513) ---
+# --- BASE api/cases.py board (lines 503-513), with build/verify 4cfa42d's clock (lines 639-650) ---
 def old_board(conn, run: dict) -> list[dict]:
     """Every case's card, sorted by the absolute minute of `due`, then at-risk value descending, then key; a card
     with no due date (resolved, or no deadline) comes last. Equal deadlines order the same way in every sandbox.
@@ -157,12 +191,13 @@ def old_board(conn, run: dict) -> list[dict]:
     rows = db.rows(conn, "SELECT * FROM cases WHERE run_id = :r ORDER BY case_id", r=run["run_id"])
     requests = db.rows(conn, "SELECT * FROM evidence_requests WHERE run_id = :r ORDER BY created_at, request_id",
                        r=run["run_id"])
-    cards = [old_card(conn, run, c, requests) for c in rows]
+    now = realtime.db_now(conn)  # one clock for every card's request rule (07-CONTEXT D-06)
+    cards = [old_card(conn, run, c, requests, now) for c in rows]
     cards.sort(key=board_order)
     return cards
 
 
-# --- BASE api/cases.py board_page (lines 580-665) ---
+# --- BASE api/cases.py board_page (lines 580-665), with build/verify 4cfa42d's clock (lines 717-804) ---
 def old_board_page(conn, run: dict, actor: dict | None = None, branch: str | None = None, risk: str | None = None,
                page: int = 1, page_size: int | None = None, owner: str | None = None, product: str | None = None,
                deadline: str | None = None, blocked: str | None = None) -> dict:
@@ -218,7 +253,8 @@ def old_board_page(conn, run: dict, actor: dict | None = None, branch: str | Non
     rows = db.rows(conn, f"SELECT c.* FROM cases c WHERE {where} ORDER BY c.case_id", **p)
     requests = db.rows(conn, "SELECT * FROM evidence_requests WHERE run_id = :r ORDER BY created_at, request_id",
                        r=run["run_id"])
-    cards = [old_card(conn, run, c, requests) for c in rows]
+    now = realtime.db_now(conn)  # one clock for every card's request rule (07-CONTEXT D-06)
+    cards = [old_card(conn, run, c, requests, now) for c in rows]
     if risk == "waste":
         cards = [c for c in cards if (c["at_risk_units"] or 0.0) > 0]
     cards = _filtered(cards, run, actor, owner, product, deadline, blocked)

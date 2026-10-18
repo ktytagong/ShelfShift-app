@@ -15,7 +15,8 @@ import uuid
 import pytest
 from playwright.sync_api import Page, expect
 
-from tests.web.conftest import case_json, switch_seat, take_ownership
+from tests.web.conftest import case_json, decision_body, switch_seat, take_ownership
+from tests.web.test_case_actions import ACK_TICK
 from tests.web.test_board import STORY, as_story_source, drawer, is_board, open_board, stage
 from tests.web.test_execute import case_path, condition_of, get, post, prepare_story
 from tests.web.test_overflow import WIDTHS
@@ -410,10 +411,11 @@ def test_approval_move_waits_for_the_correct_person_then_approves_and_prepares_o
     drawer(page).get_by_role("button", name="Close", exact=True).click()
 
     switch_seat(page, story["dest"])
-    post(page, case_path(story["case_id"], "decision"), {"rec_version": story["rec_version"], "decision": "accept"})
+    post(page, case_path(story["case_id"], "decision"), decision_body(page, story["case_id"], "accept", story["rec_version"]))
     switch_seat(page, story["source"])
     open_board(page)
     move(page, "do")
+    drawer(page).get_by_role("checkbox", name=ACK_TICK).check()  # the story's Advisory fact (07 D-12, D-26; sanctioned)
     drawer(page).get_by_role("button", name="Approve plan", exact=True).click()
     drawer(page).get_by_role("button", name=re.compile("^Prepare ")).click()
     expect(card_in(page, "Do")).to_be_visible()

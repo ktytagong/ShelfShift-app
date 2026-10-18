@@ -102,9 +102,8 @@ def test_pending_approval_owners_and_incoming_scope(client):
         assert result['pending_approval'] == {'count': before + 1, 'waiting_for_you': 1}
     as_seat(client, None)
     assert activity(client)['activity']['pending_approval']['waiting_for_you'] == 0
-    from api import workflow
-    db.in_tx(lambda conn: workflow.decide(conn, db.lock_run(conn, run['run_id']), seat(src),
-                                         story['case_id'], story['active_rec_version'], 'approve'))
+    from tests.api.verify_helpers import approve_with_ack
+    approve_with_ack(run, story['case_id'], seat(src))  # names the plan in force (07-17; 07-CONTEXT D-23, D-32)
     for branch, count in ((src, 0), (dest, 1)):
         as_seat(client, branch)
         assert activity(client)['activity']['pending_approval']['waiting_for_you'] == count

@@ -17,37 +17,6 @@ from tests.web.conftest import HQ, new_context, session_json, sign_in
 pytestmark = pytest.mark.web
 
 
-@pytest.fixture(autouse=True)
-def reports_workspace_budget(web):
-    """Return only these tests' workspace usage after their browser contexts close.
-
-    The full browser run owns its dedicated database under the shared test slot.
-    Each test still spends against the real cap; its successful workspace creations
-    must not consume the budget of later, unrelated browser tests.
-    """
-    from api import db
-
-    with db.tx() as conn:
-        before = {row["window_start"]: row["count"] for row in db.rows(
-            conn, "SELECT window_start, count FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox'")}
-    yield
-    with db.tx() as conn:
-        for row in db.rows(conn, "SELECT window_start, count FROM usage_counts "
-                                "WHERE scope = 'global' AND kind = 'sandbox' FOR UPDATE"):
-            previous = before.get(row["window_start"])
-            created = row["count"] - (previous or 0)
-            assert created >= 0, "another test changed the Reports workspace counter"
-            if not created:
-                continue
-            if previous is None:
-                db.run(conn, "DELETE FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox' "
-                             "AND window_start = :w AND count = :n", w=row["window_start"], n=created)
-            else:
-                db.run(conn, "UPDATE usage_counts SET count = count - :n "
-                             "WHERE scope = 'global' AND kind = 'sandbox' AND window_start = :w",
-                       n=created, w=row["window_start"])
-
-
 def fixture(name):
     body = json.loads((pathlib.Path(__file__).parent / "fixtures" / f"{name}.json").read_text(encoding="utf-8"))
     body.pop("_about")

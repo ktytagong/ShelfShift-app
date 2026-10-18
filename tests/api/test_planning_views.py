@@ -15,6 +15,7 @@ from api import cases, config, db, inputs, refdata, workflow, worker
 from api.app import app
 from engine.model import TRANSFER
 from tests.api.conftest import fresh, seat, sign_in
+from tests.api.verify_helpers import ack, shown  # approve and accept acknowledge (D-26) and name the plan (07 review C)
 from tests.api.test_stock_views import captured, unbound
 
 STORY = cases.STORY_KEY
@@ -90,8 +91,9 @@ def prepare_story(run_id: str) -> dict:
             o=case["source_branch"], c=STORY)
     v = case["active_rec_version"]
     call(run_id, workflow.send, src, STORY, v)
-    call(run_id, workflow.decide, dest, STORY, v, "accept")
-    assert call(run_id, workflow.decide, src, STORY, v, "approve")["state"] == "APPROVED"
+    call(run_id, workflow.decide, dest, STORY, v, "accept", None, ack(run_id, STORY), shown(run_id, STORY))
+    assert call(run_id, workflow.decide, src, STORY, v, "approve", None, ack(run_id, STORY),
+                shown(run_id, STORY))["state"] == "APPROVED"
     assert call(run_id, workflow.prepare, src, STORY) == {"state": "PREPARED"}
     return rows(run_id, "SELECT * FROM world_actions WHERE run_id = :r AND world = 'shelfshift' AND case_id = :c "
                         "AND kind = 'TRANSFER'", c=STORY)[0]

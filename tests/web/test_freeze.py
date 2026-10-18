@@ -19,10 +19,11 @@ REQUIRED_SHIPPED = {
     'today':'/', 'board':'/board', 'decision':'/cases/:key', 'schedule':'/schedule', 'tasks':'/tasks',
     'transfers':'/transfers', 'stock':'/stock', 'analytics':'/analytics', 'forecasts':'/forecasts',
     'reports':'/reports', 'policies':'/policies', 'about':'/about',
+    'events':'/events', 'verification':None,  # Phase 7 ships with the full version (07-19..07-22)
+    'assistant':None,  # Phase 9's briefs and Ask ship with the full version (deploy session, 2026-10-18)
 }
 REQUIRED_NOT_IN_RELEASE = {
-    'orders':None, 'events':'/events', 'task-detail':'/tasks/:id',
-    'assistant':None, 'reading':None, 'verification':None,
+    'orders':None, 'task-detail':'/tasks/:id', 'reading':None,
 }
 PLACEHOLDERS = re.compile(r'coming soon|not implemented|\bTODO\b|\bTBD\b|placeholder|\blorem\b|Next day', re.I)
 
@@ -41,13 +42,13 @@ def test_shipped_routes_render_for_each_role(visitor, web, role):
     page = visitor.page
     if role == 'hq': switch_seat(page, None)
     nav = page.get_by_role('navigation', name='Main')
-    expected_nav = {'#' + path for id, path in REQUIRED_SHIPPED.items() if id != 'decision'}
+    expected_nav = {'#' + path for id, path in REQUIRED_SHIPPED.items() if id != 'decision' and path}
     assert set(nav.locator('a').evaluate_all('(links) => links.map(a => a.getAttribute("href"))')) == expected_nav
     for id, path in route_paths(page, web, role):
         show_route(page, path)
         expect(page.get_by_test_id('dataset-mark').first).to_be_visible()
         if id == 'tasks' and role == 'hq':
-            expect(page.get_by_role('main')).to_contain_text("Tasks go to store managers. HQ sees each branch's work on the Decision board.")
+            expect(page.get_by_role('main')).to_contain_text("Tasks go to store managers. Transport reports for HQ are under Business events.")  # 07-19 (taskview.TASKS_HQ_P7)
         if id == 'policies' and role == 'manager':
             expect(page.get_by_role('main')).to_contain_text('Only HQ can change policies.')
             expect(page.get_by_role('main').locator('input')).to_have_count(0)
@@ -58,6 +59,7 @@ def test_signed_out_routes(browser, web):
     try:
         page = context.new_page()
         for id, path in REQUIRED_SHIPPED.items():
+            if path is None: continue  # a shipped surface with no page of its own
             path = path.replace(':key', 'signed-out-route')
             page.goto('/#' + path)
             if id == 'about':
@@ -75,7 +77,7 @@ def test_not_in_release_is_absent(visitor, role):
     page = visitor.page
     if role == 'hq': switch_seat(page, None)
     nav = page.get_by_role('navigation', name='Main')
-    expect(nav.get_by_role('link', name=re.compile(r'^(?:Orders|Branch orders|Business events|Task detail)$'))).to_have_count(0)
+    expect(nav.get_by_role('link', name=re.compile(r'^(?:Orders|Branch orders|Task detail)$'))).to_have_count(0)
     for path in REQUIRED_NOT_IN_RELEASE.values():
         if path is None: continue
         page.goto('/#' + path.replace(':id', 'not-in-release'))
@@ -90,7 +92,7 @@ def test_registry_pages_have_no_placeholder_text(visitor, web):
     page = visitor.page
     paths = dict(route_paths(page, web, 'manager'))
     registered = registry_paths()
-    assert set(registered) == {path.replace('/cases/:key', '/cases') for path in REQUIRED_SHIPPED.values()}
+    assert set(registered) == {path.replace('/cases/:key', '/cases') for path in REQUIRED_SHIPPED.values() if path}
     for id, path in paths.items():
         show_route(page, path)
         text = page.locator('main#content').inner_text()
@@ -114,6 +116,7 @@ def route_paths(page, web, role):
     case_id = urllib.parse.quote(cards[0]['case_id'], safe='')
     paths = []
     for id, path in REQUIRED_SHIPPED.items():
+        if path is None: continue
         path = path.replace(':key', case_id)
         if role == 'hq' and id in {'analytics', 'forecasts'}:
             path += '?branch=' + urllib.parse.quote(web.store, safe='')
@@ -275,16 +278,18 @@ def test_ai_provenance_when_shipped(visitor, surface):
     page=visitor.page
     if surface=='assistant':
         from tests.web.test_assistant import assistant_states
+        from tests.web.test_case import decision_href
         script=assistant_states.__wrapped__(visitor)('current')
         # Deliberately different from any configured model; provenance belongs to the stored output.
         script.output['model_id']='stored-model-'+'x'*80
-        page.goto('/#/cases/'+urllib.parse.quote(script.binding['case_id'],safe='')+'?step=compare')
+        page.goto(decision_href(script.binding['case_id'],'compare'))
         brief=page.get_by_role('region',name='AI brief',exact=True)
-        expect(brief.get_by_text('Precomputed · Gemini '+script.output['model_id'],exact=True)).to_be_visible()
+        expect(brief.get_by_text('Precomputed',exact=True)).to_be_visible()
+        expect(brief).to_contain_text('Gemini '+script.output['model_id']+' · Recorded ')  # the stored output's model
         script.state='generating';page.reload()
         expect(brief).to_contain_text('Template summary · AI brief being written')
         script.state='fallback';page.reload()
-        expect(brief.get_by_text('Fallback · deterministic engine summary',exact=True)).to_be_visible()
+        expect(brief.get_by_text('Fallback · Gemini unavailable · figures from the engine',exact=True)).to_be_visible()
         expect(brief.get_by_test_id('template-summary')).to_have_text(script.summary)
         expect(brief.get_by_test_id('checked-brief')).to_have_count(0)
         page.set_viewport_size({'width':360,'height':844})

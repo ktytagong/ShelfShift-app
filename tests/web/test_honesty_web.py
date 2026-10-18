@@ -131,6 +131,14 @@ REMOVED_STRINGS = (
     "Pilot · synthetic data", "Data as of", "Sample dataset",
 )
 REMOVED_TAGS = ('"You"', '"Suggested"')  # the "You" tag and the "Suggested" pill, as string literals
+# 07-21: a removed string allowed in one file, each with its reason. "min left" was removed with 06.1's booking-hold
+# countdown; 06.1 D-19 keeps one countdown, Phase 7's request deadline bar, whose text "{N} min left" is locked by the
+# user (07-CONTEXT D-06). Only copy.ts (copy.minutesLeftText, 07-21) and taskview.ts (07-19) may hold it; anywhere else
+# it still fails.
+REMOVED_EXCEPTIONS = {
+    ("web/src/copy.ts", "min left"): "the request deadline bar's minutes (07-CONTEXT D-06; 06.1 D-19)",
+    ("web/src/taskview.ts", "min left"): "the Tasks deadline bar's minutes (07-19; 07-CONTEXT D-06; 06.1 D-19)",
+}
 
 VISIBLE_TEXT = pathlib.Path(__file__).resolve().parent / "visible_text.mjs"
 
@@ -172,6 +180,7 @@ INTERNAL_TERMS = (
 TERM_EXCEPTIONS = {
     ("web/src/aboutview.ts", "Cloud Run serves the app, Cloud SQL for PostgreSQL keeps each workspace, and Cloud Storage holds the release files"): "Phase 11 D-07 names the Cloud Run service",
     ("web/src/aboutview.ts", "Run recorded · not published"): "Phase 11 D-08's locked check-status vocabulary",
+    ("web/src/decision/assistant.tsx", "CASE"): "the API's assistant scope value, compared in code and never shown (09-17)",
     ("web/src/pages/board.tsx", "Board"): 'the "Board | Table" layout switch (UI-SPEC "Decision board" toolbar)',
     ("web/src/pages/schedule.tsx", "Work orders"): "the Schedule's tab, mixing transfer and markdown work (UI-SPEC OQ-3)",
     ("web/src/pages/schedule.tsx", "Work order"): "the Schedule's Group by, mixing both kinds (UI-SPEC OQ-3)",
@@ -182,7 +191,8 @@ TERM_EXCEPTIONS = {
 
 
 def test_no_removed_string_ships():
-    found = [f"{s!r} at {hit}" for s in REMOVED_STRINGS + REMOVED_TAGS for hit in hits(s, sources())]
+    found = [f"{s!r} at {hit}" for s in REMOVED_STRINGS + REMOVED_TAGS for hit in hits(s, sources())
+             if (hit.rsplit(":", 1)[0], s) not in REMOVED_EXCEPTIONS]
     assert found == [], found
 
 

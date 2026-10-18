@@ -176,8 +176,10 @@ def transport_view(conn, run: dict, case_id: str) -> dict:
                      times.find(source, action["run_code"], action["run_day"], dest),
                      action["fixed_cost"], action["per_unit_cost"], committed)
     else:
+        from . import selection  # the plan in force: a selected transfer's trip (07-CONTEXT D-23)
         rec = cases.active_rec(conn, case)
-        plan = cases.parse_plan(rec["result"]["recommended"]) if rec else None
+        key, _, _ = selection.plan_in_force(case, rec)
+        plan = cases.parse_plan(key) if key else None
         if plan is not None and plan.kind == TRANSFER:
             stored = next((r for r in rec["engine_input"]["runs"]
                            if r["run_code"] == plan.run_code and r["dest"] == plan.dest), None)

@@ -41,7 +41,9 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   let r: Response;
   try {
     r = await fetch(path, { ...init, credentials: "same-origin" });
-  } catch {
+  } catch (error) {
+    // Streaming cancellation belongs to the caller's action, not to the network-retry UI.
+    if (init.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
     throw new ApiError(0, "network", NETWORK);
   }
   if (r.ok) return r;
@@ -81,6 +83,109 @@ export async function post<T>(path: string, body: unknown, key: string): Promise
   return (await send(path, { method: "POST", headers, body: JSON.stringify(body) })).json() as Promise<T>;
 }
 
+export const INTERRUPTED = "Interrupted, ask again";
+export type StreamEvent = { event: string; data: Record<string, unknown> };
+
+// POST SSE (09-CONTEXT D-16). This function makes exactly one fetch. The caller owns the key/body and aborts on
+// cancel or unmount; no reconnect, retry, Last-Event-ID or business-action dispatch exists here. Only complete,
+// server-checked finals and the supported progress/state events reach the callback; token/unknown events do not.
+export async function stream<E extends StreamEvent = StreamEvent>(
+  path: string, body: unknown, key: string, onEvent: (event: E) => void, signal?: AbortSignal,
+  method: "POST" | "GET" = "POST",
+): Promise<void> {
+  const interrupted = (extra: Record<string, unknown> = {}) => new ApiError(0, "interrupted", INTERRUPTED, extra);
+  let response: Response | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let cancelled = false;
+  const cancel = (): Promise<void> => {
+    if (cancelled) return Promise.resolve();
+    cancelled = true;
+    return (reader ? reader.cancel() : response?.body?.cancel())?.catch(() => {}) ?? Promise.resolve();
+  };
+  const onAbort = () => { void cancel(); };
+  try {
+    if (signal?.aborted) throw interrupted();
+    response = await send(path, method === "GET" ? { method, headers: { "Accept": "text/event-stream" }, signal } : { method, headers: {
+      "Content-Type": "application/json", "Accept": "text/event-stream", "Idempotency-Key": key,
+    }, body: JSON.stringify(body), signal });
+    if (signal?.aborted || response.body === null
+      || response.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase() !== "text/event-stream") {
+      throw interrupted();
+    }
+    reader = response.body.getReader();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    // Abort can happen while fetch resolves, before the listener was installed.
+    if (signal?.aborted) throw interrupted();
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let buffer = "";
+    let name = "message";
+    let data: string[] = [];
+    let complete = false;
+    const line = (text: string) => {
+      if (signal?.aborted) throw interrupted();
+      if (text === "") {
+        const event = name;
+        const joined = data.join("\n");
+        name = "message";
+        data = [];
+        if (joined === "" || !["tool", "tool_result", "summary", "state", "meta", "answer", "brief",
+          "fallback", "generating", "interrupted", "error"].includes(event)) return;
+        const payload: unknown = JSON.parse(joined);
+        if (payload === null || typeof payload !== "object" || Array.isArray(payload)) throw interrupted();
+        const fields = payload as Record<string, unknown>;
+        if (event === "interrupted") throw interrupted(fields);
+        if (event === "error") {
+          const { error, message, ...extra } = fields;
+          const status = typeof fields.status === "number" ? fields.status : 500;
+          const code = typeof error === "string" ? error : "error";
+          if (status === 401 && code === "locked") onLocked();
+          if (status === 409 && code === "sandbox_reset") onSandboxReset();
+          throw new ApiError(status, code, typeof message === "string" ? message : NETWORK, extra);
+        }
+        if (event === "answer" || event === "brief") {
+          // This is a wire-shape guard, not a second number checker or a claim that the prose is true.
+          if (typeof fields.text !== "string" || !fields.text.trim() || fields.checks === null
+            || typeof fields.checks !== "object" || Array.isArray(fields.checks)) throw interrupted();
+          complete = true;
+        } else if (event === "fallback" || (method === "GET" && (event === "generating"
+          || (event === "state" && fields.status === "GENERATING")))) complete = true;
+        onEvent({ event, data: fields } as E);
+        return;
+      }
+      if (text.startsWith(":")) return; // heartbeat/comment; never answer text
+      const colon = text.indexOf(":");
+      const field = colon < 0 ? text : text.slice(0, colon);
+      const value = colon < 0 ? "" : text.slice(colon + 1).replace(/^ /, "");
+      if (field === "event") name = value;
+      else if (field === "data") data.push(value);
+      // id/retry and extension fields cannot cause replay or another fetch.
+    };
+    while (!complete) {
+      const { value, done } = await reader.read();
+      if (signal?.aborted) throw interrupted();
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      let end: RegExpExecArray | null;
+      while (!complete && (end = /\r\n|\r|\n/.exec(buffer)) !== null) {
+        // Hold a trailing CR until its possible LF arrives, including when they span byte chunks.
+        if (!done && end[0] === "\r" && end.index === buffer.length - 1) break;
+        const text = buffer.slice(0, end.index);
+        buffer = buffer.slice(end.index + end[0].length);
+        line(text);
+      }
+      // EOF never completes an unterminated frame or publishes a partial answer.
+      if (done && !complete) throw interrupted();
+    }
+  } catch (error) {
+    if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw interrupted();
+    if (error instanceof ApiError) throw error;
+    throw interrupted();
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    await cancel();
+    reader?.releaseLock();
+  }
+}
+
 export async function patch<T>(path: string, body: unknown, key: string): Promise<T> {
   const headers = { "Content-Type": "application/json", "Idempotency-Key": key };
   return (await send(path, { method: "PATCH", headers, body: JSON.stringify(body) })).json() as Promise<T>;
@@ -100,11 +205,16 @@ export type ErrorCode =
   | "not_found"
   | "stale_version" | "sandbox_reset" | "conflict" | "incomplete_shipment" | "idempotency_conflict" | "hold_expired"
   | "wrong_state" | "already_decided" | "missing_data" | "demo_complete" | "too_many_requests" | "needs_input"
+  | "stale_plan"
   | "count_mismatch" | "scope_tick" | "engine_version"
   | "bad_file"
   | "cap_reached"
   | "paused" | "internal" // 11-CONTEXT D-02: database outage and unexpected server fault
-  | "preparing" | "engine_busy" | "engine_timeout" | "engine_unavailable" | "db_busy";
+  | "preparing" | "engine_busy" | "engine_timeout" | "engine_unavailable" | "db_busy"
+  // Phase 7 (api/errors.py; 04-API-CONTRACT Phase 7 rows): the check time, the commitment rule and its
+  // acknowledgement, the plan the page shows, Select another plan, Reassess, cancel and the report path.
+  | "check_time" | "not_an_option" | "older_evidence" | "review_required" | "commitment_blocked" | "ack_required"
+  | "cannot_continue" | "stale_plan" | "not_at_risk" | "already_dispatched" | "quote_expired" | "too_large";
 
 // --- shapes (contract "Shapes"; every listed key is always present, `null` when it does not apply) -----------------
 // The engine's `text` on decide_by, act_before and wait is never typed: labels are composed from day, minute and the
@@ -276,7 +386,9 @@ export type Adopted = {
 
 // SUPERSEDED: a recount replaced it; it stays readable with its answer and can be neither answered nor confirmed
 // (contract row 2026-10-16, Request recount; Count path 9).
-export type RequestState = "OPEN" | "ANSWERED" | "CONFIRMED" | "EXPIRED" | "SUPERSEDED";
+// Stored states from Phase 7 (04-API-CONTRACT Request): OPEN, ANSWERED, CONFIRMED, CANT_CHECK, SUPERSEDED, HELD;
+// legacy EXPIRED rows stay readable. The page reads any other state the server may add as a gray pill with its text.
+export type RequestState = "OPEN" | "ANSWERED" | "CONFIRMED" | "EXPIRED" | "SUPERSEDED" | "CANT_CHECK" | "HELD";
 
 export type LotCount = { shelf_units: number | null; backroom_units: number | null };
 export type NeedsInput = { lot_id: string; field: "shelf_units" | "backroom_units" };
@@ -327,6 +439,27 @@ export type Request = {
   confirmable: boolean;
   answerable: boolean;
   answer: AnswerSignal | null;
+  // The Phase 7 keys (04-API-CONTRACT Request, 07-01; 07-CONTEXT D-05, D-06, D-09, D-22), read from the database's
+  // now() of the same read: real times as ISO-8601 UTC, `status` the server's sentence (null for a stored state or a
+  // legacy row), `late` an answer after `due_at`. Optional so a row without them (before Phase 7) still reads.
+  asked_at?: string | null;
+  due_at?: string | null;
+  server_now?: string | null;
+  minutes_left?: number | null;
+  overdue?: boolean;
+  status_kind?: string;
+  status?: string | null;
+  late?: boolean;
+  answered_at?: string | null;
+  observed_at?: string | null;
+  confirmed_at?: string | null;
+  closed_at?: string | null;
+  closed_by?: string | null;
+  part?: "count" | "expiry";
+  request_group?: string;
+  askable_again?: boolean;
+  provenance?: string | null;
+  simulated_label?: string | null;
 };
 
 export type Triple = { low: number; base: number; high: number };
@@ -472,7 +605,20 @@ export type CaseDetail = Card & {
   engine_input: Record<string, unknown> | null;
   versions: Versions;
   approvals: Approvals;
+  commitment?: Commitment; // absent on a flag the engine has not evaluated yet (needs_evaluation)
 };
+
+// The commitment rule's view on the case detail (07-CONTEXT D-12, D-13; 04-API-CONTRACT 07-09 row). `ack` is the exact
+// acknowledgement an approve or accept must send while the plan in force has Advisory facts ({rec_version, plan_key,
+// fact_ids}), null with none; `advisory` lists those facts in the engine's order; `blocks` what a commit would refuse
+// now. On a state past Prepare every list is empty and `ack` null.
+export type AdvisoryFact = { fact_id: string; kind: string; lot_ids: string[]; branch: string; owner_branch: string };
+export type Acknowledgement = { rec_version: string; plan_key: string; fact_ids: string[] };
+export type CommitBlock = {
+  kind: string; fact_id?: string; hold_id?: string; lot_ids: string[]; owner_branch: string; reason?: string;
+  resolution?: string;
+};
+export type Commitment = { blocks: CommitBlock[]; advisory: AdvisoryFact[]; ack: Acknowledgement | null; next_actions: string[] };
 
 // Each entry of GET /api/cases/{id}/activity, oldest first.
 export type ActivityEntry = {
@@ -498,3 +644,28 @@ export type SettingsSaved = Settings & { reevaluated: string[] };
 // POST /api/signals/{id}/confirm: one label per lot, and every case re-evaluated with its new active version.
 export type ConfirmResult = { fact_id: string; labels: string[]; cases: { case_id: string; key: string; rec_version: string }[] };
 
+
+// --- 07-21: the case page's verification (04-API-CONTRACT 2026-10-17 "Card, detail and session keys"; 07-CONTEXT
+// D-07, D-11, D-12, D-23). Own block, additive: the keys the detail's fact checks, options and selection carry, and the
+// session's request settings (contract row 2026-10-18 "Session request settings"). Optional, so a payload without
+// them (a needs-evaluation flag, an older server) still reads.
+export type FactClass = "REQUIRED" | "ADVISORY" | null;
+export type FactCheckKeys = {
+  class?: FactClass; // REQUIRED: the plan would break a hard limit if true; ADVISORY: it changes the plan only
+  owner_branch?: string; // the manager who settles it: the fact's branch
+  requests_left?: number; // request groups this version still allows
+  blocked_label?: string | null; // "Blocked · stock/expiry verification required" (the server's words), else null
+  adoptable?: boolean; // "Plan as if it's true" applies (never a stock or expiry fact)
+  reasons?: string[]; // check_plan's reasons under the fact's alternative, Required only, word for word
+};
+export type VerifiedFact = FactCheck & FactCheckKeys;
+// One engine option of the active version for Select another plan, in the result's order.
+export type CaseOption = {
+  key: string; label: string; kind: string; feasible: boolean; reasons: string[]; required_fact_ids: string[];
+  recommended: boolean; selected: boolean;
+};
+// The card's `selected_plan`: who selected which engine option, and when (ISO UTC).
+export type SelectedPlan = { plan_key: string; label: string; rec_version: string; by: string | null; at: string | null };
+export type VerifyDetailKeys = { options?: CaseOption[]; selected_plan?: SelectedPlan | null };
+// GET /api/session `requests`: the request deadline in minutes and the request groups allowed per version.
+export type RequestSettings = { response_min: number; max_per_version: number };

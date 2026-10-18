@@ -19,10 +19,19 @@ CARD_KEYS = {"case_id", "key", "tag", "origin", "state", "column", "sku", "produ
              "reason", "waiting_until_day",
              # 06.1-10 (D-23, D-24, D-54): the step keys, computed once on the server (api/stepkeys.py)
              "step", "step_number", "stage", "first_stage", "owner", "next_action", "blocked", "blocked_reasons",
-             "closed_as"}
+             "closed_as",
+             "selected_plan",  # selected_plan: 07-10 (07-CONTEXT D-23; the selection bound to the active version)
+             "lot_status", "predecessor", "successor"}  # 07-11 (07-CONTEXT D-24; successor links arrive in 07-12)
 DETAIL_KEYS = CARD_KEYS | {"lot", "adopted", "adopted_ended", "requests", "result", "fact_checks", "summary",
                            "engine_input", "versions", "approvals", "eligibility",  # eligibility: 05.2-14
-                           "comparison"}  # comparison: 06.1-04 (D-27)
+                           "comparison",  # comparison: 06.1-04 (D-27)
+                           "review_flags",  # review_flags: 07-06 (07-CONTEXT D-17)
+                           "holds",  # holds: 07-08 (07-CONTEXT D-13; the ACTIVE lot holds on the involved lots)
+                           "commitment",  # commitment: 07-09 (07-CONTEXT D-12; blocks, advisory, ack, next_actions)
+                           "options",  # options: 07-10 (07-CONTEXT D-23; the engine options for Select another plan)
+                           "reports",  # reports: 07-13 (07-CONTEXT D-16; the unconfirmed field reports in scope)
+                           "predecessor_closed"}  # predecessor_closed: 07-22 (07-CONTEXT D-13, D-24; the banner's closed predecessor)
+CHECK_KEYS_07 = ["class", "owner_branch", "requests_left", "adoptable", "blocked_label", "reasons"]  # 07-09
 LOT_KEYS = {"lot_id", "branch", "qty", "expiry_day", "expiry_source", "markdown_pct", "last_verified_day", "verified_by",
             "origin", "tag"}
 VERSION_KEYS = {"rec_version", "effective_version", "engine_version", "dataset_version", "forecast_run_id",
@@ -206,8 +215,10 @@ def test_detail_returns_every_fact_check_in_engine_order(run):
     assert set(d) == DETAIL_KEYS and set(d["lot"]) == LOT_KEYS
     assert set(d["versions"]) == VERSION_KEYS and set(d["approvals"]) == APPROVAL_KEYS
     rec = stored(run["run_id"], cases.STORY_KEY)
-    assert d["fact_checks"] == rec["fact_checks"]  # every check, in the engine's list order, none cut
-    assert d["fact_checks"] and all(list(c) == FACT_KEYS for c in d["fact_checks"])
+    # every check, in the engine's list order, none cut; each the engine's keys in its order, then the commitment
+    # rule's keys for the plan in force (07-09, 07-CONTEXT D-12; 04-API-CONTRACT "Phase 7 card, detail and session keys")
+    assert [{k: c[k] for k in FACT_KEYS} for c in d["fact_checks"]] == rec["fact_checks"]
+    assert d["fact_checks"] and all(list(c) == FACT_KEYS + CHECK_KEYS_07 for c in d["fact_checks"])
     assert d["engine_input"] == rec["engine_input"] and d["versions"]["rec_version"] == rec["rec_version"]
     assert d["versions"]["synthetic"] is True and d["versions"]["engine_version"] == rec["result"]["engine_version"]
     assert d["approvals"]["required"] == (["source", "destination"]

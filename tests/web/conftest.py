@@ -1,8 +1,10 @@
 """The browser harness (05-CONTEXT D-09; research Pattern 9): a production build of web/ under `vite preview`, proxied
-to a real API child on the browser suite's own _test database, opened by headless Chromium. Never mocks the API.
+to a real API child on the browser suite's own _test database, opened by headless Chromium. Assistant-only scripted
+transport is opt-in from tests/web/test_assistant.py; no product setting enables it. All other API paths stay real.
 
-Order: `web_database` refuses any database but shelfshift_web_test first (review WR-09: a bare `pytest` collects
-tests/api first, whose conftest points DATABASE_URL at Phase 4's shelfshift_test), then Phase 4's `schema` fixture runs
+Order: `web_database` refuses any database whose name does not end in _web_test first (review WR-09: a bare
+`pytest` collects tests/api first, whose conftest points DATABASE_URL at Phase 4's shelfshift_test), then Phase 4's
+`schema` fixture runs
 (it refuses a database whose name does not end in _test and refuses Cloud SQL before anything is dropped), then `template` builds the Day-3 template, then the API child and the preview child
 start on controlled ports (an occupied port fails setup naming it), each polled until it is ready. Both children stop
 before the session's fixtures are torn down. Both credentials (the store passcode and HQ's own, 06.1 D-47) are random
@@ -24,6 +26,7 @@ import os
 os.environ.setdefault("DATABASE_URL", "postgresql+pg8000://postgres@localhost:5432/shelfshift_web_test")
 
 import dataclasses  # noqa: E402
+import json  # noqa: E402
 import pathlib  # noqa: E402
 import re  # noqa: E402
 import secrets  # noqa: E402
@@ -46,7 +49,8 @@ from api import config  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]  # the ShelfShift repo
 WEB = ROOT / "web"
-WEB_DATABASE = "shelfshift_web_test"  # default only; every accepted name ends in _web_test (07 D-31)
+WEB_DATABASE = "shelfshift_web_test"  # the browser suite's own database (05-03, D-09): the default
+WEB_SUFFIX = "_web_test"  # the only names accepted: a branch may test on its own *_web_test database (07 D-29)
 HOST = "127.0.0.1"
 API_PORT = int(os.environ.get("SS_WEB_API_PORT", "18080"))
 PREVIEW_PORT = int(os.environ.get("SS_WEB_PREVIEW_PORT", "14173"))
@@ -56,6 +60,7 @@ CARRIED_ENV = ("PATH", "HOME", "LANG", "TMPDIR")  # the only variables a child i
 THIRD_PARTY_FONTS = ("https://fonts.googleapis.com/**", "https://fonts.gstatic.com/**")
 HQ = "HQ"  # the HQ planner's account (04-API-CONTRACT "Product mode (06.1)", POST /api/session)
 SIGNED_IN_S = 30  # how long a sign-in or a seat switch may take before the session reports the account
+TEST_MODEL = "offline-browser-model"  # test-only configured identity, never a paid model or a product default
 
 # Engine-backed steps (Next day, confirm, settings) take seconds; Playwright's 5 s default is too short (Pitfall 5).
 expect.set_options(timeout=30_000)
@@ -79,6 +84,50 @@ _RUNNING: list[Web] = []
 class Visitor:
     context: BrowserContext
     page: Page
+
+
+@dataclasses.dataclass(frozen=True)
+class ApiBinding:
+    root: pathlib.Path
+    python: pathlib.Path
+
+
+def _api_binding(value: str | None = None) -> ApiBinding:
+    """09-INTEGRATION: preview stays here; an explicit API root may only be the supervisor's build/assistant.
+
+    Explicit roots are validated before schema setup. The unset default preserves the original harness: current
+    interpreter, this root, no git subprocess or local-venv prerequisite (including source archives).
+    """
+    if value is None:
+        return ApiBinding(ROOT, pathlib.Path(sys.executable))
+    root = pathlib.Path(value).resolve()
+    if root not in (ROOT, (ROOT.parent / "ShelfShift-assistant").resolve()):
+        raise RuntimeError("ASSISTANT_API_WORKTREE must be the integrated web root or bound ShelfShift-assistant")
+    def git(*args: str) -> str:
+        return subprocess.check_output(["git", "-C", str(root), *args], text=True, stderr=subprocess.PIPE).strip()
+    try:
+        if pathlib.Path(git("rev-parse", "--show-toplevel")).resolve() != root:
+            raise RuntimeError("ASSISTANT_API_WORKTREE must name a tracked repository root")
+        git("ls-files", "--error-unmatch", "--", "api/app.py", "api/schema.sql", "api/config.py",
+            "tests/api/conftest.py", "requirements.lock")
+        if root != ROOT:
+            if git("branch", "--show-current") != "build/assistant":
+                raise RuntimeError("ASSISTANT_API_WORKTREE must be on bound branch build/assistant")
+            common = pathlib.Path(git("rev-parse", "--git-common-dir"))
+            own = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"], text=True).strip()
+            if (root / common).resolve() != (ROOT / own).resolve():
+                raise RuntimeError("ASSISTANT_API_WORKTREE must share the bound repository")
+    except (subprocess.CalledProcessError, OSError) as error:
+        raise RuntimeError("ASSISTANT_API_WORKTREE is not a tracked, bound API worktree") from error
+    python = root / ".venv" / "bin" / "python"
+    if not python.is_file():
+        raise RuntimeError("the bound API needs its own existing .venv/bin/python; no install runs in this harness")
+    return ApiBinding(root, python)
+
+
+@pytest.fixture(scope="session")
+def assistant_api_binding() -> ApiBinding:
+    return _api_binding(os.environ.get("ASSISTANT_API_WORKTREE"))
 
 
 def _child_env(**extra: str) -> dict[str, str]:
@@ -143,28 +192,77 @@ def _json_is(expected: dict):
     return ready
 
 
-def _database_ready(r: httpx.Response) -> bool:
-    try:
-        body = r.json()
-        return r.status_code == 200 and body.get("ok") is True and body.get("db") == "ok"
-    except (ValueError, AttributeError):
-        return False
+def _api_ready(model_id: str):
+    """Require configured identity for an assistant-capable API without a model ping; accept additive metadata."""
+    def ready(response: httpx.Response) -> bool:
+        try:
+            body = response.json()
+            return (response.status_code == 200 and isinstance(body, dict) and body.get("ok") is True
+                    and body.get("db") == "ok" and body.get("model_id") == model_id)
+        except ValueError:
+            return False
+    return ready
+
+
+def _api_readiness(binding: ApiBinding):
+    if binding.root == ROOT and not (ROOT / "agent" / "model.py").is_file():
+        return _json_is({"ok": True, "db": "ok"})
+    return _api_ready(TEST_MODEL)
+
+
+def _bound_fixture(binding: ApiBinding, name: str, *args):
+    """Run the bound tracked schema/template fixture with its own interpreter, never copy SQL into this root."""
+    script = '''import json, sys
+from api import config
+from sqlalchemy.engine import make_url
+assert (make_url(config.DATABASE_URL).database or "").endswith("_web_test")
+assert make_url(config.DATABASE_URL).host in ("localhost", "127.0.0.1", "::1")
+assert not config.CLOUD_SQL_INSTANCE
+from tests.api import conftest as fixtures
+name, args = sys.argv[1], json.loads(sys.argv[2])
+if name == "public_template":
+    from api import refdata, sandbox
+    sandbox.clear_cache()
+    result = sandbox.build_template(refdata.install(fixtures.TINY, allow_local=True))
+else:
+    assert name in ("schema", "template")
+    result = getattr(fixtures, name).__wrapped__(*args)
+print("SS_WEB_FIXTURE:" + json.dumps(result))
+'''
+    result = subprocess.run([str(binding.python), "-c", script, name, json.dumps(args)], cwd=binding.root,
+        env=_child_env(GCP="off", DATABASE_URL=config.DATABASE_URL, ENGINE_WORKER="off", DEMO_MODE="on"),
+        capture_output=True, text=True, timeout=120)
+    if result.returncode:
+        pytest.fail(f"bound API {name} fixture failed:\n{result.stderr[-4000:]}", pytrace=False)
+    rows = [row.removeprefix("SS_WEB_FIXTURE:") for row in result.stdout.splitlines()
+            if row.startswith("SS_WEB_FIXTURE:")]
+    if len(rows) != 1:
+        pytest.fail(f"bound API {name} fixture returned no unique setup result", pytrace=False)
+    return json.loads(rows[0])
 
 
 @pytest.fixture(scope="session")
 def web_database() -> None:
-    """Refuse before schema drop any name without the _web_test suffix (07 D-31).
-    A plain _test suffix could collide with an API run; each session gets its own web database."""
-    name = sa.engine.make_url(config.DATABASE_URL).database or ""
-    if not re.fullmatch(r"[a-z0-9_]+_web_test", name):
-        pytest.fail(f"the browser suite requires a name ending in _web_test, not {name!r}: run it with `make test-web`",
-                    pytrace=False)
+    """Refuse, before Phase 4's `schema` drops anything, a DATABASE_URL whose database name does not end in _web_test
+    (shelfshift_web_test by default; a branch may use its own, e.g. shelfshift_verify_web_test, 07 D-29 amended): the
+    _test suffix alone would let the browser suite drop the schema an API run is using on shelfshift_test."""
+    url = sa.engine.make_url(config.DATABASE_URL)
+    name = url.database or ""
+    if not name.endswith(WEB_SUFFIX) or not re.fullmatch(r"[a-z0-9_]+_web_test", name):  # 07 D-31
+        pytest.fail(f"the browser suite runs only on a database whose name ends in {WEB_SUFFIX} (by default "
+                    f"{WEB_DATABASE}), not {name!r}: run it with `make test-web`", pytrace=False)
+    if url.host not in ("localhost", "127.0.0.1", "::1") or config.CLOUD_SQL_INSTANCE:
+        pytest.fail("browser tests require local PostgreSQL, never Cloud SQL", pytrace=False)
+    if os.environ.get("GCP", "off") != "off":
+        pytest.fail("browser tests require GCP=off", pytrace=False)
 
 
 @pytest.fixture(scope="session")
-def schema(web_database, api_schema):
+def schema(request, web_database, assistant_api_binding):
     """Phase 4's `schema` for the browser suite, set up only after `web_database` passed (`template` asks for it)."""
-    return api_schema
+    if assistant_api_binding.root == ROOT:
+        return request.getfixturevalue("api_schema")
+    return _bound_fixture(assistant_api_binding, "schema")
 
 
 # The dataset the browser suite runs on (05.2-22): "synthetic" (the default: data/reference's Day-3 template) or
@@ -177,10 +275,13 @@ public_only = pytest.mark.skipif(DATASET != "public_tiny", reason="runs with SS_
 
 
 @pytest.fixture(scope="session")
-def web_template(request, schema) -> str:
+def web_template(request, schema, assistant_api_binding) -> str:
     """The ACTIVE template every visitor's sandbox is cloned from, for the whole browser run: the synthetic Day-3
     template (Phase 4's `template`), or with SS_WEB_DATASET=public_tiny the tiny public set installed beside
     data/reference and built through `sandbox.build_template` (its warm-up, the open day's catalogue and the checks)."""
+    if assistant_api_binding.root != ROOT:
+        return _bound_fixture(assistant_api_binding, "template", schema) if DATASET == "synthetic" else \
+            _bound_fixture(assistant_api_binding, "public_template")
     if DATASET == "synthetic":
         return request.getfixturevalue("template")
     from api import refdata, sandbox
@@ -189,7 +290,13 @@ def web_template(request, schema) -> str:
 
 
 @pytest.fixture(scope="session")
-def web(web_template, tmp_path_factory) -> Web:
+def assistant_api_command(assistant_api_binding):
+    """Tests can inject a local scripted model launcher without a product switch."""
+    return [str(assistant_api_binding.python), "-m", "uvicorn", "api.app:app", "--no-proxy-headers"]
+
+
+@pytest.fixture(scope="session")
+def web(web_template, tmp_path_factory, assistant_api_binding, assistant_api_command) -> Web:
     """The API child and the vite preview child for the whole browser run (after the schema and template exist)."""
     require_test_database(config.DATABASE_URL)  # `schema` already refused anything else; checked again before start
     taken = [port for port in (API_PORT, PREVIEW_PORT) if _occupied(port)]
@@ -207,11 +314,13 @@ def web(web_template, tmp_path_factory) -> Web:
     try:
         with open(logs / "api.out", "wb") as out, open(logs / "api.err", "wb") as err:
             api = subprocess.Popen(
-                [sys.executable, "-m", "uvicorn", "api.app:app", "--host", HOST, "--port", str(API_PORT), "--no-proxy-headers"],
-                cwd=ROOT, stdout=out, stderr=err,
+                [*assistant_api_command, "--host", HOST, "--port", str(API_PORT)],
+                cwd=assistant_api_binding.root, stdout=out, stderr=err,
                 env=_child_env(DATABASE_URL=config.DATABASE_URL, DEMO_PASSCODE=passcode, HQ_PASSCODE=hq_passcode,
+                               GCP="off", GEMINI_MODEL=TEST_MODEL, VERTEX_LOCATION="offline-test-location",
                                DEMO_MODE="on", ENGINE_WORKER="on"))
-        _wait_ready("the API child", f"{api_url}/api/readyz", _database_ready, api, logs / "api.err")
+        _wait_ready("the API child", f"{api_url}/api/readyz", _api_readiness(assistant_api_binding),
+                    api, logs / "api.err")
 
         with open(logs / "preview.out", "wb") as out, open(logs / "preview.err", "wb") as err:
             preview = subprocess.Popen(
@@ -300,7 +409,14 @@ def pass_gate(page: Page, web: Web) -> None:
 @pytest.fixture
 def open_visitor(browser: Browser, web: Web):
     """A factory: each call is a new independent visitor (its own context, cookie and sandbox) past the gate. Every
-    context it made is closed at teardown."""
+    context it made is closed at teardown, and the workspaces the test opened are given back to the day's global
+    count: the full suite opens more than caps.global.sandbox (300 a day), which stays as configured; test_reports.py
+    does the same for its module."""
+    from api import db
+
+    count = "SELECT window_start, count FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox'"
+    with db_tx() as conn:
+        before = {row["window_start"]: row["count"] for row in db.rows(conn, count)}
     made: list[BrowserContext] = []
 
     def open_one() -> Visitor:
@@ -313,6 +429,14 @@ def open_visitor(browser: Browser, web: Web):
     yield open_one
     for context in made:
         context.close()
+    with db_tx() as conn:
+        for row in db.rows(conn, count + " FOR UPDATE"):
+            w = row["window_start"]
+            if w not in before:
+                db.run(conn, "DELETE FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox' AND window_start = :w", w=w)
+            elif row["count"] > before[w]:
+                db.run(conn, "UPDATE usage_counts SET count = :n WHERE scope = 'global' AND kind = 'sandbox' "
+                             "AND window_start = :w", n=before[w], w=w)
 
 
 @pytest.fixture
@@ -437,3 +561,57 @@ def open_case(page: Page, key_or_tag: str) -> dict:
     expect(page.get_by_role("navigation", name="Steps", exact=True)).to_be_visible()
     expect(page.get_by_role("heading", level=1)).to_contain_text(f"lot {detail['lot']['lot_id']}")
     return detail
+
+
+def decision_body(page: Page, case_id: str, decision: str, rec_version: str | None = None) -> dict:
+    """The body the stock decision page sends for one decision, read from the detail as the page's own account: the
+    version (the detail's, or `rec_version` when a test sends an older one on purpose), the decision, and for an
+    approve or accept the plan the page shows (`plan_key`, the detail's `suggested_key`; 07 review C, D-32) and, when
+    that plan has Advisory facts, the exact acknowledgement the detail carries (`acknowledged`, `commitment.ack`;
+    07-CONTEXT D-12, D-26). The one way the browser tests' helpers post a decision, so none copies the rule."""
+    d = case_json(page, case_id)
+    body = {"rec_version": d["rec_version"] if rec_version is None else rec_version, "decision": decision}
+    if decision in ("approve", "accept"):
+        body["plan_key"] = d["suggested_key"]
+        ack = (d.get("commitment") or {}).get("ack")
+        if ack is not None:
+            body["acknowledged"] = ack
+    return body
+
+
+CHECKED_NOW = {"observed": "now"}  # "When did you check?" → "Checked just now" on a test's answer post (07 D-22)
+
+
+@pytest.fixture(autouse=True)
+def workspace_budget(request):
+    """Return each browser test's workspace usage after its browser contexts close (was test_reports.py's own, 08).
+
+    Each test still spends against the real cap; its successful workspace creations must not consume the budget of
+    later, unrelated browser tests. The merged suite (freeze + Phase 7 + Phase 9) opens more workspaces in one run than
+    the daily global cap (settings caps.global.sandbox), so every test that drives the app gives its own back.
+    """
+    if "web" not in request.fixturenames:  # the static checks (make web-check) open no database
+        yield
+        return
+    request.getfixturevalue("web")
+    from api import db
+
+    with db.tx() as conn:
+        before = {row["window_start"]: row["count"] for row in db.rows(
+            conn, "SELECT window_start, count FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox'")}
+    yield
+    with db.tx() as conn:
+        for row in db.rows(conn, "SELECT window_start, count FROM usage_counts "
+                                "WHERE scope = 'global' AND kind = 'sandbox' FOR UPDATE"):
+            previous = before.get(row["window_start"])
+            created = row["count"] - (previous or 0)
+            assert created >= 0, "another test changed the workspace counter"
+            if not created:
+                continue
+            if previous is None:
+                db.run(conn, "DELETE FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox' "
+                             "AND window_start = :w AND count = :n", w=row["window_start"], n=created)
+            else:
+                db.run(conn, "UPDATE usage_counts SET count = count - :n "
+                             "WHERE scope = 'global' AND kind = 'sandbox' AND window_start = :w",
+                       n=created, w=row["window_start"])

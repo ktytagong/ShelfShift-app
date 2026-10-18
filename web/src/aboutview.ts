@@ -103,8 +103,10 @@ export function notYetProven(about: AboutPayload | null, error: boolean): {title
   const decisions = ["Execution is simulated.", "There is no live point-of-sale, ordering or supplier data feed and no store trial."];
   if (benchmarkInRelease(current)) decisions.push("The modeled store rule ignores inbound deliveries when estimating surplus. Differences reflect this limitation as well as ShelfShift's planning.",
     "Waste reductions are compared only with automatic markdowns and no other action, never claimed lower than the modeled store rule.");
-  if (isShipped("verification")) decisions.push("Each what-if tests one operational fact at a time while holding the other facts fixed.",
-    "A lot with mixed expiry dates is held for staff to separate; the app never splits it into quantities. A typed check time stops silent misdating but cannot prove the time is accurate.");
+  // Phase 7's stated limitations, word for word (07-UI-SPEC surface 7; 07-CONTEXT D-11, D-12, D-22).
+  if (isShipped("verification")) decisions.push("Fact checks test each unresolved fact on its own: a plan that survives each fact alone but fails when two are true together is not detected, so ShelfShift claims no complete feasibility protection.",
+    "A lot with mixed expiry dates is held for people to separate; the app doesn't split it.",
+    "Staff must state when they checked a count or a date; that stops silent misdating but can't prove a typed time accurate.");
   return [{title:"Data and assumptions", lines:data}, {title:"Decisions and checks", lines:decisions}, {title:"Running it for a real customer", lines:[...PILOT_LINES]}];
 }
 export type LabelRow = {name:string; meaning:string; tone:Tone | null; icon?:IconName};
@@ -122,7 +124,7 @@ export function labelRows(shipped: string[], about: AboutPayload | null = null):
   if (shipped.includes("assistant") || shipped.includes("reading")) rows.push(
     {name:"Precomputed · Gemini model ID", tone:"gray", icon:"clock", meaning:"Written by Gemini before you opened the page, with the model that wrote it."},
     {name:"Live · Gemini model ID", tone:"gray", meaning:"Written by Gemini in your workspace after your question or change."},
-    {name:"Fallback · deterministic engine summary", tone:"gray", icon:"info", meaning:"Gemini was unavailable, so the summary uses the deterministic engine's figures."},
+    {name:"Fallback · Gemini unavailable · figures from the engine", tone:"gray", icon:"info", meaning:"Gemini was unavailable, so the summary uses the deterministic engine's figures."},
   );
   if (about?.benchmark || about?.ai_eval) rows.push({name:DIFFERENT_VERSION, tone:"warn", meaning:"A published result from a different engine, dataset, model or assistant version."});
   return rows;

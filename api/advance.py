@@ -361,11 +361,13 @@ def _lifecycle_before(conn, run: dict) -> list[str]:
     for case in db.rows(conn, "SELECT * FROM cases WHERE run_id = :r AND state = 'APPROVED' ORDER BY case_id",
                         r=run["run_id"]):
         rec = cases.active_rec(conn, case)
+        from . import selection  # the plan that was approved: the plan in force (07-CONTEXT D-23)
+        key, _, _ = selection.plan_in_force(case, rec)
         bookings.release(conn, run["run_id"], case["case_id"])
         db.run(conn, "UPDATE cases SET state = 'INVALIDATED', reason = :why WHERE run_id = :r AND case_id = :c",
                why=NOT_PREPARED, r=run["run_id"], c=case["case_id"])
         db.log(conn, run["run_id"], run["day"], "invalidated", case["case_id"], reason=NOT_PREPARED,
-               plan=rec["result"]["recommended"] if rec else None, round=case["round"])
+               plan=key, round=case["round"])
         out.append(case["case_id"])
     return out
 
@@ -432,9 +434,6 @@ def advance_day(conn, run_id: str, expected_version: int) -> dict:
             step_world(conn, run, world, truth)
     with buildsteps.step(run, "lifecycle_after"):
         _lifecycle_after(conn, run)  # executed, observed and closed, after the outcomes are written
-    # an unanswered or unconfirmed count request due by today ends with the day; it never blocked anything (04-09)
-    db.run(conn, "UPDATE evidence_requests SET state = 'EXPIRED' WHERE run_id = :r AND state IN ('OPEN', 'ANSWERED') "
-                 "AND due_day <= :d", r=run_id, d=run["day"])
     db.log(conn, run_id, run["day"], "day_advanced", to_day=run["day"] + 1)
     run = db.one(conn, "UPDATE demo_runs SET day = day + 1, version = version + 1 WHERE run_id = :r RETURNING *",
                  r=run_id)

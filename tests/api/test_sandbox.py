@@ -39,10 +39,32 @@ def session_run(session_id):
         return db.one(conn, "SELECT run_id, last_reset_ms FROM sessions WHERE session_id = :s", s=session_id)
 
 
+PRELOADED_TIMES = {"evidence_requests": ("created_at", "due_at", "ask_text"), "signals": ("created_at", "observed_at")}
+PRELOADED_ENTRIES = ("evidence_requested", "evidence_answered", "report_filed")
+
+
+def comparable(run_id, table):
+    """rows_without_run_id with the preloaded times left out (07-16): a clone shifts the preloaded rows' times, the
+    ask's respond-by time and the activity entries that filed them by its own now() (tests/api/test_preload.py)."""
+    with db.tx() as conn:
+        found = db.rows(conn, f"SELECT * FROM {table} WHERE run_id = :r", r=run_id)
+    drop = {"run_id"}
+    out = []
+    for row in found:
+        gone = set(drop)
+        if row.get("provenance") == "simulated":
+            gone |= set(PRELOADED_TIMES.get(table, ()))
+        if table == "activity_log" and row["type"] in PRELOADED_ENTRIES:
+            gone.add("at")
+        out.append(json.dumps({k: v for k, v in row.items() if k not in gone}, sort_keys=True, default=str))
+    return sorted(out)
+
+
 def test_a_clone_equals_its_template(run, template):
     """Rewritten for the shared dataset (05.2 D-08..D-10, the user's reset-protocol change): every workflow table's
-    rows equal the template's except run_id; the world tables are read through the template (tests/api/
-    test_overlay.py), so the new run has no row of its own in any of them."""
+    rows equal the template's except run_id and the preloaded times a clone shifts (07-16, D-05, D-18); the world
+    tables are read through the template (tests/api/test_overlay.py), so the new run has no row of its own in any of
+    them."""
     from api import overlay
     assert {"lots", "truth_lots", "inbound", "outcomes", "activity_log", "run_policy"} <= set(tables())
     assert not set(tables()) & sandbox.NOT_CLONED
@@ -51,7 +73,7 @@ def test_a_clone_equals_its_template(run, template):
         if table in overlay.OVERLAID:
             assert rows_without_run_id(run["run_id"], table) == [], table
         else:
-            assert rows_without_run_id(run["run_id"], table) == rows_without_run_id(template, table), table
+            assert comparable(run["run_id"], table) == comparable(template, table), table
     assert rows_without_run_id(run["run_id"], "activity_log")  # the warm-up's history was copied, not an empty run
     assert rows_without_run_id(template, "outcomes")  # the world the clone reads through its template
     t = fresh(template)
@@ -339,3 +361,195 @@ def test_pruning_ends_only_unreachable_data_in_bounded_batches_and_reset_stays_w
     with db.tx() as conn:
         sandbox.prune(conn)  # the next batch takes the rest
     assert [run_id for run_id in old if fresh(run_id) is not None] == []
+
+
+# 09-14 additions: keep the existing reset, clone, regression and prune assertions above unchanged.
+def release_cli(argv):
+    """Expose a missing CLI capability as its exit result, so RED tests assert behavior."""
+    try:
+        return sandbox.main(argv)
+    except SystemExit as exc:
+        return exc.code
+
+
+def restore_fixture_template(template):
+    with db.tx() as conn:
+        db.run(conn, "UPDATE demo_runs SET status = 'RETIRED', retired_at = now() "
+                     "WHERE kind = 'TEMPLATE' AND status = 'ACTIVE' AND run_id <> :r", r=template)
+        db.run(conn, "UPDATE demo_runs SET status = 'ACTIVE', retired_at = NULL WHERE run_id = :r", r=template)
+    sandbox.clear_cache()
+
+
+def test_inactive_release_cli_activates_and_restores_exact_predecessor_without_touching_workspaces(template, monkeypatch, capsys):
+    new = "tpl-p09-inactive-cli"
+    original = every_row(template)
+    with db.tx() as conn:
+        clone = sandbox.clone(conn, sandbox.active_template(conn))
+    copied = every_row(clone)
+    try:
+        assert release_cli(["build", "--allow-local", "--no-activate", "--run-id", new]) == 0
+        out = capsys.readouterr().out
+        assert f"template {new} READY" in out and f"previous ACTIVE: {template}" in out
+        assert every_row(template) == original and fresh(new)["status"] == "READY"
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("active/activate/restore must not migrate, install or generate")
+
+        monkeypatch.setattr(db, "migrate", forbidden)
+        monkeypatch.setattr(refdata, "install", forbidden)
+        from agent import briefs
+        monkeypatch.setattr(briefs, "main", forbidden)
+        assert release_cli(["active"]) == 0
+        assert capsys.readouterr().out == f"ACTIVE: {template}\n"
+        assert release_cli(["activate", new]) == 0
+        out = capsys.readouterr().out
+        assert f"template {new} ACTIVE" in out and f"retired: {template}" in out
+        assert fresh(template)["status"] == "RETIRED" and fresh(template)["retired_at"] is not None
+        assert fresh(new)["predecessor_run_id"] == template and fresh(new)["activated_at"] is not None
+        with db.tx() as conn:
+            assert sandbox.active_template(conn)["run_id"] == new
+            assert sandbox.predecessor(conn, new) == template
+        published = fresh(new)
+        assert release_cli(["activate", new]) == 0 and fresh(new) == published
+        capsys.readouterr()
+        assert release_cli(["restore", new]) == 0
+        assert f"ACTIVE: {template}" in capsys.readouterr().out
+        assert fresh(new)["status"] == "RETIRED" and fresh(new)["retired_at"] is not None
+        assert fresh(template)["status"] == "ACTIVE" and fresh(template)["retired_at"] is None
+        after_restore = fresh(new)
+        assert release_cli(["restore", new]) == 0 and fresh(new) == after_restore
+        assert every_row(clone) == copied
+        assert {t: v for t, v in every_row(template).items() if t != "demo_runs"} == {
+            t: v for t, v in original.items() if t != "demo_runs"}
+    finally:
+        restore_fixture_template(template)
+
+
+@pytest.mark.parametrize("kind,status", [("TEMPLATE", "INITIALIZING"), ("TEMPLATE", "FAILED"),
+                                         ("TEMPLATE", "RETIRED"), ("SANDBOX", "ACTIVE")])
+def test_explicit_activation_refuses_unfinished_failed_retired_or_sandbox_runs(template, kind, status):
+    run_id = "tpl-p09-refuse-" + kind.lower() + "-" + status.lower()
+    with db.tx() as conn:
+        db.run(conn, "INSERT INTO demo_runs (run_id, kind, dataset_version, status, day, next_case_no) "
+                     "SELECT :r, :k, dataset_version, :s, day, next_case_no FROM demo_runs WHERE run_id = :t",
+               r=run_id, k=kind, s=status, t=template)
+    before = fresh(template), fresh(run_id)
+    assert release_cli(["activate", run_id]) == 1
+    assert (fresh(template), fresh(run_id)) == before
+
+
+def test_activation_rolls_back_retirement_if_publication_fails(schema, template, monkeypatch):
+    new = sandbox.build_template(schema, activate=False)
+    before = fresh(template), fresh(new)
+    real = db.run
+
+    def failed_publication(conn, sql, **params):
+        if "UPDATE demo_runs SET status = 'ACTIVE'" in sql:
+            raise RuntimeError("publication failed")
+        return real(conn, sql, **params)
+
+    monkeypatch.setattr(db, "run", failed_publication)
+    with pytest.raises(RuntimeError, match="publication failed"):
+        db.in_tx(sandbox.activate_template, new)
+    assert (fresh(template), fresh(new)) == before
+
+
+def test_activation_records_actual_predecessor_even_when_inactive_build_is_older(schema, template):
+    older = sandbox.build_template(schema, activate=False)
+    newer = sandbox.build_template(schema)
+    try:
+        assert fresh(template)["status"] == "RETIRED" and fresh(template)["retired_at"] is not None
+        assert db.in_tx(sandbox.activate_template, older) == newer
+        assert db.in_tx(sandbox.predecessor, older) == newer
+        assert db.in_tx(sandbox.restore, older) == (newer, older)
+        assert db.in_tx(sandbox.restore, newer) == (template, newer)
+    finally:
+        restore_fixture_template(template)
+
+
+def test_concurrent_activations_leave_one_active_and_preserve_the_rollback_chain(schema, template):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    builds = [sandbox.build_template(schema, activate=False) for _ in range(2)]
+    gate = threading.Barrier(2)
+
+    def activate(run_id):
+        gate.wait(timeout=3)
+        return run_id, db.in_tx(sandbox.activate_template, run_id)
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(activate, builds))
+        with db.tx() as conn:
+            active = db.rows(conn, "SELECT run_id FROM demo_runs WHERE kind = 'TEMPLATE' AND status = 'ACTIVE'")
+        assert len(active) == 1 and active[0]["run_id"] in builds
+        last = active[0]["run_id"]
+        previous = dict(results)[last]
+        assert previous in builds and previous != last
+        assert dict(results)[previous] == template
+        assert db.in_tx(sandbox.restore, last) == (previous, last)
+        assert db.in_tx(sandbox.restore, previous) == (template, previous)
+    finally:
+        restore_fixture_template(template)
+
+
+def test_first_release_undo_and_prune_keep_template_provenance(schema, template, capsys):
+    new = sandbox.build_template(schema, activate=False)
+    with db.tx() as conn:
+        db.run(conn, "UPDATE demo_runs SET status = 'RETIRED', retired_at = now() WHERE run_id = :r", r=template)
+    try:
+        assert release_cli(["activate", new]) == 0
+        assert db.in_tx(sandbox.predecessor, new) is None
+        before = fresh(new)
+        assert release_cli(["restore", new]) == 1 and fresh(new) == before
+        assert release_cli(["restore", new, "--first"]) == 0
+        assert capsys.readouterr().out.rstrip().endswith("ACTIVE: none")
+        assert fresh(new)["status"] == "RETIRED"
+        before = fresh(template), fresh(new)
+        db.in_tx(sandbox.prune)
+        assert (fresh(template), fresh(new)) == before
+        assert release_cli(["restore", "tpl-p09-unknown"]) == 0
+        assert release_cli(["active"]) == 0
+        assert capsys.readouterr().out.rstrip().endswith("ACTIVE: none")
+    finally:
+        restore_fixture_template(template)
+
+
+def test_active_and_restore_on_a_fresh_database_are_read_only(template, monkeypatch, capsys):
+    monkeypatch.setattr(sandbox, "has_template_table", lambda conn: False, raising=False)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("read/restore of an empty DB must not migrate or install")
+
+    monkeypatch.setattr(db, "migrate", forbidden)
+    monkeypatch.setattr(refdata, "install", forbidden)
+    assert release_cli(["active"]) == 0
+    assert capsys.readouterr().out == "ACTIVE: none\n"
+    assert release_cli(["restore", "tpl-p09-absent", "--first"]) == 0
+    assert capsys.readouterr().out.rstrip().endswith("ACTIVE: none")
+
+
+def test_restore_preserves_legacy_timestamp_predecessor_provenance(schema, template):
+    new = sandbox.build_template(schema)
+    try:
+        with db.tx() as conn:
+            # This release was activated before explicit predecessor metadata existed.
+            db.run(conn, "UPDATE demo_runs SET activated_at = NULL, predecessor_run_id = NULL WHERE run_id = :r", r=new)
+        assert db.in_tx(sandbox.predecessor, new) == template
+        assert db.in_tx(sandbox.restore, new) == (template, new)
+    finally:
+        restore_fixture_template(template)
+
+
+# 09-15 additions: clone sources are persisted templates, never personal workspaces.
+@pytest.mark.parametrize("forged", [False, True])
+def test_clone_refuses_a_personal_workspace_even_if_its_metadata_claims_template(run, forged):
+    source = {**run, "kind": "TEMPLATE"} if forged else run
+    before = every_row(run["run_id"])
+    with db.tx() as conn:
+        ids = db.rows(conn, "SELECT run_id FROM demo_runs ORDER BY run_id")
+    with pytest.raises(sandbox.TemplateError, match="template"):
+        db.in_tx(sandbox.clone, source)
+    with db.tx() as conn:
+        assert db.rows(conn, "SELECT run_id FROM demo_runs ORDER BY run_id") == ids
+    assert every_row(run["run_id"]) == before

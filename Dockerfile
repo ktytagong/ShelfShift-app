@@ -1,5 +1,5 @@
-# The app image: the API plus the built web app. The same image runs the deploy job (python -m api.sandbox build)
-# and the benchmark jobs (python -m api.bench); the service command below never migrates or builds a template
+# The app image: the API plus the built web app. The same image runs the deploy job (python -m api.sandbox build,
+# activate and restore, and the baseline briefs job python -m agent.briefs) and the benchmark jobs (python -m api.bench); the service command below never migrates or builds a template
 # (OPS-05). Packages come only from the approved locks: web/package-lock.json (npm ci) and requirements.lock.
 
 # Stage 1: the production web build (tsc, then vite build) into /web/dist.
@@ -11,8 +11,9 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: the runtime. Only what the app reads ships: engine, data, api, reference (api/config.py reads reference/ at
-# import and refdata.install compares its fingerprint), the agent package (readyz's access checks import
-# agent/health.py with GCP on; 11-CONTEXT D-01, D-13) and the web build. No tests, no deploy folder (06-CONTEXT D-18).
+# import and refdata.install compares its fingerprint), the agent package (readyz's access checks import agent/health.py
+# with GCP on, 11-CONTEXT D-01, D-13; Phase 9's assistant, its tools and the baseline briefs job, `python -m agent.briefs`)
+# and the web build. Never tests or the deploy folder (06-CONTEXT D-18).
 FROM python:3.12-slim
 # No .pyc files in the image; logs arrive line by line in the job and service logs.
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1

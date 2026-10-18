@@ -15,7 +15,7 @@ from api import cases, db
 from tests.api.conftest import by_tag, fresh
 from tests.api.test_reporting_api import REPORT_NAMES, add_request, contributing_ids, oracle
 from tests.api.test_reports_contract_shapes import fixture, key_tree, projection
-from tests.web.conftest import case_json, session_json, switch_seat, take_ownership
+from tests.web.conftest import case_json, decision_body, session_json, switch_seat, take_ownership
 
 pytestmark = pytest.mark.web
 
@@ -207,9 +207,9 @@ def test_real_pending_commit_account_and_reset_transitions(visitor):
     switch_seat(page, dest)
     page.goto('/#/reports')
     assert_workspace(page, dest, dest)
-    post(page, f'/api/cases/{cid}/decision', {'rec_version': story['active_rec_version'], 'decision': 'accept'})
+    post(page, f'/api/cases/{cid}/decision', decision_body(page, cid, 'accept', story['active_rec_version']))
     switch_seat(page, source)
-    post(page, f'/api/cases/{cid}/decision', {'rec_version': story['active_rec_version'], 'decision': 'approve'})
+    post(page, f'/api/cases/{cid}/decision', decision_body(page, cid, 'approve', story['active_rec_version']))
     assert case_json(page, cid)['state'] == 'APPROVED'
     page.reload()
     committed = assert_workspace(page, source, source)

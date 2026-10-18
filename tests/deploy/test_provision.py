@@ -204,6 +204,34 @@ def test_setup_sh_is_executable_bash_3_2_safe_and_hands_off_to_provision():
     assert subprocess.run(["/bin/bash", "-n", str(sh)]).returncode == 0
 
 
+# --- setup ai (Phase 9) ---------------------------------------------------------------------------------------------
+
+def test_ai_enables_vertex_ai_and_grants_aiplatform_user_to_the_two_accounts_only(cfg):
+    runner = DryRunner()
+    provision.ai(cfg, runner)
+    assert runner.calls == [
+        g("services", "enable", "aiplatform.googleapis.com"),
+        g("projects", "add-iam-policy-binding", PROJECT, "--member", f"serviceAccount:{RUN_SA}", "--role",
+          "roles/aiplatform.user", "--condition", "None"),
+        g("projects", "add-iam-policy-binding", PROJECT, "--member", f"serviceAccount:{DEPLOY_SA}", "--role",
+          "roles/aiplatform.user", "--condition", "None")]
+
+
+def test_the_cli_ai_dry_run_prints_the_enable_and_two_bindings_and_nothing_else(tmp_path):
+    p = _cli("ai", "--dry-run", env_file=synthetic_env.write(tmp_path / "env"))
+    assert p.returncode == 0, p.stderr
+    lines = [ln for ln in p.stdout.splitlines() if ln.startswith("+ ")]
+    assert len(lines) == 3 and lines[0].startswith("+ gcloud services enable aiplatform.googleapis.com ")
+    assert all("roles/aiplatform.user" in ln and "--condition None" in ln for ln in lines[1:])
+    assert {"serviceAccount:" + RUN_SA in lines[1] + lines[2], "serviceAccount:" + DEPLOY_SA in lines[1] + lines[2]} \
+        == {True}
+    assert "release.sh" in p.stdout.splitlines()[-1] and BILLING not in p.stdout + p.stderr
+
+
+def test_setup_sh_names_the_ai_mode():
+    assert "bash deploy/setup.sh ai" in (ROOT / "deploy" / "setup.sh").read_text()
+
+
 # --- setup data -----------------------------------------------------------------------------------------------------
 
 AMOUNT = SYNTHETIC["BUDGET_AMOUNT_USD"]  # synthetic (12): no real budget amount is written in a test (06-05)

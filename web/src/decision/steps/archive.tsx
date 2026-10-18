@@ -14,7 +14,7 @@ import { useState, type ReactNode } from "react";
 import type { HistoryFilter } from "../../bars.ts";
 import { retryable } from "../../copy.ts";
 import { useSession } from "../../shell.tsx";
-import { Button, ErrorLine, HistoryList, Loading, TRY_AGAIN } from "../../ui.tsx";
+import { Button, ErrorLine, HISTORY_FILTERS, HistoryList, Loading, TRY_AGAIN } from "../../ui.tsx";
 import { historyLine, type HistoryEntry } from "../../vocab.ts";
 import { HISTORY_EMPTY, LOADING_HISTORY, useExport } from "../shared.ts";
 import type { StepModule, StepProps } from "../types.ts";
@@ -48,12 +48,17 @@ function Detail({ text }: { text: string }): ReactNode {
 
 function Panel({ d, activity }: StepProps) {
   const { session } = useSession();
-  const [filter, setFilter] = useState<HistoryFilter>("All");
+  const [filter, setFilter] = useState<HistoryFilter>(() => {
+    const requested = new URLSearchParams(window.location.hash.split("?")[1]).get("history");
+    return HISTORY_FILTERS.find(value => value === requested) ?? "All";
+  });
   const { entries, error, reload } = activity;
   const line = d.state === "CLOSED" ? CLOSED_LINE(d.reason) : null;
   const lines = entries === null ? null : entries.map((e) => {
     const h = historyLine(e as unknown as HistoryEntry, session.time_zone);
-    return { title: h.title, meta: h.meta, detail: h.detail === "" ? undefined : <Detail text={h.detail} />, group: h.group };
+    const id = JSON.stringify([e.at, e.type, e.payload.draft_id ?? e.payload.request_id ?? e.payload]);
+    return { id, title: h.title, meta: h.meta, detailText: h.detail,
+      detail: h.detail === "" ? undefined : <Detail text={h.detail} />, group: h.group };
   });
   return (
     <div className="flex min-w-0 flex-col gap-4">

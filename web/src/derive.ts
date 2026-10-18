@@ -175,3 +175,97 @@ export function pageInRange(page: number, pageSize: number, total: number): numb
   const last = Math.max(1, Math.ceil(total / pageSize));
   return page <= last ? null : last;
 }
+
+// --- 07-21: the fact checks' actions, the commitment's blockers and the final-approval rule (07-CONTEXT D-07, D-11,
+// D-12; 07-UI-SPEC surface 1). Own block, additive. Everything reads the server's keys (class, requests_left,
+// askable_again, commitment.blocks); nothing here decides what the server enforces, it only chooses what is shown.
+import type { Commitment, VerifiedFact } from "./api.ts";
+
+export type CheckPart = "count" | "expiry";
+// The check a fact kind takes: a count on PHANTOM_STOCK and STALE_COUNT, a printed date on ESTIMATED_EXPIRY (D-11).
+export function checkPart(kind: string): CheckPart | null {
+  return COUNT_KINDS.includes(kind) ? "count" : kind === "ESTIMATED_EXPIRY" ? "expiry" : null;
+}
+
+type VerifyHolder = RequestHolder & Pick<CaseDetail, "source" | "state">;
+
+// The row's one request action for the source store's manager (04-CONTEXT D-20) on a decision that can still be
+// re-planned: "ask" with no request on this version yet, "again" when the latest one may be asked again (the
+// server's `askable_again`: Unanswered, Can't check, Answered or Held, within the limit), and a disabled "again" once
+// the limit is used on a request that no longer stands. "none" otherwise: another account, a request still standing,
+// a kind with no check, a fact that changes nothing (no class).
+export type FactAction =
+  | { kind: "ask"; part: CheckPart; disabled: boolean }
+  | { kind: "again"; part: CheckPart; request: Request; disabled: boolean }
+  | { kind: "none" };
+export function factAction(
+  f: Pick<VerifiedFact, "fact_id" | "kind" | "class" | "changes_plan" | "requests_left">,
+  session: Pick<Session, "role" | "branch">, d: VerifyHolder,
+): FactAction {
+  const part = checkPart(f.kind);
+  if (part === null || !canReplan(d.state) || !isMe(session, d.source)) return { kind: "none" };
+  if (f.class === null || (f.class === undefined && !f.changes_plan)) return { kind: "none" };
+  const left = f.requests_left ?? 1; // the server refuses a request past the limit in any case
+  const r = requestForFact(d, f.fact_id);
+  if (r === null) return { kind: "ask", part, disabled: left <= 0 };
+  if (r.askable_again === true) return { kind: "again", part, request: r, disabled: false };
+  if (left <= 0 && (r.state === "CANT_CHECK" || r.overdue === true)) return { kind: "again", part, request: r, disabled: true };
+  return { kind: "none" };
+}
+
+// The other check offered in the same request panel (07-UI-SPEC "Request actions"; D-11): a fact of the other part at
+// the same branch with no request on this version, the expiry lots inside the count fact's lots (the server's pairing
+// rule). Null when there is none.
+export function companionFact<F extends Pick<VerifiedFact, "fact_id" | "kind" | "branch" | "lot_ids">>(
+  d: RequestHolder & { fact_checks: F[] }, f: F,
+): F | null {
+  const part = checkPart(f.kind);
+  if (part === null) return null;
+  for (const x of d.fact_checks) {
+    const p = checkPart(x.kind);
+    if (x.fact_id === f.fact_id || x.branch !== f.branch || p === null || p === part) continue;
+    if (requestForFact(d, x.fact_id) !== null) continue;
+    const [count, expiry] = part === "count" ? [f, x] : [x, f];
+    if (expiry.lot_ids.every((l) => count.lot_ids.includes(l))) return x;
+  }
+  return null;
+}
+
+// The body of POST /api/cases/{id}/requests: one fact (`fact_id`) or a count and an expiry together (`fact_ids`,
+// count first), and `recount_of` when asking again.
+export function requestBody(
+  recVersion: string, parts: Pick<VerifiedFact, "fact_id" | "kind">[], again?: Pick<Request, "request_id">,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { rec_version: recVersion };
+  if (parts.length === 1) body.fact_id = parts[0].fact_id;
+  else body.fact_ids = [...parts].sort((a, b) => (checkPart(a.kind) === "count" ? -1 : checkPart(b.kind) === "count" ? 1 : 0))
+    .map((p) => p.fact_id);
+  if (again !== undefined) body.recount_of = again.request_id;
+  return body;
+}
+
+// What blocks committing, in the server's order (commitment.blocks: lot holds, then Required checks), as the summary
+// and the approve step name them. `titleOf` words a fact check (copy.factTitle; derive never imports copy).
+export type Blocker =
+  | { kind: "required_check"; fact_id: string; title: string; owner: string; blocked: string | null }
+  | { kind: "lot_hold"; lot: string; owner: string };
+export function blockersOf<F extends Pick<VerifiedFact, "fact_id" | "blocked_label">>(
+  d: { commitment?: Commitment; fact_checks: F[] }, titleOf: (f: F) => string,
+): Blocker[] {
+  return (d.commitment?.blocks ?? []).map((b): Blocker => {
+    if (b.kind === "lot_hold") return { kind: "lot_hold", lot: b.lot_ids.join(", "), owner: b.owner_branch };
+    const f = d.fact_checks.find((x) => x.fact_id === b.fact_id);
+    return {
+      kind: "required_check", fact_id: b.fact_id ?? "", title: f === undefined ? b.lot_ids.join(", ") : titleOf(f),
+      owner: b.owner_branch, blocked: f?.blocked_label ?? null,
+    };
+  });
+}
+
+// True when this side's approving decision would be the final one of the round: every other side the plan needs has
+// decided (a Keep or a markdown needs the source only). The server checks the blocks at that commit (D-12).
+export function isFinalDecision(
+  d: { approvals: Pick<CaseDetail["approvals"], "required" | "decisions"> }, side: "source" | "destination",
+): boolean {
+  return d.approvals.required.filter((s) => s !== side).every((s) => d.approvals.decisions[s] !== undefined);
+}

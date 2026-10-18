@@ -34,6 +34,14 @@ import {
 import { HISTORY_EMPTY, LOADING_HISTORY, decisionDate, mayAct } from "../decision/shared.ts";
 import { STEP_MODULES } from "../decision/modules.ts";
 import type { StepProps } from "../decision/types.ts";
+import { DecisionBanners } from "../decision/banners.tsx"; // Phase 7 banners (07-22)
+// 07-21: the commitment rule in the summary (07-UI-SPEC surface 1 "Summary").
+import { COMMITMENT } from "../copy.ts";
+import { commitView } from "../decision/commitment.ts";
+import { CommitState } from "../ui.tsx";
+import type { VerifyDetailKeys } from "../api.ts";
+import { cancelledLine, selectedPlanLine } from "../copy.ts";
+import { VerificationStrip } from "../decision/factchecks.tsx";
 
 // --- strings ---------------------------------------------------------------------------------------------------------
 
@@ -120,15 +128,21 @@ function waitingLine(d: CaseDetail61): string | null {
 // --- the page --------------------------------------------------------------------------------------------------------
 
 function DecisionPage({ route }: { route: Route }) {
+  const { session } = useSession();
   const key = keyOf(route.path);
   if (key === null) return <NotFound />;
-  return <StockDecision key={key} caseId={key} viewed={stepOf(route.query.step)} />;
+  // An account/workspace change discards the old authorized readers immediately.
+  // Ordinary data refreshes keep the workspace and its unsaved forms mounted.
+  return <StockDecision key={JSON.stringify([key, session.run_id, session.role, session.branch])}
+    caseId={key} viewed={stepOf(route.query.step)} />;
 }
 
 function StockDecision({ caseId, viewed }: { caseId: string; viewed: StepKey | null }) {
   const { session } = useSession();
   const { detail: loaded, error, reload: reloadCase } = useCase(caseId, session);
-  const activity = useActivity(caseId, session);
+  const readActivity = useActivity(caseId, session);
+  const activity: ActivityLoad = { ...readActivity,
+    entries: readActivity.error && [401, 403, 404].includes(readActivity.error.status) ? null : readActivity.entries };
   const reloadActivity = activity.reload;
   const reload = useCallback(() => {
     reloadCase();
@@ -196,11 +210,15 @@ function Workspace({ d, viewed, refreshFailed, reload, activity }: {
       <div className="flex min-w-0 flex-col gap-4 border-b border-line bg-white px-4 pt-2 pb-4 md:px-6">
         <Chips d={d} session={session} plain={plain} />
         <p className="text-label text-tx2">{DECISION_DATE_LINE(decisionDate(d, plain))}</p>
+        <PlanLines d={d} activity={activity} timeZone={plain.time_zone} />
         <Facts d={d} session={plain} />
+        <VerificationStrip d={d} reload={reload} />
         <Stepper caseId={d.case_id} states={states} current={current} viewed={viewed} />
       </div>
       <div className="flex min-w-0 flex-col gap-4 p-4 md:p-6">
         {refreshFailed && <StaleBanner kind="refresh_failed" onAct={reload} />}
+        {/* Phase 7: lot hold, review flag and new report banners, above the step panel (07-22) */}
+        <DecisionBanners d={d} session={session} reload={reload} />
         <section data-testid="step-panel" data-step={viewed} aria-labelledby="step-panel-title"
           className="flex min-w-0 flex-col gap-4 rounded-2xl border border-line bg-white p-4 shadow-card">
           <div className="flex flex-wrap items-center gap-2">
@@ -308,6 +326,9 @@ function Facts({ d, session }: { d: CaseDetail61; session: Session }) {
     label: FACT.next, value: key === null ? NO_NEXT_ACTION : NEXT_ACTION_LABEL[key],
     note: d.next_action.who.length === 0 ? undefined : d.next_action.who.map(whoName).join(" · "),
   });
+  // 07-21: the Commitment tile (07-UI-SPEC "CommitState"; 06.1-UI-SPEC: Phase 7 adds its tile to this grid).
+  const commit = commitView(d, cal);
+  if (commit !== null) facts.push({ label: COMMITMENT, value: <CommitState view={commit} /> });
   return (
     <dl data-testid="facts" className="m-0 grid min-w-0 grid-cols-[repeat(auto-fit,minmax(176px,1fr))] gap-x-4 gap-y-2">
       {facts.map((f) => (
@@ -379,8 +400,9 @@ function LatestHistory({ caseId, activity, session }: { caseId: string; activity
   const { entries, error, reload } = activity;
   const lines = entries === null ? null : entries.map((e) => {
     const h = historyLine(e as unknown as HistoryEntry, session.time_zone);
-    // The API's own group names ("Decisions", "Data"), which bars.historyFilter compares exactly.
-    return { title: h.title, meta: h.meta, detail: h.detail === "" ? undefined : h.detail, group: h.group };
+    // Stable event identities preserve a disclosure when a new entry arrives.
+    const id = JSON.stringify([e.at, e.type, e.payload.draft_id ?? e.payload.request_id ?? e.payload]);
+    return { id, title: h.title, meta: h.meta, detail: h.detail === "" ? undefined : h.detail, group: h.group };
   });
   const latest = lines === null ? null : historyFilter(lines, filter).slice(-3).reverse();
   return (
@@ -388,7 +410,8 @@ function LatestHistory({ caseId, activity, session }: { caseId: string; activity
       className="flex min-w-0 flex-col gap-2 rounded-2xl border border-line bg-white p-4 shadow-card">
       <div className="flex flex-wrap items-center gap-2">
         <h2 id="latest-history-title" className="m-0 text-title font-semibold">{LATEST_HISTORY}</h2>
-        <a href={hrefOf(caseId, "ARCHIVE")} className="ml-auto text-body font-semibold text-navy-800 underline underline-offset-2">
+        <a href={`${hrefOf(caseId, "ARCHIVE")}${filter === "All" ? "" : `&history=${encodeURIComponent(filter)}`}`}
+          className="ml-auto text-body font-semibold text-navy-800 underline underline-offset-2">
           {SHOW_FULL_HISTORY}
         </a>
       </div>
@@ -399,6 +422,31 @@ function LatestHistory({ caseId, activity, session }: { caseId: string; activity
         ? error === null && <Loading text={LOADING_HISTORY} />
         : <HistoryList entries={latest} filter={filter} onFilter={setFilter} emptyText={HISTORY_EMPTY(filter)} />}
     </section>
+  );
+}
+
+// --- 07-21: the selected plan and the cancelled plan (07-UI-SPEC "Select another plan", "Cancel approved plan";
+// 07-CONTEXT D-23, D-25). Own block. "Selected plan · {option} · by {account} · {recorded time}" from the card's
+// selected_plan while it is bound to this version; "Cancelled by {account} · {recorded time} · {reason}" from the
+// server's `cancelled` history entry once the plan is closed as cancelled. Nothing here is derived beyond formatting.
+function PlanLines({ d, activity, timeZone }: { d: CaseDetail61; activity: ActivityLoad; timeZone: string }) {
+  const chosen = (d as CaseDetail61 & VerifyDetailKeys).selected_plan ?? null;
+  const entry = d.state === "CLOSED"
+    ? (activity.entries ?? []).filter((e) => e.type === "cancelled").at(-1) as unknown as HistoryEntry | undefined : undefined;
+  const reason = entry === undefined ? null : entry.payload.reason;
+  return (
+    <>
+      {chosen !== null && (
+        <p data-testid="selected-plan" className="num m-0 text-label text-tx2 break-words">
+          {selectedPlanLine(chosen.label, chosen.by, chosen.at, timeZone)}
+        </p>
+      )}
+      {entry !== undefined && (
+        <p data-testid="cancelled-line" className="num m-0 text-label text-tx break-words">
+          {cancelledLine(entry.actor?.account ?? null, entry.at, typeof reason === "string" ? reason : null, timeZone)}
+        </p>
+      )}
+    </>
   );
 }
 

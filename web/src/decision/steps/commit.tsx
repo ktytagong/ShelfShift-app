@@ -16,6 +16,12 @@ import { Button, ErrorLine, TRY_AGAIN } from "../../ui.tsx";
 import { BOOKING_CONFIRMED, MARKDOWN_WORK_ORDER, TERMS } from "../../vocab.ts";
 import { BookingLine, WriteError, isCommitted, prepareWrite, useRefetchOnFocus, useStepWrite } from "../approval.tsx";
 import type { StepModule, StepProps } from "../types.ts";
+// 07-21: Prepare's reason while something blocks commitment (07-UI-SPEC "Approve step"; 07-CONTEXT D-12).
+import { cantPrepareYet } from "../../copy.ts";
+import { contextHref, firstBlocker } from "../commitment.ts";
+// 07-21: Cancel approved plan… beside Prepare (07-CONTEXT D-23, D-36; the server lists it in commitment.next_actions).
+import { isMe } from "../../derive.ts";
+import { CANCEL_OPEN, ReasonForm, cancelWrite, useFormOpener } from "../approval.tsx";
 
 // --- strings ---------------------------------------------------------------------------------------------------------
 
@@ -89,14 +95,32 @@ function Panel({ d, session, activity, reload }: StepProps) {
 // Prepare transfer work order (or markdown) by the source manager while the server says prepare is next.
 function Primary({ d, session, reload }: StepProps) {
   const write = useStepWrite(d, reload);
+  const cancel = useFormOpener();
   if (d.next_action.key !== "prepare") return null;
   const kind = d.result?.options.find((o) => o.key === d.result?.recommended)?.kind;
+  const blocker = firstBlocker(d, session.calendar);
+  const mayCancel = (d.commitment?.next_actions ?? []).includes("cancel_approved")
+    && (isMe(session, d.source) || isMe(session, d.dest));
   return (
     <div className="flex min-w-0 max-w-full flex-col items-start gap-2">
-      <Button kind="primary" busy={write.busy} onClick={() => void write.run(prepareWrite(d))}>
-        {kind === "MARKDOWN" ? PREPARE_MARKDOWN : PREPARE_TRANSFER}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button kind="primary" busy={write.busy} disabled={blocker !== null} onClick={() => void write.run(prepareWrite(d))}>
+          {kind === "MARKDOWN" ? PREPARE_MARKDOWN : PREPARE_TRANSFER}
+        </Button>
+        {mayCancel && (
+          <Button ref={cancel.opener} kind="plain" aria-expanded={cancel.open} disabled={write.busy}
+            onClick={() => cancel.setOpen(true)}>{CANCEL_OPEN}</Button>
+        )}
+      </div>
+      {blocker !== null && (
+        <a data-testid="prepare-blocked" href={contextHref(d.case_id)}
+          className="text-label text-bad underline underline-offset-2 break-words">{cantPrepareYet(blocker)}</a>
+      )}
       <WriteError write={write} d={d} session={session} reload={reload} />
+      {mayCancel && cancel.open && (
+        <ReasonForm kind="cancel" d={d} session={session} reload={reload} onClose={cancel.close}
+          write={(reason) => cancelWrite(d, reason)} />
+      )}
     </div>
   );
 }

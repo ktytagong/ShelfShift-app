@@ -25,7 +25,8 @@ from tests.api.test_publicref import BOUND, LARGE
 ROW_KEYS = {"lot_id", "branch", "sku", "product", "zone", "origin", "expiry_day", "expiry_date", "expiry_source", "qty",
             "markdown_pct", "last_verified_day", "last_verified_date", "reserved", "available", "incoming",
             "forecast_to_expiry", "next_markdown", "discrepancies", "case_key", "case_state", "flag_key", "action",
-            "eligibility", "kinds"}
+            "eligibility", "kinds",
+            "lot_hold", "fact_label"}  # 07-22: the row's hold and confirmed-fact label (contract row 2026-10-18)
 DRAWER_KEYS = ROW_KEYS | {"holds", "review_flags", "transfers", "history"}
 LOT_KINDS = {"stock": "simulated", "forecast": "forecast"}
 PRODUCTS: set[str] = set()  # the public set's product codes, filled by the capture test

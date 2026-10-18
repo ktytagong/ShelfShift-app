@@ -13,6 +13,8 @@ from engine.simulate import HorizonError
 CODES = {
     "idempotency_key": 400, "bad_request": 400, "bad_input": 400, "bad_override": 400, "unknown_fact": 400,
     "out_of_bounds": 400, "not_writable": 400, "unknown_account": 400,
+    "check_time": 400,  # Phase 7: "When did you check?" (07-CONTEXT D-22)
+    "not_an_option": 400,  # Phase 7: Select another plan takes only an engine option (07-CONTEXT D-23)
     "locked": 401, "bad_passcode": 401,
     "forbidden": 403,
     "not_found": 404,
@@ -21,7 +23,14 @@ CODES = {
     "missing_data": 409, "demo_complete": 409, "too_many_requests": 409, "needs_input": 409, "count_mismatch": 409,
     "scope_tick": 409, "engine_version": 409, "not_available": 409, "gone": 409,
     "already_owned": 409, "not_owned": 409, "dispatch_blocked": 409, "discrepancy_open": 409,  # 06.1, all at once
-    "bad_file": 415,
+    "older_evidence": 409, "review_required": 409,  # Phase 7: newer confirmed evidence wins (07-CONTEXT D-22)
+    "commitment_blocked": 409, "ack_required": 409, "cannot_continue": 409,  # Phase 7: the commitment rule (D-12, D-17)
+    "stale_plan": 409,  # Phase 7: approvals are bound to the plan key (07-CONTEXT D-23)
+    "not_at_risk": 409,  # Phase 7: Reassess on a lot that no longer needs a decision (07-CONTEXT D-24)
+    "already_dispatched": 409,  # Phase 7: cancel refuses work whose stock has left (07 review A; D-23, D-32)
+    "quote_expired": 409,  # Phase 7: "This quote expired on {date}" (confirming a TRANSPORT quote; D-14)
+    "too_large": 413,  # Phase 7: "Files can be at most 5 MB" (the number from uploads.max_bytes; D-20)
+    "bad_file": 415,  # "Only PNG, JPEG or PDF files can be attached" (by content; api/files.py BAD_FILE)
     "cap_reached": 429,
     # 11-CONTEXT D-01, D-02; contract Judge-ready release (11).
     "paused": 503, "internal": 500,

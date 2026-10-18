@@ -46,9 +46,10 @@ PAGES: dict[str, P | None] = {
     "/board": P("Loading the Decision board…", "The Decision board didn't load", r"/api/cases(\?|$)"),
     "/cases": P("Loading the stock decision…", "This stock decision didn't load", r"/api/cases/[^/?]+$"),
     "/schedule": P("Loading the planned schedule…", "The planned schedule didn't load", r"/api/schedule(\?|$)"),
-    "/tasks": P("Loading tasks…", "Tasks didn't load", r"/api/(requests|transfers)(\?|$)"),
+    "/tasks": P("Loading tasks…", "Tasks didn't load", r"/api/tasks(\?|$)"),  # one read since 07-19
     "/transfers": P("Loading branch transfers…", "Branch transfers didn't load", r"/api/transfers(\?|$)"),
     "/stock": P("Loading stock…", "Stock & lots didn't load", r"/api/lots(\?|$)"),
+    "/events": P("Loading reports…", "Business events didn't load", r"/api/signals(\?|$)"),  # 07-20
     "/analytics": P("Loading analytics…", "Analytics didn't load", r"/api/analytics(\?|$)", stale=False),
     "/reports": P("Loading reports…", "Reports didn't load", r"/api/reports/workspace(\?|$)"),
     "/forecasts": P("Loading forecasts…", "Forecasts didn't load", r"/api/forecasts(\?|$)"),

@@ -19,6 +19,9 @@ import {
   LinkButton, StaleBanner, TRY_AGAIN,
 } from "../ui.tsx";
 import type { HistoryFilter } from "../bars.ts";
+import type { LotRowBannerKeys } from "../contract.ts"; // a lot row: its hold and fact label (07-22)
+import { LOT_HOLD } from "../boardview.ts";
+import { ReportFromLot } from "../report.tsx"; // 07-20: Report an observation on a row
 
 const TITLE = "Stock & lots";
 const LOADING = "Loading stock…"; // (proposed, UI-SPEC "Interaction states")
@@ -132,6 +135,23 @@ function CoverBar({ parts }: { parts: CoverParts }) {
 }
 
 
+// Phase 7 (07-UI-SPEC surface 6; 07-22): a held lot's "Lot hold" chip, and the confirmed fact's label, readable on
+// hover (the row's title) and by keyboard focus and screen readers (a focusable note under the lot).
+function LotMarks({ row }: { row: LotRow & LotRowBannerKeys }) {
+  const hold = row.lot_hold ?? null;
+  const label = row.fact_label ?? null;
+  if (hold === null && label === null) return null;
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1">
+      {hold !== null && <span data-testid="lot-hold-chip" title={hold.reason}><Pill tone="bad" icon="hold">{LOT_HOLD}</Pill></span>}
+      {label !== null && (
+        <span data-testid="fact-label" tabIndex={0} title={label} aria-label={label}
+          className="block max-w-48 truncate text-label text-ink-2 focus:whitespace-normal">{label}</span>
+      )}
+    </span>
+  );
+}
+
 function LotsTable({ rows, day, hq, onView }: {
   rows: LotRow[]; day: number; hq: boolean; onView: (lotId: string) => void;
 }) {
@@ -158,12 +178,13 @@ function LotsTable({ rows, day, hq, onView }: {
             const act = rowAction(r);
             const disc = discrepancyText(r.discrepancies);
             return (
-              <tr key={r.lot_id} data-lot={r.lot_id}>
+              <tr key={r.lot_id} data-lot={r.lot_id} title={(r as LotRow & LotRowBannerKeys).fact_label ?? undefined}>
                 <td className={`${td} font-mono ${act?.primary ? "shadow-[inset_4px_0_0_var(--color-navy-800)]" : ""}`}>{r.sku}</td>
                 <td className={td}>
                   <span className="font-mono">{r.lot_id}</span>
                   <DesignedLabel lot={{ origin: r.origin }} session={session} />
                   {hq && <span className="block text-label text-ink-2">{r.branch}</span>}
+                  <LotMarks row={r as LotRow & LotRowBannerKeys} />
                 </td>
                 <td className={`${td} num whitespace-nowrap`}>{expiryText(r)}</td>
                 <td className={td}><CoverBar parts={coverParts(r)} /></td>
@@ -184,6 +205,7 @@ function LotsTable({ rows, day, hq, onView }: {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button kind="ghost" onClick={() => onView(r.lot_id)}>{VIEW_LOT}</Button>
                     {act !== null && <LinkButton href={act.href} primary={act.primary}>{act.label}</LinkButton>}
+                    <ReportFromLot lot={r} />
                   </div>
                 </td>
               </tr>

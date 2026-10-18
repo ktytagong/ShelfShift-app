@@ -20,6 +20,7 @@ from engine.model import KEEP, MARKDOWN, TRANSFER, totals
 from engine.simulate import HorizonError
 from engine.timing import first_sellable_day
 from tests.api.conftest import by_tag, fresh, own_series, owned_send, seat, take, world_lot
+from tests.api.verify_helpers import ack, shown  # approve and accept acknowledge (D-26) and name the plan (07 review C)
 
 STORY = cases.STORY_KEY
 TRANSFER_HOLDS = {"DEMAND", "STORAGE", "TRUCK", "SOURCE_LOT"}  # spec §8 Lifecycle: a transfer with a hold rest
@@ -125,8 +126,8 @@ def approve_transfer(run, case_id=STORY):
     """Send, accept and approve a transfer case on its active version."""
     src, dest, v = source_of(run, case_id), seat(pick(run, case_id).dest), version(run, case_id)
     owned_send(run, src, case_id, v)
-    call(run, workflow.decide, dest, case_id, v, "accept")
-    return call(run, workflow.decide, src, case_id, v, "approve")
+    call(run, workflow.decide, dest, case_id, v, "accept", None, ack(run, case_id), shown(run, case_id))
+    return call(run, workflow.decide, src, case_id, v, "approve", None, ack(run, case_id), shown(run, case_id))
 
 
 def held_kinds(plan):
@@ -140,9 +141,11 @@ def test_a_transfer_holds_every_resource_at_send_and_commits_after_both_sides(ru
     v = version(run, cid)
     assert owned_send(run, src, cid, v) == {"state": "PENDING_APPROVAL", "round": 1}
     assert {k for k, _ in holds(run, cid)} == held_kinds(plan)  # every resource the plan's rest needs, at send
-    assert call(run, workflow.decide, dest, cid, v, "accept") == {"state": "PENDING_APPROVAL"}
+    assert call(run, workflow.decide, dest, cid, v, "accept", None, ack(run, cid), shown(run, cid)) == \
+        {"state": "PENDING_APPROVAL"}
     assert holds(run, cid, ("COMMITTED", "CONVERTED")) == []  # one side is not enough
-    assert call(run, workflow.decide, src, cid, v, "approve") == {"state": "APPROVED"}
+    assert call(run, workflow.decide, src, cid, v, "approve", None, ack(run, cid), shown(run, cid)) == \
+        {"state": "APPROVED"}
     assert state(run, cid) == "APPROVED" and holds(run, cid) == []  # nothing is still HELD
     assert [k for k, _ in holds(run, cid, ("CONVERTED",))] == ["DEMAND"]
     assert {k for k, _ in holds(run, cid, ("COMMITTED",))} == held_kinds(plan) - {"DEMAND"}
@@ -166,11 +169,13 @@ def test_either_order_of_decisions_commits(run):
     src, dest = seat(case["source_branch"]), seat(plan.dest)
     v = version(run, cid)
     owned_send(run, src, cid, v)
-    assert call(run, workflow.decide, src, cid, v, "approve") == {"state": "PENDING_APPROVAL"}
+    assert call(run, workflow.decide, src, cid, v, "approve", None, ack(run, cid), shown(run, cid)) == \
+        {"state": "PENDING_APPROVAL"}
     with db.tx() as conn:  # the destination is the one still to act
         card = next(c for c in cases.board(conn, fresh(run["run_id"])) if c["case_id"] == cid)
     assert card["next_owner"] == [{"role": "manager", "branch": plan.dest}]
-    assert call(run, workflow.decide, dest, cid, v, "accept") == {"state": "APPROVED"}
+    assert call(run, workflow.decide, dest, cid, v, "accept", None, ack(run, cid), shown(run, cid)) == \
+        {"state": "APPROVED"}
     assert [k for k, _ in holds(run, cid, ("CONVERTED",))] == ["DEMAND"]
 
 
@@ -201,8 +206,9 @@ def test_approval_passes_with_all_the_demand_held_by_this_case(run):
     # its own holds are left out of its own availability, so the recheck at commit still sees all of it
     assert transfer_caps(eff_input(run, cid), trip)[0]["demand"] == plan.qty
     v = version(run, cid)
-    call(run, workflow.decide, seat(plan.dest), cid, v, "accept")
-    assert call(run, workflow.decide, seat(case["source_branch"]), cid, v, "approve") == {"state": "APPROVED"}
+    call(run, workflow.decide, seat(plan.dest), cid, v, "accept", None, ack(run, cid), shown(run, cid))
+    assert call(run, workflow.decide, seat(case["source_branch"]), cid, v, "approve", None, ack(run, cid),
+                shown(run, cid)) == {"state": "APPROVED"}
 
 
 # --- conflicts, competing sends, keep and markdown, roles, versions, expiry and shipment checks (Task 2) ------------
@@ -264,8 +270,9 @@ def test_a_second_case_asking_for_the_same_demand_fails(run):
     assert booked_rows(run, tid) == [] and state(run, tid) == "OPEN"
     # once the story transfer is committed it is counted once, as an inbound delivery: still no demand left
     v = version(run, STORY)
-    call(run, workflow.decide, seat(pick(run, STORY).dest), STORY, v, "accept")
-    call(run, workflow.decide, src, STORY, v, "approve")
+    call(run, workflow.decide, seat(pick(run, STORY).dest), STORY, v, "accept", None, ack(run, STORY),
+         shown(run, STORY))
+    call(run, workflow.decide, src, STORY, v, "approve", None, ack(run, STORY), shown(run, STORY))
     e = raises(owned_send, run, src, tid, version(run, tid))
     assert e.code == "conflict" and CAP_REASON["demand"] in e.extra["reasons"] and booked_rows(run, tid) == []
 
@@ -323,7 +330,7 @@ def test_keep_holds_nothing_and_goes_straight_to_executed(run):
     assert approvals["required"] == ["source"] and approvals["resources"] == []
     assert owned_send(run, src, cid, v) == {"state": "PENDING_APPROVAL", "round": 1}
     assert booked_rows(run, cid) == []
-    assert call(run, workflow.decide, src, cid, v, "approve") == {"state": "EXECUTED"}
+    assert call(run, workflow.decide, src, cid, v, "approve", None, None, shown(run, cid)) == {"state": "EXECUTED"}
     assert state(run, cid) == "EXECUTED"
 
 
@@ -336,7 +343,8 @@ def test_markdown_takes_the_lot_price_right(run):
     assert [(r["kind"], r["needed"], r["available"], r["unit"]) for r in resources] == [("LOT_PRICE", 1, 1, "right")]
     owned_send(run, src, cid, v)
     assert holds(run, cid) == [("LOT_PRICE", lot)]
-    assert call(run, workflow.decide, src, cid, v, "approve") == {"state": "APPROVED"}  # the source alone
+    assert call(run, workflow.decide, src, cid, v, "approve", None, None, shown(run, cid)) == \
+        {"state": "APPROVED"}  # the source alone
     assert holds(run, cid, ("COMMITTED",)) == [("LOT_PRICE", lot)] and holds(run, cid) == []
 
 
@@ -418,7 +426,7 @@ def test_an_expired_hold_returns_the_case_to_open_on_the_same_version(run):
     case = case_with_pick(run, TRANSFER)
     src, dest, v = seat(case["source_branch"]), seat(pick(run, STORY).dest), version(run, STORY)
     owned_send(run, src, STORY, v)
-    call(run, workflow.decide, dest, STORY, v, "accept")
+    call(run, workflow.decide, dest, STORY, v, "accept", None, ack(run, STORY), shown(run, STORY))
     run_out_the_clock(run)
     e = raises(call, run, workflow.decide, src, STORY, v, "approve")
     assert (e.code, e.message) == ("hold_expired", "Capacity hold expired. Check availability and book again.")  # D-57
@@ -478,13 +486,15 @@ def test_a_decision_from_an_expired_round_does_not_count(run):
     case = case_with_pick(run, TRANSFER)
     src, dest, v = seat(case["source_branch"]), seat(pick(run, STORY).dest), version(run, STORY)
     owned_send(run, src, STORY, v)
-    call(run, workflow.decide, dest, STORY, v, "accept")
+    call(run, workflow.decide, dest, STORY, v, "accept", None, ack(run, STORY), shown(run, STORY))
     run_out_the_clock(run)
     with db.tx() as conn:
         cases.board(conn, fresh(run["run_id"]))  # any read applies the expiry
     assert owned_send(run, src, STORY, v) == {"state": "PENDING_APPROVAL", "round": 2}  # Recheck and resend
-    assert call(run, workflow.decide, src, STORY, v, "approve") == {"state": "PENDING_APPROVAL"}  # round 1's yes is gone
-    assert call(run, workflow.decide, dest, STORY, v, "accept") == {"state": "APPROVED"}
+    assert call(run, workflow.decide, src, STORY, v, "approve", None, ack(run, STORY), shown(run, STORY)) == \
+        {"state": "PENDING_APPROVAL"}  # round 1's yes is gone
+    assert call(run, workflow.decide, dest, STORY, v, "accept", None, ack(run, STORY), shown(run, STORY)) == \
+        {"state": "APPROVED"}
 
 
 def test_resend_holds_everything_again_or_nothing(run):
@@ -513,7 +523,7 @@ def test_nothing_extends_a_hold(run):
         return [(r["res_id"], r["expires_at"]) for r in booked_rows(run, STORY) if r["state"] == "HELD"]
     owned_send(run, src, STORY, v)
     sent = expiries()
-    call(run, workflow.decide, dest, STORY, v, "accept")
+    call(run, workflow.decide, dest, STORY, v, "accept", None, ack(run, STORY), shown(run, STORY))
     with db.tx() as conn:  # reads neither
         cases.board(conn, fresh(run["run_id"]))
         cases.detail(conn, fresh(run["run_id"]), STORY)
@@ -580,9 +590,9 @@ def test_a_transfer_without_a_verifiable_source_is_refused_before_booking(run, m
     assert booked_rows(run, STORY) == [] and logged(run, STORY, "sent") == []
     monkeypatch.setattr(inputs, "case_runs", real)
     owned_send(run, src, STORY, v)  # and at commit: the lot moves after the send
-    call(run, workflow.decide, seat(plan.dest), STORY, v, "accept")
+    call(run, workflow.decide, seat(plan.dest), STORY, v, "accept", None, ack(run, STORY), shown(run, STORY))
     move_lot(elsewhere)
-    refused(workflow.decide, src, STORY, v, "approve")
+    refused(workflow.decide, src, STORY, v, "approve", None, ack(run, STORY), shown(run, STORY))
     with db.tx() as conn:
         assert db.rows(conn, "SELECT 1 FROM inbound WHERE run_id = :r AND source_case_id = :c",
                        r=run["run_id"], c=STORY) == []
@@ -768,7 +778,7 @@ def test_commit_recheck_refuses_when_availability_changed(run):
     cid, plan = case["case_id"], pick(run, STORY)
     src, dest, v = seat(case["source_branch"]), seat(plan.dest), version(run, cid)
     owned_send(run, src, cid, v)
-    call(run, workflow.decide, dest, cid, v, "accept")
+    call(run, workflow.decide, dest, cid, v, "accept", None, ack(run, cid), shown(run, cid))
     held_before = holds(run, cid)
     eff = eff_input(run, cid)
     trip = next(r for r in eff.runs if r.run_code == plan.run_code and r.dest == plan.dest)
@@ -777,7 +787,7 @@ def test_commit_recheck_refuses_when_availability_changed(run):
         if lost.get(d, 0.0) > 0:
             add_booking(run["run_id"], "OTHER", "DEMAND", f"{plan.dest}|{eff.product.sku}", d, lost[d])
     assert transfer_caps(eff_input(run, cid), trip)[0]["demand"] < plan.qty  # availability really shrank
-    e = raises(call, run, workflow.decide, src, cid, v, "approve")
+    e = raises(call, run, workflow.decide, src, cid, v, "approve", None, ack(run, cid), shown(run, cid))
     assert (e.status, e.code) == (409, "conflict")
     assert CAP_REASON["demand"] in e.extra["reasons"]
     assert state(run, cid) == "PENDING_APPROVAL"

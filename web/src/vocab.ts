@@ -56,6 +56,10 @@ export type HistoryEntry = {
 };
 export type HistoryLine = { title: string; meta: string; detail: string; group: string };
 
+export const ASSISTANT_HISTORY_EMPTY = "No assistant activity for this stock decision yet.";
+export const historyCount = (n: number) => `${n} ${n === 1 ? "event" : "events"}`;
+export const historySummary = (text: string) => text.length > 90 ? `${text.slice(0, 90)}…` : text;
+
 // Each activity type in words (UI-SPEC History's event titles; the researcher-written titles are proposed, UI-SPEC
 // "Open questions" note). `decision` takes its verb from the payload (DECISION_TITLES) and `prepared` names the kind
 // of work order from the plan (the D-61 term; never the bare internal "work order", UI-SPEC open question 3). The
@@ -78,6 +82,7 @@ export const EVENT_TITLES: Readonly<Record<string, string>> = {
   approval_cancelled: "Approval cancelled · new version",
   hold_expired: "Capacity hold expired",
   evidence_requested: "Stock check requested",
+  evidence_drafted: "Stock check drafted",
   evidence_answered: "Stock check answered",
   count_confirmed: "Count confirmed",
   assumptions_adopted: "Assumptions adopted",
@@ -120,6 +125,30 @@ const HASH_SHOWN = 12; // D-39: a 12-character hash, never 64
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
 const qty = (n: number) => `${units(n)} ${n === 1 ? "unit" : "units"}`;
+const provided = (v: unknown) => str(v) ?? "Missing";
+const bindingText = (v: unknown) => typeof v === "string" && HASH.test(v) ? v.slice(0, HASH_SHOWN) : provided(v);
+const lotsText = (v: unknown) => Array.isArray(v) && v.some(x => str(x) !== null)
+  ? v.map(provided).join(", ") : "Missing";
+
+// Activity carries only server-projected provenance. Never expand unknown
+// payload fields into conversations, draft prose or role-private source data.
+function assistantDetail(e: HistoryEntry, tz: string): string | null {
+  const p = e.payload;
+  if (e.type === "evidence_drafted") return [
+    "Drafted by Gemini", "Read-only record", `Class: ${provided(p.class)}`,
+    `Draft: ${provided(p.draft_id)}`, `Sends: ${provided(p.owner)} manager`,
+    `Checks: ${provided(p.to_branch)} manager`, `Product: ${provided(p.sku)}`, `Lots: ${lotsText(p.lot_ids)}`,
+    `Model: ${provided(p.model_id)}`, `Assistant version: ${provided(p.assistant_version)}`,
+    `Recommendation: ${bindingText(p.rec_version)}`, `Plan: ${bindingText(p.plan_key)}`,
+  ].join(" · ");
+  if (e.type === "evidence_requested") {
+    const sender = e.actor === null ? "Missing" : e.actor.role === "hq" ? "HQ planner" : `${e.actor.account} manager`;
+    return [`Sent by ${sender}`, recordedLine(e.at, tz) || "Recorded time: Missing",
+      `Request: ${provided(p.request_id)}`, `Checks: ${provided(p.to_branch)} manager`, `Lots: ${lotsText(p.lot_ids)}`,
+      `Recommendation: ${bindingText(p.rec_version)}`].join(" · ");
+  }
+  return null;
+}
 
 // The detail line in words, from the keys the entry carries: the plan's label, the quantities and lots, the
 // resources held, a person's reason, and every 64-character hash cut to 12. Raw keys, enums and plan keys never show.
@@ -159,9 +188,11 @@ function detailOf(e: Pick<HistoryEntry, "type" | "payload">): string {
 // in words. A part the entry cannot give is left out rather than shown as a placeholder.
 export function historyLine(e: HistoryEntry, tz: string): HistoryLine {
   const by = e.actor === null ? BY_SYSTEM : e.actor.account;
-  const meta = [recordedLine(e.at, tz), e.scenario_date === null ? "" : scenarioDateLine(e.scenario_date)]
+  const assistant = e.type === "evidence_drafted" || e.group === "Assistant";
+  const meta = [recordedLine(e.at, tz) || (assistant ? "Recorded time: Missing" : ""),
+    e.scenario_date ? scenarioDateLine(e.scenario_date) : assistant ? "Scenario date: Missing" : ""]
     .filter((x) => x !== "").join(" · ");
-  return { title: `${eventTitle(e)} by ${by}`, meta, detail: detailOf(e), group: e.group };
+  return { title: `${eventTitle(e)} by ${by}`, meta, detail: assistantDetail(e, tz) ?? detailOf(e), group: e.group };
 }
 
 // --- who is signed in (UI-SPEC "Shell": context line, profile row and menu; D-08 as amended by D-63) ---------------

@@ -50,6 +50,8 @@ test("the release manifest has disjoint ids and always excludes branch orders", 
   assert.deepEqual(SHIPPED.filter(s => NOT_IN_RELEASE.some(n => n.id === s.id)), []);
   assert.equal(isShipped("orders"), false);
   assert.equal(isShipped("forecasts"), true);
+  assert.equal(isShipped("assistant"), true); // the full version ships briefs and Ask
+  assert.equal(isShipped("reading"), false); // no field-report reading code exists
   assert.ok(NOT_IN_RELEASE.some(s => s.id === "orders"));
   assert.doesNotMatch(JSON.stringify([...SHIPPED, ...NOT_IN_RELEASE]), /projected.stock/i);
   assert.deepEqual(notInReleaseLines(), NOT_IN_RELEASE.map(s => `${s.name} is not part of this release.`));
@@ -64,7 +66,10 @@ test("Real now names installed forecasts and only confirmed release capabilities
   assert.doesNotMatch(lines.join(" "), /Gemini on Google Cloud|Cloud Run/);
   const cloud = realNowLines({...about, google_cloud:true}, false).join(" ");
   assert.match(cloud, /Cloud Run/);
-  assert.doesNotMatch(cloud, /uploaded evidence/);
+  assert.equal(/uploaded evidence/.test(cloud), isShipped("verification")); // uploads are real once Phase 7 ships
+  const gemini = realNowLines({...about, assistant_version:"assistant-test", gemini_model:"m", vertex_location:"l"}, false).join(" ");
+  assert.match(gemini, /writes decision briefs · answers questions\./);
+  assert.doesNotMatch(gemini, /reads field reports/);
   assert.deepEqual(realNowLines(about, true), realNowLines(null, false));
   assert.equal(benchmarkInRelease(about), isShipped("reports"));
   assert.equal(benchmarkInRelease({...about, benchmark_status:"published"}), true);

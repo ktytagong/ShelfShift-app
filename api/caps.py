@@ -23,6 +23,12 @@ scope, hashed by `client_scope` so no address is stored (WR-03: wrong passcodes,
 address is the one `app.client_address` returns (06-CONTEXT D-24): the rightmost X-Forwarded-For entry on Cloud Run,
 the TCP peer elsewhere. Its message names "this address's" limit; `reached` refuses once the limit is reached without
 counting anything, and `spend` returns how many are left under the kind's own cap (the 401's attempts_left).
+
+A per-workspace cap (`config.WORKSPACE_CAPS`, settings `caps.workspace`; 07-CONTEXT D-20) is the same counter with
+the scope `run:<run_id>`, which the caller passes as `spend`'s first argument: the reviewer allowance of field reports
+(`signal`) and their first files (`upload`), shared by every seat of the workspace, so signing in again or switching
+seat never refills it. Its message names "this workspace's" limit. A report spends the workspace cap first, then the
+daily cap across sessions (when the kind has one); a refusal at either rolls both back with the request.
 """
 from __future__ import annotations
 
@@ -35,7 +41,8 @@ from .errors import ApiError
 GLOBAL = "global"  # the scope of a daily cap across sessions
 # how a message names each kind (wording, not a limit)
 WHAT = {"ai": "AI requests", "signal": "field reports", "upload": "uploads", "reset": "resets",
-        "sandbox": "new workspaces", "passcode": "wrong passcodes"}
+        "sandbox": "new workspaces", "passcode": "wrong passcodes", "preview": "impact previews"}
+PER = {"day": "daily", "hour": "hourly", "minute": "per-minute"}  # a global cap's window in its refusal
 
 
 def window_start(window: str, now: datetime | None = None) -> datetime:
@@ -77,9 +84,12 @@ def client_scope(address: str | None) -> str:
 
 
 def _own_cap(kind: str) -> tuple[tuple[int, str], str] | None:
-    """((limit, window), whose limit a message names) of the kind's per-session or per-client cap, or None."""
+    """((limit, window), whose limit a message names) of the kind's per-session, per-client or per-workspace cap, or
+    None."""
     if kind in config.CLIENT_CAPS:
         return config.CLIENT_CAPS[kind], "this address's"
+    if kind in config.WORKSPACE_CAPS:  # scope run:<run_id>, every seat of the workspace (07-CONTEXT D-20)
+        return config.WORKSPACE_CAPS[kind], "this workspace's"
     if kind in config.SESSION_CAPS:
         return config.SESSION_CAPS[kind], "this session's"
     return None
@@ -96,7 +106,8 @@ def reached(conn, scope: str, kind: str, now: datetime | None = None) -> None:
     if own is None:
         return
     (limit, window), whose = own
-    start = window_start(window, now)
+    moment = now if now is not None else db.one(conn, "SELECT clock_timestamp() AS now")["now"]
+    start = window_start(window, moment)
     row = db.one(conn, "SELECT count FROM usage_counts WHERE scope = :s AND kind = :k AND window_start = :w",
                  s=scope, k=kind, w=start)
     if row and row["count"] >= limit:
@@ -111,17 +122,23 @@ def spend(conn, session_id: str | None, kind: str, n: int = 1, now: datetime | N
     what = WHAT.get(kind, kind)
     own = _own_cap(kind)
     left = None
+    # Sample once after admission locks, including a wait that crosses midnight.
+    # Both windows use the database wall clock, never the API host's clock.
+    moment = now
+    if moment is None and ((session_id and own is not None) or kind in config.GLOBAL_CAPS):
+        moment = db.one(conn, "SELECT clock_timestamp() AS now")["now"]
     if session_id and own is not None:
         (limit, window), whose = own
-        start = window_start(window, now)
+        start = window_start(window, moment)
         count = _count(conn, session_id, kind, start, n)
         if count > limit:
             raise _refusal(kind, limit, window, whose, start)
         left = limit - count
     if kind in config.GLOBAL_CAPS:
-        start = window_start("day", now)
+        window = config.GLOBAL_WINDOWS.get(kind, "day")
+        start = window_start(window, moment)
         if _count(conn, GLOBAL, kind, start, n) > config.GLOBAL_CAPS[kind]:
             # (proposed) no "demo" or "today" (06.1 copy rule)
-            raise ApiError(429, "cap_reached", f"The daily limit for {what} has been reached; it resets at "
-                                               f"{_resets('day', start)}.", kind=kind)
+            raise ApiError(429, "cap_reached", f"The {PER[window]} limit for {what} has been reached; it resets at "
+                                               f"{_resets(window, start)}.", kind=kind)
     return left

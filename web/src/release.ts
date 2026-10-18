@@ -14,13 +14,14 @@ export const SHIPPED: Surface[] = [
   {id:"reports", name:"Reports", path:"/reports"},
   {id:"policies", name:"Policies", path:"/policies"},
   {id:"about", name:"About", path:"/about"},
+  // Phase 7 ships with the full version (07-19..07-22 on build/deploy-screens): its page and its checks (no page).
+  {id:"events", name:"Business events", path:"/events"},
+  {id:"verification", name:"Count and expiry checks with lot holds and what-ifs", path:null},
+  {id:"assistant", name:"Gemini decision briefs and Ask", path:null}, // the full version ships Phase 9 (deploy session, 2026-10-18)
 ];
 export const NOT_IN_RELEASE: Surface[] = [
   {id:"orders", name:"Branch orders", path:null},
-  {id:"events", name:"Business events", path:"/events"},
   {id:"task-detail", name:"Task detail", path:"/tasks/:id"},
-  {id:"assistant", name:"Gemini decision briefs and Ask", path:null},
   {id:"reading", name:"Gemini field-report reading", path:null},
-  {id:"verification", name:"Count and expiry checks with lot holds and what-ifs", path:null},
 ];
 export const isShipped = (id: string): boolean => SHIPPED.some(surface => surface.id === id);

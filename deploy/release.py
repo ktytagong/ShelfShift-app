@@ -29,8 +29,9 @@ when it is refused):
        dataset_version recomputes (data.versions.digest over the manifest without it), and every listed part is a
        file directly in parts/ whose sha256 is the manifest's (the checks the cloud install repeats, api/publicref.py);
        a refusal names manifest.json or the part's relative path, never a hash, the folder or a configuration value.
-       Its dataset_version becomes the record's, and the build log's `template <id> ACTIVE for <dv>` line must name
-       it, or the release fails at build_log and recovers as any build failure does. This step uploads exactly the
+       Its dataset_version becomes the record's, and the build log's `template <id> READY for <dv>` line and the
+       activate log's `template <id> ACTIVE for <dv>` line must name it, or the release fails at build_log or activate
+       and recovers as a failure there does. This step uploads exactly the
        manifest's listed parts with one `gcloud storage cp` to gs://<DATA_BUCKET>/<dataset_version>/parts/, then
        manifest.json last to gs://<DATA_BUCKET>/<dataset_version>/manifest.json, so a killed upload leaves no
        manifest. A plain cp: the local check proved the bytes are the version's, so a rerun rewrites identical
@@ -45,14 +46,28 @@ when it is refused):
        release, and none for a service that exists but has never had a ready revision (no latest ready revision and
        no traffic entry naming one; 06-REVIEW WR-07); it is recorded as previous_revision. The latest ready and
        latest created revision names are also captured here, for the non-zero deploy rule
-    6. the build job (deploy account): `python -m api.sandbox build --run-id tpl-<sha12>-<UTC>` with DB_USER the
-       deploy IAM user and RUN_DB_USER the run IAM user. With RELEASE_DATA_DIR set, the job also mounts DATA_BUCKET
+    6. the inactive build (Phase 9; 09-24 deploy checklist item 7a), the build job (deploy account): `python -m
+       api.sandbox build --no-activate --run-id tpl-<sha12>-<UTC>` with DB_USER the deploy IAM user, RUN_DB_USER the
+       run IAM user and the model variables (`model_env`). With RELEASE_DATA_DIR set, the job also mounts DATA_BUCKET
        read-only at /mnt/release-data (a Cloud Storage volume, readable by the deploy account only) and builds the
-       mounted folder: `python -m api.sandbox build /mnt/release-data/<dataset_version> --run-id ...`. Its log gives
-       the activated template, the template this activation actually retired (`retired:`) and the one ACTIVE before
-       the build (`previous ACTIVE:`); the release goes no further unless both the `previous ACTIVE:` and the
-       `retired:` lines were read. The template ACTIVE before the build and the serving revision are the pair a
-       recovery restores
+       mounted folder: `python -m api.sandbox build /mnt/release-data/<dataset_version> --no-activate --run-id ...`.
+       Its log gives the template ACTIVE before the build (`previous ACTIVE:`) and `template <new> READY for <dv>`;
+       the release goes no further unless both were read and the READY line names <new> (a public release: and the
+       uploaded dataset version). No template is published yet, so judges still see the one ACTIVE before
+   6a. the baseline briefs job (09 D-05, D-06; checklist item 7b, 7c), paid: one execution of the build job with
+       `python -m agent.briefs <new>`, which writes one brief per evaluated case of the READY template. It passes
+       only on exit 0 and its last `"type": "summary"` line for <new> (read with a filter narrowed to that line, so a
+       long case list cannot push it past the 500-row page; a JSON line Cloud Run stored as jsonPayload reads the
+       same). A refusal (non-zero exit: the template is not READY, or the model configuration is bad), a missing
+       summary line, a summary naming another model or location than GEMINI_MODEL and VERTEX_LOCATION, or no brief
+       at all (success + reused = 0 while eligible > 0: a model, location or IAM problem) fails the release here,
+       before activation. Provider failures do not: those cases show the Fallback label and write a live brief at
+       first open; the record keeps the summary (success, failure, reused, usage) and one `briefs:` line is printed
+   6b. activation (checklist item 7d): one execution of the build job with `python -m api.sandbox activate <new>`;
+       its log must say `template <new> ACTIVE for <dv>` and give the template this activation actually retired
+       (`retired:`), which must be the one ACTIVE before the build (another means a template was activated in
+       between, and the release fails closed). The template ACTIVE before the build and the serving revision are the
+       pair a recovery restores
     7. the release bench job (run account, ENGINE_WORKER=on): `python -m api.bench`, slowest of 3 below 3 s (D-16);
        the budget is never raised. A public release (RELEASE_DATA_DIR set) has no SUS-19 story case, so its gate is
        `python -m api.bench --top 20 --resets 10`: the 20 hardest cases selected before timing, each slowest of 3
@@ -66,9 +81,12 @@ when it is refused):
        research Pitfall 4), concurrency 20, timeout 300 s, public; the variables are exactly CLOUD_SQL_INSTANCE,
        DB_USER, DB_NAME, DEMO_MODE (off: the product app refuses the demo endpoints, 06.1 D-62), ENGINE_WORKER,
        GIT_COMMIT and GLOBAL_AI_CAP, and DEMO_PASSCODE and HQ_PASSCODE come from the two pinned secret versions
-       (`--set-secrets DEMO_PASSCODE=<PASSCODE_SECRET>:<v>,HQ_PASSCODE=<HQ_PASSCODE_SECRET>:<hv>`). No model, endpoint, project or billing value reaches it (D-04; GEMINI_MODEL waits for
-       Phase 9), no pool size is set (one instance holds at most 5 + 2 connections), and neither the forwarded-IPs
-       variable nor K_SERVICE is ever set: the image runs uvicorn with proxy headers off and Cloud Run sets K_SERVICE
+       (`--set-secrets DEMO_PASSCODE=<PASSCODE_SECRET>:<v>,HQ_PASSCODE=<HQ_PASSCODE_SECRET>:<hv>`), then GCP=on,
+       GEMINI_MODEL, VERTEX_LOCATION and PROJECT (Phase 9, `model_env`; D-04 updated by the 09-24 checklist item 2):
+       never GOOGLE_GENAI_USE_VERTEXAI or GOOGLE_GENAI_USE_ENTERPRISE (the code passes that flag itself), and no
+       billing or contact value. Gemini is never called at startup, deploy, activation, clone or reset: only by the
+       briefs job and by a person opening a brief or asking (checklist item 8). No pool size is set (one instance
+       holds at most 5 + 2 connections), and neither the forwarded-IPs variable nor K_SERVICE is ever set: the image runs uvicorn with proxy headers off and Cloud Run sets K_SERVICE
        itself, which makes the cookie Secure and the counted address the rightmost X-Forwarded-For entry (D-24).
        After the deploy, `update-traffic --to-latest` sends 100% of traffic to the new revision
     9. read-back (D-10): a max-scale value that is absent or other than 1 fails the release; a min-scale value other
@@ -127,6 +145,18 @@ no template ACTIVE and is not left pending (06-REVIEW WR-06): its restore runs w
 ACTIVE` (the build never activated) or `undone: none ACTIVE` (its template was ACTIVE and its activation retired none,
 so the restore retired it) is a verified result.
 
+Recovery of a Phase 9 record (`activation: "separate"`; a record without the field recovers exactly as above): the
+build execution is settled as above (a --no-activate build cannot publish, but settling keeps the next build from
+overlapping it). Before activate was requested (a failure at build_execute, build_log or briefs, or a refused,
+summary-less or zero-brief briefs job) nothing could have published <new>: no restore runs, the recovery says <new>
+was built inactive and is left READY, and the record clears once the settle succeeded. The briefs execution is never
+cancelled or restored: it cannot activate anything. Once activate was requested, the activate execution is settled
+the same way (by its recorded name, or found among the build job's executions by `activate,<new>`; an unknown state
+runs no restore and keeps the record pending, while traffic still moves back when the service deploy was requested,
+WR-11), then <new> is restored against its predecessor: the activate log's `retired:` template, else the template
+ACTIVE before the build; when that is none, `restore <new> --first` runs (09-24 checklist item 7, Recovery) and no
+template ACTIVE afterwards is verified. Traffic goes back after a requested service deploy as above.
+
 Rollback (--rollback, under the lock, after reconciling): the latest known-good release's template is restored (its
 predecessor becomes ACTIVE again); only when the restore put that release's previous template back (a `restored:`
 result naming it) does its previous revision get 100% of traffic, read back (a move whose command exits non-zero
@@ -167,11 +197,11 @@ configuration's records go to the git-ignored deploy/releases-drill/ (`records_d
 deploy/releases/ only, so neither ever reads the other's. Five switches make a rare recovery path run on a disposable
 service; each is refused before any command for a live configuration, dry runs included, and the record's `drill`
 field names them (a live record has no such field):
-    --drill-fail-after STEP (build_execute, build_log, bench, service_deploy, read_back, access, smoke or journey)
-        fails the release with `drill: forced failure after STEP` right after STEP's progress entry is saved ok, and
-        the recovery then runs exactly as for any failure there (reason `drill`). build_execute forces 06-REVIEW
-        WR-06 path 2: on a first release, a build that activated whose log was never read, undone by
-        `restore <new> --first`
+    --drill-fail-after STEP (build_execute, build_log, briefs, activate, bench, service_deploy, read_back, access,
+        smoke or journey) fails the release with `drill: forced failure after STEP` right after STEP's progress entry
+        is saved ok, and the recovery then runs exactly as for any failure there (reason `drill`). build_execute,
+        build_log and briefs prove that nothing is restored before activation; activate on a first release (retired
+        none) proves the undo by `restore <new> --first`
     --drill-fail-restore-once (with --drill-fail-after) makes that run's recovery restore return `failed: drill, not
         run` without running it, so the record stays reconcile: pending and the next run retries the real restore
     --drill-fail-settle-once (with --drill-fail-after, never with --drill-fail-restore-once) makes that run's recovery
@@ -204,6 +234,7 @@ import datetime as dt
 import fcntl
 import hashlib
 import hmac
+import json
 import os
 import pathlib
 import re
@@ -225,7 +256,7 @@ RELEASES = HERE / "releases"
 RELEASES_DRILL = HERE / "releases-drill"
 DRILL_MARKS = {"SERVICE": "-drill", "BUILD_JOB": "-drill", "BENCH_JOB": "-drill", "EARLY_BENCH_JOB": "-drill",
                "DB_NAME": "_drill"}
-DRILL_STEPS = ("build_execute", "build_log", "bench", "service_deploy", "read_back", "access", "smoke", "journey")
+DRILL_STEPS = ("build_execute", "build_log", "briefs", "activate", "bench", "service_deploy", "read_back", "access", "smoke", "journey")
 # --drill-unready-deploy's GLOBAL_AI_CAP (06-REVIEW WR-07, WR-09 on the drill). api/config.py reads GLOBAL_AI_CAP with
 # int() at import; the image runs `exec uvicorn api.app:app`, and uvicorn imports the app before it binds the port, so
 # the container exits and the revision never becomes ready. deploy/envfile.py accepts digits only for GLOBAL_AI_CAP, so
@@ -262,13 +293,26 @@ PUBLIC_GATE = re.compile(r"^top \d+: evaluate \+ fact checks, slowest of \d+ = (
                          r"\d+ not timed$")
 RESETS_GATE = re.compile(r"^resets: \d+, slowest (\d+) ms \(budget 2000 ms\)$")
 BENCH_INPUT = "api/bench_input.json"  # the frozen SUS-19 engine input (06-04)
+# Phase 9 (09-24 deploy checklist item 7): the build leaves its template READY (--no-activate), the paid baseline briefs
+# job runs on it (`python -m agent.briefs <new>`, one JSON line per case, then one `"type": "summary"` line), and only
+# then is it published (`python -m api.sandbox activate <new>`); all three run as executions of the build job
+NO_ACTIVATE = "--no-activate"
+BRIEFS_ARGS = ["-m", "agent.briefs"]
+ACTIVATE_ARGS = ["-m", "api.sandbox", "activate"]
+# the summary line's own filter, so a long case list cannot push it past the 500-row page; Cloud Run turns a JSON line
+# on stdout into jsonPayload (structured logging), a plain one stays textPayload, so both are matched
+SUMMARY_FILTER = '(textPayload:"summary" OR jsonPayload.type="summary")'
+SUMMARY_COUNTS = ("cases", "eligible", "ineligible", "attempted", "success", "failure", "reused")
+# the variables the service and the build job (whose executions include the briefs job) get for Gemini (09-24 deploy
+# checklist item 2): never GOOGLE_GENAI_USE_VERTEXAI or GOOGLE_GENAI_USE_ENTERPRISE, the code passes that flag itself
+MODEL_KEYS = ("GEMINI_MODEL", "VERTEX_LOCATION", "PROJECT")
 EARLY_ARGS = ["-m", "api.bench", "--input", BENCH_INPUT, "--shortlist-info"]
 EARLY_MEDIAN = re.compile(r"^SUS-19 \(frozen input\): evaluate \+ fact checks, median of \d+ = (\d+\.\d+) s")
 STEP_STATUS = {
     "data": "failed_data", "image": "failed_image", "secret": "failed_secret",
     "previous_revision": "failed_service_lookup",
     "build_deploy": "failed_build_deploy", "build_execute": "failed_build", "build_log": "failed_build",
-    "bench": "failed_bench", "service_deploy": "failed_deploy", "read_back": "failed_readback",
+    "briefs": "failed_briefs", "activate": "failed_activate", "bench": "failed_bench", "service_deploy": "failed_deploy", "read_back": "failed_readback",
     "access": "failed_readback", "smoke": "failed_smoke", "journey": "failed_journey",
 }
 # The public set's route to the build job (quick 261017-v60): a read-only Cloud Storage volume of DATA_BUCKET, and the
@@ -652,18 +696,32 @@ def job(cfg, runner: Runner, name: str, ref: str, account: str, env: dict[str, s
     return execute_job(cfg, runner, name, run_args)
 
 
-def job_lines(cfg, runner: Runner, job_name: str, execution: str, expect: str, sleep=time.sleep) -> list[str] | str:
+def _payload(row) -> str | None:
+    """A log entry's line: its textPayload, or its jsonPayload (a JSON line Cloud Run parsed) as sorted JSON; None for
+    anything else."""
+    if not isinstance(row, dict):
+        return None
+    if row.get("textPayload"):
+        return row["textPayload"].rstrip("\n")
+    if isinstance(row.get("jsonPayload"), dict):
+        return json.dumps(row["jsonPayload"], sort_keys=True)
+    return None
+
+
+def job_lines(cfg, runner: Runner, job_name: str, execution: str, expect: str, sleep=time.sleep,
+              narrow: str | None = None) -> list[str] | str:
     """The execution's log lines in order, retried until one matches `expect` (up to LOG_TRIES, LOG_EVERY_S apart);
-    NOT_READ_BACK when nothing came back. A failing logging command raises."""
+    NOT_READ_BACK when nothing came back. A failing logging command raises. `narrow` (the briefs summary only) adds one
+    clause to the filter; every other caller's argv is unchanged."""
     if execution == NOT_READ_BACK:
         return NOT_READ_BACK
     filt = (f'resource.type="cloud_run_job" AND resource.labels.job_name="{job_name}" AND '
-            f'labels."run.googleapis.com/execution_name"="{execution}"')
+            f'labels."run.googleapis.com/execution_name"="{execution}"') + (f" AND {narrow}" if narrow else "")
     lines: list[str] = []
     for attempt in range(LOG_TRIES):
         rows = runner.json(gcloud("logging", "read", filt, "--order", "asc", "--limit", "500",
                                   project=cfg["PROJECT"])) or []
-        lines = [r["textPayload"].rstrip("\n") for r in rows if isinstance(r, dict) and r.get("textPayload")]
+        lines = [line for line in map(_payload, rows) if line]
         if any(re.search(expect, line) for line in lines):
             return lines
         if attempt < LOG_TRIES - 1:
@@ -672,18 +730,78 @@ def job_lines(cfg, runner: Runner, job_name: str, execution: str, expect: str, s
 
 
 def parse_build(lines) -> dict[str, Any]:
-    """The build log's three lines (06-03): `previous ACTIVE:`, `template <id> ACTIVE for <dv>`, `retired:`;
-    `none` is null and a missing line is NOT_READ_BACK."""
-    got = {"active_before_build": NOT_READ_BACK, "activated_template": NOT_READ_BACK,
-           "previous_template": NOT_READ_BACK}
+    """The inactive build's two lines (Phase 9, `build --no-activate`): `previous ACTIVE: <id|none>` and
+    `template <id> READY for <dv>`; `none` is null and a missing line is NOT_READ_BACK. No `retired:` line comes from an
+    inactive build: the activate execution prints it (`parse_activate`)."""
+    got = {"active_before_build": NOT_READ_BACK, "ready_template": NOT_READ_BACK}
     for line in lines if isinstance(lines, list) else []:
         if m := re.match(r"^previous ACTIVE: (\S+)$", line):
             got["active_before_build"] = None if m.group(1) == "none" else m.group(1)
-        elif m := re.match(r"^template (\S+) ACTIVE for \S+$", line):
+        elif m := re.match(r"^template (\S+) READY for \S+$", line):
+            got["ready_template"] = m.group(1)
+    return got
+
+
+def parse_activate(lines) -> dict[str, Any]:
+    """The activate execution's two lines: `template <id> ACTIVE for <dv>` and `retired: <id|none>` (the template this
+    activation actually retired); `none` is null and a missing line is NOT_READ_BACK."""
+    got = {"activated_template": NOT_READ_BACK, "previous_template": NOT_READ_BACK}
+    for line in lines if isinstance(lines, list) else []:
+        if m := re.match(r"^template (\S+) ACTIVE for \S+$", line):
             got["activated_template"] = m.group(1)
         elif m := re.match(r"^retired: (\S+)$", line):
             got["previous_template"] = None if m.group(1) == "none" else m.group(1)
     return got
+
+
+def _dataset_of(lines, word: str) -> str | None:
+    """The <dv> of the log's `template <id> <word> for <dv>` line (word READY or ACTIVE), or None."""
+    return next((m.group(1) for line in (lines if isinstance(lines, list) else [])
+                 for m in [re.match(rf"^template \S+ {word} for (\S+)$", line)] if m), None)
+
+
+def briefs_summary(lines, run_id: str) -> dict | None:
+    """The briefs job's last `"type": "summary"` line for run_id, parsed (counts that came back as floats, as a JSON
+    log entry's numbers do, made ints again); None when there is none."""
+    found = None
+    for line in lines if isinstance(lines, list) else []:
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and obj.get("type") == "summary" and obj.get("run_id") == run_id:
+            found = obj
+    if found is None:
+        return None
+    for key in SUMMARY_COUNTS:
+        value = found.get(key)
+        if isinstance(value, float) and value.is_integer():
+            found[key] = int(value)
+    return found
+
+
+def briefs_problem(summary: dict, cfg) -> str | None:
+    """Why a briefs summary stops the release before activation (09-24 checklist item 7c), or None: counts that are not
+    numbers, a model or location other than the configuration's, or no brief at all (success + reused = 0 while
+    eligible > 0), which is a model, location or IAM problem. Provider failures alone never stop it."""
+    counts = {k: summary.get(k) for k in ("eligible", "success", "failure", "reused")}
+    if not all(isinstance(v, int) and not isinstance(v, bool) for v in counts.values()):
+        return "the briefs summary's eligible, success, failure and reused counts were not read back as numbers"
+    if summary.get("model_id") != cfg["GEMINI_MODEL"]:
+        return f"the briefs job used model {summary.get('model_id')}, not GEMINI_MODEL"
+    if summary.get("location") != cfg["VERTEX_LOCATION"]:
+        return f"the briefs job used location {summary.get('location')}, not VERTEX_LOCATION"
+    if counts["success"] + counts["reused"] == 0 and counts["eligible"] > 0:
+        return (f"the briefs job wrote no brief ({counts['eligible']} eligible, 0 success, 0 reused): a model, location "
+                "or IAM problem; fix it before activating (deploy/README.md, Gemini access)")
+    return None
+
+
+def briefs_line(summary: dict) -> str:
+    """The one `briefs:` line a release prints and records beside the summary."""
+    return (f"briefs: {summary.get('success')} success, {summary.get('failure')} failure, {summary.get('reused')} "
+            f"reused of {summary.get('eligible')} eligible; model {summary.get('model_id')} at "
+            f"{summary.get('location')}, {summary.get('assistant_version')}")
 
 
 def iam_users(cfg) -> tuple[str, str]:
@@ -694,10 +812,17 @@ def sql_instance(cfg) -> str:
     return f"{cfg['PROJECT']}:{cfg['REGION']}:{cfg['SQL_INSTANCE']}"
 
 
+def model_env(cfg) -> dict[str, str]:
+    """GCP=on and the model's three keys (09-24 deploy checklist item 2): the service and the build job (the briefs
+    job is one of its executions) get exactly these; GOOGLE_GENAI_USE_VERTEXAI and GOOGLE_GENAI_USE_ENTERPRISE are
+    never set (the code passes the flag itself)."""
+    return {"GCP": "on", **{k: cfg[k] for k in MODEL_KEYS}}
+
+
 def build_env(cfg, sha: str) -> dict[str, str]:
     deploy_user, run_user = iam_users(cfg)
     return {"CLOUD_SQL_INSTANCE": sql_instance(cfg), "DB_USER": deploy_user, "RUN_DB_USER": run_user,
-            "DB_NAME": cfg["DB_NAME"], "GIT_COMMIT": sha}
+            "DB_NAME": cfg["DB_NAME"], "GIT_COMMIT": sha, **model_env(cfg)}
 
 
 def bench_env(cfg, sha: str) -> dict[str, str]:
@@ -706,15 +831,15 @@ def bench_env(cfg, sha: str) -> dict[str, str]:
 
 
 def service_env(cfg, sha: str) -> dict[str, str]:
-    """Exactly what the app needs (D-04): never PROJECT or BILLING_ACCOUNT. CONTACT_EMAIL is the public support address
-    the About page and the unavailable screen show (11-CONTEXT D-04; release() refuses an empty one); GCP=on with the
-    model, endpoint and both buckets is cloud mode (11-CONTEXT D-01, D-16, D-19: the app makes no call for
-    DATA_BUCKET, and with GCP on it refuses to start without UPLOADS_BUCKET)."""
+    """Exactly what the app needs (D-04, updated for Phase 9): never BILLING_ACCOUNT or a GOOGLE_GENAI_USE_* flag.
+    CONTACT_EMAIL is the public support address the About page and the unavailable screen show (11-CONTEXT D-04;
+    release() refuses an empty one); GCP=on with the model, endpoint and PROJECT (`model_env`, 09-24 checklist item 2)
+    and both buckets is cloud mode (11-CONTEXT D-01, D-16, D-19: the app makes no call for DATA_BUCKET, and with GCP on
+    it refuses to start without UPLOADS_BUCKET)."""
     return {"CLOUD_SQL_INSTANCE": sql_instance(cfg), "DB_USER": iam_users(cfg)[1], "DB_NAME": cfg["DB_NAME"],
             "DEMO_MODE": "off", "ENGINE_WORKER": "on", "GIT_COMMIT": sha, "GLOBAL_AI_CAP": cfg["GLOBAL_AI_CAP"],
-            "CONTACT_EMAIL": cfg["CONTACT_EMAIL"], "GCP": "on", "GEMINI_MODEL": cfg["GEMINI_MODEL"],
-            "VERTEX_LOCATION": cfg["VERTEX_LOCATION"], "DATA_BUCKET": cfg["DATA_BUCKET"],
-            "UPLOADS_BUCKET": cfg["UPLOADS_BUCKET"]}
+            "CONTACT_EMAIL": cfg["CONTACT_EMAIL"], "DATA_BUCKET": cfg["DATA_BUCKET"],
+            "UPLOADS_BUCKET": cfg["UPLOADS_BUCKET"], **model_env(cfg)}
 
 
 def deploy_service(cfg, runner: Runner, ref: str, sha: str, version: str, hq_version: str, *,
@@ -910,6 +1035,18 @@ def _holds_run_id(obj, run_id: str) -> bool:
     return isinstance(obj, str) and f"--run-id,{run_id}" in obj
 
 
+def _holds_activation(obj, run_id: str) -> bool:
+    """Whether an execution's JSON carries the arguments activate <run_id> anywhere: a list holding "activate" then
+    run_id, or a string holding `activate,<run_id>` (read defensively, as `_holds_run_id`)."""
+    if isinstance(obj, dict):
+        return any(_holds_activation(v, run_id) for v in obj.values())
+    if isinstance(obj, list):
+        if any(obj[i] == "activate" and obj[i + 1] == run_id for i in range(len(obj) - 1)):
+            return True
+        return any(_holds_activation(v, run_id) for v in obj)
+    return isinstance(obj, str) and f"activate,{run_id}" in obj
+
+
 def _ended(execution) -> bool:
     status = (execution or {}).get("status") or {} if isinstance(execution, dict) else {}
     if status.get("completionTime"):
@@ -918,7 +1055,8 @@ def _ended(execution) -> bool:
                for c in status.get("conditions") or [] if isinstance(c, dict))
 
 
-def settle(cfg, record: dict, *, runner: Runner, sleep=time.sleep) -> dict[str, str | None]:
+def settle(cfg, record: dict, *, runner: Runner, sleep=time.sleep, key: str = "build_execution",
+           holds: Callable[[Any, str], bool] = _holds_run_id, label: str = "--run-id") -> dict[str, str | None]:
     """Make sure the release's build execution has ended before anything restores (R2-1): read it by its recorded name,
     or find it among BUILD_JOB's executions by --run-id <new>, listed up to SETTLE_LISTS times SETTLE_EVERY_S apart;
     when no list holds it and every execution in the last list has ended, the execute never started one, so nothing can
@@ -926,14 +1064,15 @@ def settle(cfg, record: dict, *, runner: Runner, sleep=time.sleep) -> dict[str, 
     it may be this release's (an executions-list shape `_holds_run_id` does not read), so SettleUnknown keeps the record
     pending until it ends (06-REVIEW WR-08). While it runs, poll every SETTLE_EVERY_S for SETTLE_POLLS polls, then
     cancel it and poll until it ends. SettleUnknown when its state cannot be read: a failing list or describe, more than
-    one execution holding --run-id <new>, or one without a name."""
+    one execution holding --run-id <new>, or one without a name. `key`, `holds` and `label` default to the build
+    execution; the activate execution passes ("activate_execution", `_holds_activation`, "activate") (Phase 9)."""
     project, region, job_name, new = cfg["PROJECT"], cfg["REGION"], cfg["BUILD_JOB"], record["new_template"]
 
     def describe(name):
         return runner.json(gcloud("run", "jobs", "executions", "describe", name, "--region", region, project=project))
 
     try:
-        name = record.get("build_execution")
+        name = record.get(key)
         if name and name != NOT_READ_BACK:
             state = describe(name)
         else:
@@ -942,7 +1081,7 @@ def settle(cfg, record: dict, *, runner: Runner, sleep=time.sleep) -> dict[str, 
             for attempt in range(SETTLE_LISTS):
                 rows = runner.json(gcloud("run", "jobs", "executions", "list", "--job", job_name, "--region",
                                           region, project=project)) or []
-                match = [r for r in rows if isinstance(r, dict) and _holds_run_id(r, new)]
+                match = [r for r in rows if isinstance(r, dict) and holds(r, new)]
                 if match:
                     break
                 if attempt < SETTLE_LISTS - 1:
@@ -951,16 +1090,16 @@ def settle(cfg, record: dict, *, runner: Runner, sleep=time.sleep) -> dict[str, 
                 running = [r for r in rows if not _ended(r)]  # a row that is not a dict counts as not ended
                 if running:
                     raise SettleUnknown(f"{len(running)} build-job execution(s) "
-                                        f"still running hold no recognisable --run-id {new}; "
+                                        f"still running hold no recognisable {label} {new}; "
                                         "one may be this release's (06-REVIEW WR-08)")
                 return {"execution": None, "state": "never started"}
             if len(match) != 1:
-                raise SettleUnknown(f"{len(match)} executions of the build job hold --run-id {new}")
+                raise SettleUnknown(f"{len(match)} executions of the build job hold {label} {new}")
             state = match[0]
             name = (state.get("metadata") or {}).get("name")
             if not name:
                 raise SettleUnknown("the build execution has no name")
-            record["build_execution"] = name
+            record[key] = name
         polls = 0
         while not _ended(state) and polls < SETTLE_POLLS:
             sleep(SETTLE_EVERY_S)
@@ -1129,6 +1268,8 @@ def recover(cfg, record: dict, *, runner: Runner, sleep=time.sleep, drill_restor
         if _requested(record, "service_deploy"):
             _move_traffic_back(cfg, record, result, runner)
         return result  # pending: the next run settles and restores
+    if record.get("activation") == "separate":
+        return _recover_separate(cfg, record, result, runner=runner, sleep=sleep, drill_restore_fails=drill_restore_fails)
     expected = record.get("active_before_build", NOT_READ_BACK)
     if expected is None:
         result["restore"] = "not run: no template was ACTIVE before this build, so there is none to go back to"
@@ -1142,6 +1283,54 @@ def recover(cfg, record: dict, *, runner: Runner, sleep=time.sleep, drill_restor
         except Exception as exc:  # noqa: BLE001 - recorded, and the record stays pending
             result["restore"] = f"failed: {type(exc).__name__}"
         done = _restored(result["restore"])
+    if _requested(record, "service_deploy"):
+        done = _move_traffic_back(cfg, record, result, runner) and done
+    record["reconcile"] = None if done else "pending"
+    return result
+
+
+NOT_ACTIVATED = ("not needed: {new} was built inactive (--no-activate) and never activated; it is left READY, "
+                 "inactive")
+
+
+def _recover_separate(cfg, record: dict, result: dict, *, runner: Runner, sleep, drill_restore_fails: bool) -> dict:
+    """recover() for a record whose build left the template READY and whose activation is a separate execution
+    (`activation: "separate"`, Phase 9), after the build execution settled. Before activate was requested nothing
+    could have published <new>: no restore runs (the briefs execution is never cancelled or restored: it cannot
+    activate), and the record clears. Once activate was requested, the activate execution is settled too (an unknown
+    state runs no restore and keeps the record pending; traffic still moves back when the deploy was requested,
+    WR-11), then <new> is restored against its predecessor: the activate log's retired: template when it was read,
+    else the template ACTIVE before the build; with none, `restore <new> --first` (09-24 checklist item 7, Recovery),
+    where `undone: none ACTIVE` or `nothing to do: none ACTIVE` is verified."""
+    new = record["new_template"]
+    if not _requested(record, "activate"):
+        result["restore"] = NOT_ACTIVATED.format(new=new)
+        record["reconcile"] = None
+        return result
+    try:
+        result["settle_activate"] = settle(cfg, record, runner=runner, sleep=sleep, key="activate_execution",
+                                           holds=_holds_activation, label="activate")
+    except Exception as exc:  # noqa: BLE001 - recorded, and the record stays pending
+        result["settle_activate"] = (f"unknown: {exc}" if isinstance(exc, SettleUnknown)
+                                     else f"failed: {type(exc).__name__}")
+        result["restore"] = "not run: an activation that may still be running could publish after it"
+        if _requested(record, "service_deploy"):
+            _move_traffic_back(cfg, record, result, runner)
+        return result  # pending
+    predecessor = record.get("previous_template", NOT_READ_BACK)
+    if predecessor == NOT_READ_BACK:
+        predecessor = record.get("active_before_build", NOT_READ_BACK)
+    if drill_restore_fails:
+        result["restore"] = "failed: drill, not run"
+    else:
+        try:
+            if predecessor is None:
+                result["restore"] = restore(cfg, runner, new, NOT_READ_BACK, first=True, sleep=sleep)
+            else:
+                result["restore"] = restore(cfg, runner, new, predecessor, sleep=sleep)
+        except Exception as exc:  # noqa: BLE001 - recorded, and the record stays pending
+            result["restore"] = f"failed: {type(exc).__name__}"
+    done = _restored(result["restore"])
     if _requested(record, "service_deploy"):
         done = _move_traffic_back(cfg, record, result, runner) and done
     record["reconcile"] = None if done else "pending"
@@ -1383,8 +1572,10 @@ def release(cfg: dict[str, str], *, runner: Runner, git, now: Callable[[], dt.da
         "kind": "release", "id": manifest.release_id(stamp, sha), "status": "in_progress",
         "time": stamp.isoformat(), "project": cfg["PROJECT"], "region": cfg["REGION"], "source_commit": sha,
         "engine_version": engine_version, "template_compat": template_compat, "dataset_version": dataset_version,
-        "model": {"configured": cfg["GEMINI_MODEL"], "endpoint": cfg["VERTEX_LOCATION"], "used": "not until Phase 9"},
-        "resources": _resources(cfg), "new_template": new, "previous_known_good": good["id"] if good else None,
+        "model": {"configured": cfg["GEMINI_MODEL"], "endpoint": cfg["VERTEX_LOCATION"],
+                  "used": "by the baseline briefs job (an execution of the build job) and the service, GCP=on"},
+        "resources": _resources(cfg), "new_template": new, "activation": "separate",
+        "previous_known_good": good["id"] if good else None,
         "progress": [], "reconcile": None, "recovery": None,
     }
     if is_drill(cfg):  # a live record gains no field
@@ -1427,7 +1618,8 @@ def release(cfg: dict[str, str], *, runner: Runner, git, now: Callable[[], dt.da
         p.end(revision=record["previous_revision"])
 
         p.start("build_deploy")
-        build_args = ["-m", "api.sandbox", "build"] + ([f"{DATA_MOUNT}/{dataset_version}"] if public else [])
+        build_args = (["-m", "api.sandbox", "build"] + ([f"{DATA_MOUNT}/{dataset_version}"] if public else [])
+                      + [NO_ACTIVATE])
         deploy_job(cfg, runner, cfg["BUILD_JOB"], ref, cfg["DEPLOY_SA_EMAIL"], build_env(cfg, sha), build_args,
                    timeout=BUILD_JOB_TIMEOUT, extra=data_volume(cfg) if public else ())
         p.end()
@@ -1440,23 +1632,78 @@ def release(cfg: dict[str, str], *, runner: Runner, git, now: Callable[[], dt.da
         p.end(execution=execution)
 
         p.start("build_log")
-        lines = job_lines(cfg, runner, cfg["BUILD_JOB"], execution, r"^retired: ", sleep)
+        lines = job_lines(cfg, runner, cfg["BUILD_JOB"], execution, r"^template \S+ READY for ", sleep)
         record.update(parse_build(lines))
-        if record["activated_template"] not in (new, NOT_READ_BACK):
-            raise ReleaseError(f"the build activated {record['activated_template']}, not {new}")
-        if NOT_READ_BACK in (record["active_before_build"], record["previous_template"]):
-            raise ReleaseError("the build log's previous ACTIVE: or retired: line was not read, so the template a "
-                               "recovery must restore is unknown")
-        if public is not None and dry_run:
-            print(f"dry run: a real run fails at build_log unless the build log's 'template <id> ACTIVE for <dv>' "
-                  f"line names {dataset_version}, the uploaded dataset version")
-        elif public is not None:
-            built = next((m.group(1) for line in (lines if isinstance(lines, list) else [])
-                          for m in [re.match(r"^template \S+ ACTIVE for (\S+)$", line)] if m), None)
-            if built != dataset_version:
-                raise ReleaseError(f"the build log's ACTIVE for line names {built or 'nothing read'}, not the uploaded "
+        if record["active_before_build"] == NOT_READ_BACK:
+            raise ReleaseError("the build log's previous ACTIVE: line was not read, so the template a recovery must "
+                               "restore is unknown")
+        if dry_run:
+            print(f"dry run: a real run fails at build_log unless the build log's 'template <id> READY for <dv>' line "
+                  f"names {new}" + (f" and {dataset_version}, the uploaded dataset version" if public else ""))
+        else:
+            if record["ready_template"] != new:
+                raise ReleaseError(f"the build log's READY line names {record['ready_template']}, not {new}")
+            built = _dataset_of(lines, "READY")
+            if public is not None and built != dataset_version:
+                raise ReleaseError(f"the build log's READY for line names {built or 'nothing read'}, not the uploaded "
                                    f"dataset version {dataset_version}")
         p.end()
+
+        # 6a. the paid baseline briefs job on the READY template (09 D-05, D-06; checklist item 7b, 7c)
+        p.start("briefs", "requested")  # written before the call is issued (R2-8)
+        record["briefs"] = {"execution": NOT_READ_BACK, "summary": NOT_READ_BACK, "result": "fail"}
+        briefs_exec = execute_job(cfg, runner, cfg["BUILD_JOB"], [*BRIEFS_ARGS, new])
+        record["briefs"]["execution"] = briefs_exec
+        if briefs_exec == NOT_READ_BACK:
+            raise ReleaseError("the briefs execute returned no execution name")
+        lines = job_lines(cfg, runner, cfg["BUILD_JOB"], briefs_exec, r'"type": "summary"', sleep,
+                          narrow=SUMMARY_FILTER)
+        summary = briefs_summary(lines, new)
+        if dry_run:
+            print(f"dry run: a real run fails at briefs unless the job exits 0 and its last '\"type\": \"summary\"' "
+                  f"line names {new}, GEMINI_MODEL and VERTEX_LOCATION, and stops when success + reused = 0 while "
+                  "eligible > 0; provider failures (Fallback) are recorded and do not fail it")
+            record["briefs"]["result"] = "not run (dry run)"
+        else:
+            if summary is None:
+                raise ReleaseError(f"the briefs job's '\"type\": \"summary\"' line for {new} was not read back")
+            record["briefs"]["summary"] = summary
+            problem = briefs_problem(summary, cfg)
+            if problem:
+                raise ReleaseError(problem)
+            failures = summary["failure"]
+            record["briefs"]["result"] = (f"pass with {failures} provider failures (Fallback)" if failures
+                                          else "pass")
+            print(briefs_line(summary), flush=True)
+        p.end(execution=briefs_exec, result=record["briefs"]["result"])
+
+        # 6b. publish it (checklist item 7d)
+        p.start("activate", "requested")  # written before the call is issued (R2-8)
+        activate_exec = execute_job(cfg, runner, cfg["BUILD_JOB"], [*ACTIVATE_ARGS, new])
+        record["activate_execution"] = activate_exec
+        if activate_exec == NOT_READ_BACK:
+            raise ReleaseError("the activate execute returned no execution name")
+        lines = job_lines(cfg, runner, cfg["BUILD_JOB"], activate_exec, r"^retired: ", sleep)
+        record.update(parse_activate(lines))
+        if record["previous_template"] == NOT_READ_BACK:
+            raise ReleaseError("the activate log's retired: line was not read, so the template a recovery must restore "
+                               "is unknown")
+        if dry_run:
+            print(f"dry run: a real run fails at activate unless its log's 'template <id> ACTIVE for <dv>' line names "
+                  f"{new}" + (f" and {dataset_version}" if public else "") + " and its retired: line names the template "
+                  "ACTIVE before the build")
+        else:
+            if record["activated_template"] != new:
+                raise ReleaseError(f"the activate log names {record['activated_template']} ACTIVE, not {new}")
+            activated_dv = _dataset_of(lines, "ACTIVE")
+            if public is not None and activated_dv != dataset_version:
+                raise ReleaseError(f"the activate log's ACTIVE for line names {activated_dv or 'nothing read'}, not "
+                                   f"the uploaded dataset version {dataset_version}")
+            if record["previous_template"] != record["active_before_build"]:
+                raise ReleaseError(f"the activation retired {record['previous_template'] or 'none'}, not "
+                                   f"{record['active_before_build'] or 'none'} (ACTIVE before the build): another "
+                                   "template was activated in between")
+        p.end(execution=activate_exec)
 
         p.start("bench")
         bench_args, bench_gate = (PUBLIC_BENCH_ARGS, PUBLIC_GATE) if public else (["-m", "api.bench"], BENCH_GATE)
@@ -1792,7 +2039,12 @@ def dry_run_rules(cfg: dict[str, str], calls: list[list[str]]) -> list[tuple[Cal
            "spec": {"template": {"metadata": {"annotations": {"run.googleapis.com/execution-environment": "gen2"}}}},
            "status": {"url": f"https://{service}.example.invalid", "latestReadyRevisionName": revision,
                       "traffic": [{"revisionName": revision, "percent": 100}]}}
-    build_lines = ["previous ACTIVE: none", "retired: none"]  # the activated id is the chosen one, not scripted
+    # the template id is the one the release chooses, so the scripted lines name a placeholder: each check that needs
+    # the real id prints the rule a real run enforces instead, and no briefs result is printed as observed
+    tpl, dv = "<the-new-template>", "<the-dataset-version>"
+    build_lines = ["previous ACTIVE: none", f"template {tpl} READY for {dv}"]
+    briefs_lines = [json.dumps({"type": "summary", "run_id": tpl}, sort_keys=True)]
+    activate_lines = [f"template {tpl} ACTIVE for {dv}", "retired: none"]
     bench_lines = ["SUS-19: evaluate + fact checks, slowest of 3 = 1.00 s (budget 3 s)",
                    "SUS-19 (frozen input): evaluate + fact checks, median of 3 = 1.00 s (budget 3 s)",
                    # api.bench's public mode (a public set's release gate)
@@ -1808,11 +2060,21 @@ def dry_run_rules(cfg: dict[str, str], calls: list[list[str]]) -> list[tuple[Cal
          {"metadata": {"name": "dry-run-restore"}}),
         (lambda a: is_("run", "jobs", "execute")(a) and f"--args={','.join(ACTIVE_ARGS)}" in a,
          {"metadata": {"name": "dry-run-active"}}),
+        (lambda a: is_("run", "jobs", "execute")(a) and any(x.startswith(f"--args={','.join(BRIEFS_ARGS)},")
+                                                            for x in a),
+         {"metadata": {"name": "dry-run-briefs"}}),
+        (lambda a: is_("run", "jobs", "execute")(a) and any(x.startswith(f"--args={','.join(ACTIVATE_ARGS)},")
+                                                            for x in a),
+         {"metadata": {"name": "dry-run-activate"}}),
         (is_("run", "jobs", "execute"), {"metadata": {"name": "dry-run-execution"}}),
         (lambda a: is_("logging", "read")(a) and cfg["EARLY_BENCH_JOB"] in a[3],
          [{"textPayload": x} for x in bench_lines[1:]]),
         (lambda a: is_("logging", "read")(a) and "dry-run-restore" in a[3], [{"textPayload": "ACTIVE: none"}]),
         (lambda a: is_("logging", "read")(a) and "dry-run-active" in a[3], [{"textPayload": "ACTIVE: none"}]),
+        (lambda a: is_("logging", "read")(a) and '"dry-run-briefs"' in a[3],
+         [{"textPayload": x} for x in briefs_lines]),
+        (lambda a: is_("logging", "read")(a) and '"dry-run-activate"' in a[3],
+         [{"textPayload": x} for x in activate_lines]),
         (lambda a: is_("logging", "read")(a) and cfg["BUILD_JOB"] in a[3], [{"textPayload": x} for x in build_lines]),
         (is_("logging", "read"), [{"textPayload": x} for x in bench_lines]),
         (is_("run", "services", "get-iam-policy"),

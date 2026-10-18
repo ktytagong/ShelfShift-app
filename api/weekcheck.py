@@ -41,7 +41,7 @@ def careful_day(conn, run: dict) -> None:
         counter = {"role": "manager", "branch": fact["branch"], "session_id": "weekcheck"}
         physical = overlay.physical(conn, run, "shelfshift", fact["lot_ids"])  # through the template (05.2 D-09)
         counts = {lot_id: {"shelf_units": physical[lot_id], "backroom_units": 0.0} for lot_id in fact["lot_ids"]}
-        s = signals.answer(conn, run, counter, q["request_id"], "counted", counts)
+        s = signals.answer(conn, run, counter, q["request_id"], "counted", counts, "now")  # counted now (D-22)
         signals.confirm(conn, run, counter, s["signal_id"], s["revision"], True)
     sandbox.autopilot(conn, run)
 

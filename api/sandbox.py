@@ -1,8 +1,9 @@
 """Template build, sandbox clone and reset (spec §8 Sandboxes, template and reset).
 
-    python -m api.sandbox build [ref_dir] [--allow-local] [--run-id RUN_ID]   # the deploy job; never at app startup
-    python -m api.sandbox restore RUN_ID [--first]                             # a failed release goes back (D-17)
-    python -m api.sandbox active                                               # read-only: the ACTIVE template
+    python -m api.sandbox build [ref_dir] [--allow-local] [--run-id RUN_ID] [--no-activate]
+    python -m api.sandbox activate RUN_ID                 # explicit publication; never generates briefs
+    python -m api.sandbox restore RUN_ID [--first]        # undo a failed release, preserving workspaces
+    python -m api.sandbox active                          # read-only ACTIVE template, no migration/install
 
 A TEMPLATE run starts at day 0 from the seed's day-0 lots and inbound in all three worlds (record in `lots`, physical
 in `truth_lots`), runs the day start, then warms up through `advance.advance_day`, the same function a visitor's
@@ -13,7 +14,9 @@ there is a stop-and-hand-back, never worked around (research Pitfall 13). Units 
 every world, no committed storage or truck booking may exceed what exists (`limits_check`), and the D-21 checks
 (`outcome_problems`:
 the four reviewer cases open on that day, SUS-19's D-15 beats, strawberries only by cold chain) must pass, before it
-is marked ACTIVE; any failure marks it FAILED with the message naming each broken beat, and the previous ACTIVE
+is marked READY, then ACTIVE by default. With --no-activate the completed template stays READY for the separate
+user-run brief job and number/source review; explicit activation publishes it. No lifecycle command generates.
+Any failure marks it FAILED with the message naming each broken beat, and the previous ACTIVE
 template stays in use. Nothing in api/ is tuned to make a beat hold: a broken beat goes back to Phase 3 (D-14). A sandbox is a clone of the ACTIVE template: every per-run row copied with INSERT … SELECT, changing only
 run_id. The table and column names come from information_schema for the current schema (never from a request) and
 are read once per process (04-RESEARCH Pattern 5). Sandbox creation and Reset are one transaction: the session row
@@ -148,9 +151,12 @@ def network_check(conn, run: dict, ref: refdata.Ref, truth: dict) -> None:
 def autopilot(conn, run: dict) -> list[str]:
     """The scripted warm-up: take ownership as the source store, send, accept (a transfer), approve and prepare every
     OPEN case's recommendation, in case id order, through the service layer, as the case's own managers would (only
-    the owner sends: 06.1 D-54, D-67). Nothing is tweaked to make it pass: an ApiError becomes a TemplateError naming
-    the case (D-14; research Pitfall 13). Returns the case ids it acted on."""
+    the owner sends: 06.1 D-54, D-67). Its accept and approve name the plan (07 review C) and acknowledge the
+    version's Advisory facts, logged on the warm-up's own decisions (07-CONTEXT D-12, D-26; research F-11). Nothing is
+    tweaked to make it pass: an ApiError (a Required check or a lot hold's commitment_blocked included) becomes a
+    TemplateError naming the case (D-14; research Pitfall 13). Returns the case ids it acted on."""
     from . import ownership  # imported here so the 06.1 change stays inside this function (build/deploy merge)
+    from . import commitment  # Phase 7 (07-09), imported here for the same reason
     acted = []
     for case in db.rows(conn, "SELECT * FROM cases WHERE run_id = :r AND state = 'OPEN' ORDER BY case_id",
                         r=run["run_id"]):
@@ -158,6 +164,7 @@ def autopilot(conn, run: dict) -> list[str]:
         if rec is None:  # no recommendation (missing data): nothing to approve
             continue
         plan, cid, v = cases.parse_plan(rec["result"]["recommended"]), case["case_id"], case["active_rec_version"]
+        ack = commitment.expected_ack(rec, plan, commitment.checks_in_force(case, rec))
         src = {"account": case["source_branch"], "role": "manager", "branch": case["source_branch"],
                "session_id": "warmup"}
         try:
@@ -165,8 +172,8 @@ def autopilot(conn, run: dict) -> list[str]:
             workflow.send(conn, run, src, cid, v)
             if plan.kind == TRANSFER:
                 workflow.decide(conn, run, {"account": plan.dest, "role": "manager", "branch": plan.dest,
-                                            "session_id": "warmup"}, cid, v, "accept")
-            if workflow.decide(conn, run, src, cid, v, "approve")["state"] == "APPROVED":
+                                            "session_id": "warmup"}, cid, v, "accept", None, ack, plan.key)
+            if workflow.decide(conn, run, src, cid, v, "approve", None, ack, plan.key)["state"] == "APPROVED":
                 workflow.prepare(conn, run, src, cid)
         except ApiError as exc:
             extra = f" {exc.extra}" if exc.extra else ""
@@ -274,8 +281,8 @@ def _story_beats(conn, run: dict, ref: refdata.Ref, story: dict) -> list[str]:
 ANALYZED_TABLES = ("lots", "truth_lots", "inbound")  # analyzed in the build transaction before the day-0 screen
 
 
-def build_template(dataset_version: str, run_id: str | None = None) -> str:
-    """Build, warm up and check a template (spec §8 template steps 1-4, 6); returns its run_id once ACTIVE.
+def build_template(dataset_version: str, run_id: str | None = None, *, activate: bool = True) -> str:
+    """Build, warm up and check a template; return its run_id once ACTIVE, or READY if not activating.
 
     `run_id` is the release's choice (D-17), else `tpl-<10 hex>`; a run id that already exists is refused before
     anything is written. Any failure marks it FAILED with the message and raises TemplateError; the previous ACTIVE
@@ -283,7 +290,7 @@ def build_template(dataset_version: str, run_id: str | None = None) -> str:
     ref, truth = refdata.get(dataset_version), refdata.truth(dataset_version)
     run_id = run_id or f"tpl-{uuid.uuid4().hex[:10]}"
     with db.tx() as conn:
-        if db.one(conn, "SELECT 1 AS x FROM demo_runs WHERE run_id = :r", r=run_id):
+        if _run(conn, run_id) is not None:
             raise TemplateError(f"template run id {run_id} already exists")
     with db.tx() as conn:  # step 1: a TEMPLATE run, INITIALIZING; no session can point at it
         db.run(conn, "INSERT INTO demo_runs (run_id, kind, dataset_version, status, day, next_case_no) VALUES "
@@ -323,6 +330,9 @@ def build_template(dataset_version: str, run_id: str | None = None) -> str:
             if public:
                 with buildsteps.step(run, "pick"):
                     catalogue.pick(conn, _run(conn, run_id))
+            from . import preload  # 07-16: the preloaded material, by its rule, before the checks (07-CONTEXT D-18)
+            with buildsteps.step(run, "preload"):
+                preload.generate(conn, _run(conn, run_id))  # a minimum it can't meet is logged, never a failure (D-39)
             with buildsteps.step(run, "network_check"):
                 network_check(conn, _run(conn, run_id), ref, truth)
             with buildsteps.step(run, "limits_check"):
@@ -339,10 +349,14 @@ def build_template(dataset_version: str, run_id: str | None = None) -> str:
         if isinstance(exc, TemplateError):
             raise
         raise TemplateError(message) from exc
-    with db.tx() as conn:  # step 6: the new template replaces the old one in one transaction, the old one stamped
-        db.run(conn, "UPDATE demo_runs SET status = 'RETIRED', retired_at = now() "
-                     "WHERE kind = 'TEMPLATE' AND status = 'ACTIVE'")
-        db.run(conn, "UPDATE demo_runs SET status = 'ACTIVE' WHERE run_id = :r", r=run_id)
+    with db.tx() as conn:
+        if activate:
+            # Acquire the lifecycle lock before the first demo_runs UPDATE;
+            # simultaneous default builds must not deadlock upgrading row-writer locks.
+            db.run(conn, "LOCK TABLE demo_runs IN SHARE ROW EXCLUSIVE MODE")
+        db.run(conn, "UPDATE demo_runs SET status = 'READY' WHERE run_id = :r", r=run_id)
+        if activate:  # the legacy default still publishes only after every check passed
+            activate_template(conn, run_id)
     return run_id
 
 
@@ -352,36 +366,67 @@ def active_template(conn) -> dict | None:
 
 
 def predecessor(conn, new_run_id: str) -> str | None:
-    """The template <new>'s activation retired (06-REVIEWS R2-11), the one rule restore and the build's `retired:`
-    line share: the RETIRED TEMPLATE created before <new> whose retired_at stamp is the latest, or None.
+    """Exact previous activation for new releases; retain the release owner's legacy timestamp fallback.
 
-    The stamp must also be no earlier than <new>'s own created_at: activation stamps after the build started, so a
-    template retired before <new> existed (by an earlier restore, say) is never claimed when nothing was ACTIVE at
-    activation."""
-    r = db.one(conn, "SELECT p.run_id FROM demo_runs p JOIN demo_runs n ON n.run_id = :n "
-                     "WHERE p.kind = 'TEMPLATE' AND p.status = 'RETIRED' AND p.retired_at IS NOT NULL "
-                     "AND p.created_at < n.created_at AND p.retired_at >= n.created_at "
-                     "ORDER BY p.retired_at DESC, p.created_at DESC LIMIT 1", n=new_run_id)
-    return r["run_id"] if r else None
+    An inactive build may predate the current ACTIVE template. Its actual
+    predecessor therefore cannot be inferred from template creation ordering.
+    NULL activated_at identifies legacy rows, without inventing old provenance.
+    """
+    new = _run(conn, new_run_id)
+    if new is None or new["kind"] != "TEMPLATE":
+        return None
+    if new.get("activated_at") is not None:
+        return new.get("predecessor_run_id")
+    row = db.one(conn, "SELECT p.run_id FROM demo_runs p JOIN demo_runs n ON n.run_id = :n "
+                       "WHERE p.kind = 'TEMPLATE' AND p.status = 'RETIRED' AND p.retired_at IS NOT NULL "
+                       "AND p.created_at < n.created_at AND p.retired_at >= n.created_at "
+                       "ORDER BY p.retired_at DESC, p.created_at DESC LIMIT 1", n=new_run_id)
+    return row["run_id"] if row else None
+
+
+def _lock_templates(conn):
+    # Serialize even the first activation, when there are no ACTIVE rows to lock.
+    # This short transaction contains no model work and changes no reset lock order.
+    db.run(conn, "LOCK TABLE demo_runs IN SHARE ROW EXCLUSIVE MODE")
+    return {row["run_id"]: row for row in db.rows(conn, "SELECT * FROM demo_runs WHERE kind = 'TEMPLATE' "
+                                                       "ORDER BY run_id FOR UPDATE")}
+
+
+def activate_template(conn, run_id: str) -> str | None:
+    """Publish one checked inactive template atomically; return what this activation retired.
+
+    A retry on the same ACTIVE run is a read of its retained provenance. Neither
+    publication nor rollback generates, migrates, installs or copies any AI row.
+    """
+    templates = _lock_templates(conn)
+    target = templates.get(run_id)
+    if target is not None and target["status"] == "ACTIVE":
+        return predecessor(conn, run_id)
+    if target is None or target["status"] != "READY" or target["failure"]:
+        raise TemplateError(f"{run_id} is not a completed inactive template (READY)")
+    if db.one(conn, "SELECT 1 AS busy FROM ai_outputs WHERE run_id = :r AND status = 'GENERATING' LIMIT 1", r=run_id):
+        raise TemplateError(f"{run_id} has an unfinished baseline attempt")
+    previous = active_template(conn)
+    previous_id = previous["run_id"] if previous else None
+    db.run(conn, "UPDATE demo_runs SET status = 'RETIRED', retired_at = now() "
+                 "WHERE kind = 'TEMPLATE' AND status = 'ACTIVE'")
+    db.run(conn, "UPDATE demo_runs SET status = 'ACTIVE', retired_at = NULL, activated_at = now(), "
+                 "predecessor_run_id = :p WHERE run_id = :r AND kind = 'TEMPLATE'", p=previous_id, r=run_id)
+    return previous_id
 
 
 def has_template_table(conn, table: str = "demo_runs") -> bool:
-    """Whether the template table exists: one SELECT, resolved by the same unqualified name and search_path every
-    sandbox query uses. A fresh database whose first build failed at migrate has none (06-REVIEW WR-06)."""
+    """A fresh database may have failed before migration; status/restore remain read-only there."""
     return bool(db.one(conn, "SELECT to_regclass(CAST(:t AS text)) IS NOT NULL AS present", t=table)["present"])
 
 
 def restore(conn, new_run_id: str, *, first: bool = False) -> tuple[str | None, str] | None:
-    """Undo <new>'s activation in the caller's transaction (D-17): its predecessor ACTIVE again, <new> RETIRED.
+    """Undo only an ACTIVE TEMPLATE, leaving all sandboxes/per-run rows intact (release D-17).
 
-    Every TEMPLATE row is locked FOR UPDATE first, so a restore never races a build's step 6 or another restore.
-    Returns None (nothing changed) when <new> is unknown or not ACTIVE: FAILED, INITIALIZING or already restored, so
-    the release can run it after every failed or uncertain outcome (R2-1). Raises TemplateError when no older
-    template was retired by it, unless `first` (a failed first release, 06-REVIEW WR-06): then <new> is RETIRED so
-    that none is ACTIVE, and (None, <new>) is returned. Only TEMPLATE rows change: no sandbox and no per-run row is
-    touched."""
-    templates = {r["run_id"]: r for r in db.rows(conn, "SELECT run_id, status, created_at, retired_at FROM demo_runs "
-                                                       "WHERE kind = 'TEMPLATE' ORDER BY run_id FOR UPDATE")}
+    Unknown, unfinished, failed or already restored runs are idempotent no-ops.
+    A first release may explicitly restore the prior absence of an ACTIVE run.
+    """
+    templates = _lock_templates(conn)
     new = templates.get(new_run_id)
     if new is None or new["status"] != "ACTIVE":
         return None
@@ -389,19 +434,28 @@ def restore(conn, new_run_id: str, *, first: bool = False) -> tuple[str | None, 
     if prev is None:
         if not first:
             raise TemplateError(f"no previous template to restore before {new_run_id}")
-        db.run(conn, "UPDATE demo_runs SET status = 'RETIRED', retired_at = now() WHERE run_id = :r "
-                     "AND kind = 'TEMPLATE'", r=new_run_id)
-        return None, new_run_id
-    db.run(conn, "UPDATE demo_runs SET status = 'RETIRED', retired_at = now() WHERE run_id = :r AND kind = 'TEMPLATE'",
-           r=new_run_id)
-    db.run(conn, "UPDATE demo_runs SET status = 'ACTIVE', retired_at = NULL WHERE run_id = :r AND kind = 'TEMPLATE'",
-           r=prev)
+    elif prev not in templates or templates[prev]["status"] != "RETIRED":
+        raise TemplateError(f"previous template {prev} is not available to restore before {new_run_id}")
+    db.run(conn, "UPDATE demo_runs SET status = 'RETIRED', retired_at = now() "
+                 "WHERE run_id = :r AND kind = 'TEMPLATE'", r=new_run_id)
+    if prev is not None:
+        db.run(conn, "UPDATE demo_runs SET status = 'ACTIVE', retired_at = NULL "
+                     "WHERE run_id = :r AND kind = 'TEMPLATE'", r=prev)
     return prev, new_run_id
 
 
 def clone(conn, template: dict) -> str:
     """Copy the template's workflow rows into a new SANDBOX run with INSERT … SELECT; only run_id changes. The world
-    tables (overlay.OVERLAID) are read through the template until the workspace writes a series (05.2 D-08..D-10)."""
+    tables (overlay.OVERLAID) are read through the template until the workspace writes a series (05.2 D-08..D-10).
+
+    Assistant rows use this same column-for-column copy, including exact checked
+    sources, original unsent drafts and retained baseline usage. Re-read the
+    persisted source: a caller's metadata must never promote a personal workspace
+    (and its private post-change outputs) to a shared baseline.
+    """
+    template = _run(conn, template["run_id"])
+    if template is None or template["kind"] != "TEMPLATE":
+        raise TemplateError("a sandbox can only clone a persisted template")
     new = f"sbx-{uuid.uuid4().hex[:12]}"
     db.run(conn, "INSERT INTO demo_runs (run_id, kind, dataset_version, template_run_id, status, day, version, "
                  "next_case_no) VALUES (:n, 'SANDBOX', :v, :t, 'ACTIVE', :d, :ver, :no)", n=new,
@@ -411,6 +465,8 @@ def clone(conn, template: dict) -> str:
         names = ", ".join(c for c in columns(conn, table) if c != "run_id")
         db.run(conn, f"INSERT INTO {table} (run_id, {names}) SELECT :n, {names} FROM {table} WHERE run_id = :t",
                n=new, t=template["run_id"])
+    from . import preload  # 07-16: the preloaded times start with this workspace (07-CONTEXT D-05, D-18)
+    preload.rebase(conn, new, template)
     return new
 
 
@@ -494,6 +550,9 @@ def main(argv: list[str] | None = None) -> int:
                        help="accept the local stand-in forecast (local builds only; the deploy refuses it)")
     build.add_argument("--run-id", type=_run_id, default=None,
                        help="the new template's run id, chosen by the release (tpl-...); default tpl-<10 hex>")
+    build.add_argument("--no-activate", action="store_true", help="leave the checked template READY for the user-run brief job")
+    pub = sub.add_parser("activate", help="publish a completed inactive template; never generate briefs")
+    pub.add_argument("run_id", metavar="RUN_ID", type=_run_id)
     rest = sub.add_parser("restore", help="a failed release: make the template RUN_ID's activation retired ACTIVE "
                                           "again; a no-op when RUN_ID is not ACTIVE; either way it ends with "
                                           "'ACTIVE: <id|none>', the template ACTIVE afterwards")
@@ -531,19 +590,29 @@ def main(argv: list[str] | None = None) -> int:
         active = db.in_tx(active_template)  # read after the restore committed: what the release checks (CR-02)
         print(f"ACTIVE: {active['run_id'] if active else 'none'}")
         return 0
+    if args.command == "activate":
+        try:
+            previous = db.in_tx(activate_template, args.run_id)
+        except TemplateError as exc:
+            print(f"activation failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"template {args.run_id} ACTIVE for {db.in_tx(_run, args.run_id)['dataset_version']}")
+        print(f"retired: {previous or 'none'}", flush=True)
+        return 0
     db.migrate()
     try:
         dv = refdata.install(args.ref_dir, allow_local=args.allow_local)
         previous = db.in_tx(active_template)
         print(f"previous ACTIVE: {previous['run_id'] if previous else 'none'}", flush=True)
-        run_id = build_template(dv, args.run_id)
+        run_id = build_template(dv, args.run_id, activate=not args.no_activate)
     except (ValueError, TemplateError) as exc:
         print(f"template build failed: {exc}", file=sys.stderr)
         return 1
-    print(f"template {run_id} ACTIVE for {dv}")
-    # From here the new template is ACTIVE: a failure is not caught, so the job exits non-zero and the release's
-    # restore puts the predecessor back (R2-1, 06-07).
-    print(f"retired: {db.in_tx(predecessor, run_id) or 'none'}", flush=True)
+    print(f"template {run_id} {'READY' if args.no_activate else 'ACTIVE'} for {dv}")
+    if not args.no_activate:
+        # From here the new template is ACTIVE: a failure is not caught, so the job exits non-zero and the release's
+        # restore puts the predecessor back (R2-1, 06-07).
+        print(f"retired: {db.in_tx(predecessor, run_id) or 'none'}", flush=True)
     removed: dict[str, int] = {}
     while True:  # the deploy job drains what requests left behind, one bounded batch per transaction (IN-01)
         batch = db.in_tx(prune)
@@ -551,6 +620,10 @@ def main(argv: list[str] | None = None) -> int:
         if not any(batch.values()):
             break
     print("pruned " + ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in removed.items()))
+    with db.tx() as conn:  # after the freeze's pruned line, which follows retired: (test_release_safety); 07-16: a preload minimum the data does not give is reported, never silent (D-39)
+        from . import preload
+        missing = preload.shortfall(conn, run_id)
+    print(f"preload: missing {'; '.join(missing)}" if missing else "preload: every minimum met")
     return 0
 
 

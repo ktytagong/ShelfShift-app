@@ -26,7 +26,7 @@ import sqlalchemy as sa
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from api import cases, db, planning, refdata, sandbox, views
+from api import advance, cases, db, overlay, planning, refdata, sandbox, views
 from engine.model import TRANSFER
 from tests.api.conftest import fresh
 from tests.api.oracle_views import oracle
@@ -467,3 +467,177 @@ def test_hq_nav_counts_is_set_based(synthetic, public_ws, no_worker):
         for store in refdata.get(fresh(run_id)["dataset_version"]).branches:
             new, old = nav_statements(run_id, store, base=False), nav_statements(run_id, store, base=True)
             assert new <= old, f"{store}: {new} statements, BASE {old}"
+
+
+# --- Phase 7's per-card keys (the merge of build/verify into build/verify-web; 07 D-31, 07-SCREENS-MERGE.md) ----------
+# The set-based cards read Phase 7's records for every case at once (review flags, lot holds and the lots each case
+# involves, filed reports, successors) and apply the per-case rules to them; the oracle's old_card is build/verify's
+# per-case card. These states, written over the matrix as test shortcuts (as `matrix` writes its own), hold the two to
+# the same bytes where those keys are not empty.
+
+P7_STATES = ("selected", "selected_deadline_computed", "review_flag", "cleared_flag_left_out", "lot_hold_own_lot",
+             "lot_hold_moved_lot", "released_hold_left_out", "new_report", "confirmed_report_left_out",
+             "needs_decision_or_awaiting", "awaiting_verification", "followed_by_successor")
+
+
+def _other_option(rec: dict, keys: tuple[str, ...]) -> dict | None:
+    """The first option of the stored result whose key is none of `keys`, in the result's order, or None."""
+    return next((o for o in rec["result"]["options"] if o["key"] not in keys), None)
+
+
+def phase7(run_id: str, chosen: dict[str, str], action: dict) -> dict[str, str]:
+    """Phase 7's states over the matrix of a workspace whose SUS-19 was dispatched and received short (`action`, its
+    TRANSFER work order): {state: the case it is on}.
+
+    A selection of another engine option bound to the active version (one storing its own decide_by, one without it,
+    whose deadline is computed from the stored input); two open review flags and a cleared one; ACTIVE lot holds on a
+    case's own lot and on the lot moved from SUS-19's lot (a record row at the destination, its series materialized),
+    and a released hold; two unconfirmed reports and a confirmed one, copies of a preloaded report with their own ids
+    and scope; and closed lots still at risk, on cases no other state here uses: one plain, one cancelled with a hold
+    on its lot and one a successor follows."""
+    run = fresh(run_id)
+    with db.tx() as conn:
+        case = {c["case_id"]: c for c in db.rows(conn, "SELECT * FROM cases WHERE run_id = :r", r=run_id)}
+        recs = {cid: cases.active_rec(conn, c) for cid, c in case.items()}
+        lot_of = {cid: c["lot_id"] for cid, c in case.items()}
+        story_lot = overlay.lot(conn, run, "shelfshift", lot_of[STORY])
+        # three cases no other Phase 7 state uses (the matrix's own states are asserted on the other workspaces); a
+        # closed lot's label needs stock on the record, so the first two get a lot with stock (their product's first)
+        used = {STORY, *(chosen[k] for k in ("open_source", "waiting", "approved", "open_unowned", "pa_live_hold",
+                                             "open_hq"))}
+        spare = sorted(c for c in case if c not in used)[:3]
+        assert len(spare) == 3, "three cases no other state uses"
+        read, p = overlay.everywhere(conn, run, "lots")
+        stock = db.rows(conn, f"SELECT lots.lot_id, lots.sku FROM lots WHERE {read} AND lots.world = 'shelfshift' "
+                              f"AND lots.qty > 0 ORDER BY lots.lot_id", **p)
+    stocked = {cid: next((x for x in stock if x["sku"] == case[cid]["sku"]), stock[0])["lot_id"] for cid in spare[:2]}
+    on = {}
+    # the plan in force: another option, selected (07-CONTEXT D-23); its own decide_by stored, or not (07 review G)
+    for state, label in (("selected", "open_source"), ("selected_deadline_computed", "waiting")):
+        cid = chosen[label]
+        rec = recs[cid]
+        option = (_other_option(rec, (rec["result"]["recommended"], "keep")) or
+                  _other_option(rec, (rec["result"]["recommended"],)))  # a plan with a deadline first
+        assert option is not None, f"{cid} has a second option"
+        sel = {"plan_key": option["key"], "label": option["label"], "rec_version": rec["rec_version"],
+               "by": case[cid]["source_branch"], "at": "2026-10-18T03:00:00+00:00", "fact_checks": []}
+        if state == "selected":
+            sel["decide_by"] = None
+        scratch(run_id, "UPDATE cases SET selected = CAST(:s AS jsonb) WHERE run_id = :r AND case_id = :c",
+                s=db.js(sel), c=cid)
+        on[state] = cid
+    # review flags on committed plans: two open, one cleared (07-CONTEXT D-17)
+    for n, (cid, cleared) in enumerate(((chosen["approved"], False), (chosen["approved"], True), (STORY, False),
+                                        (chosen["approved"], False))):
+        scratch(run_id, "INSERT INTO review_flags (run_id, flag_id, case_id, fact_id, reason, cleared_at) VALUES (:r, "
+                        ":f, :c, :x, 'New confirmed information · review required', CASE WHEN :done THEN now() END)",
+                f=f"FLAG-p7-{n}", c=cid, x=f"F-p7-{n}", done=cleared)
+    on["review_flag"] = on["cleared_flag_left_out"] = chosen["approved"]
+    # lot holds (07-CONTEXT D-13): the case's own lot, the lot moved from SUS-19's, and a released one
+    with db.tx() as conn:
+        overlay.materialize(conn, run, "shelfshift", action["dest"], story_lot["sku"])
+        moved = {**story_lot, "lot_id": action["new_lot_id"], "branch": action["dest"], "qty": 3,
+                 "moved_from": story_lot["lot_id"], "received_seq": 10**6}
+        advance.insert_lot(conn, run_id, "shelfshift", moved, 3)
+    for n, (lot_id, branch, state) in enumerate((
+            (lot_of[chosen["open_unowned"]], case[chosen["open_unowned"]]["source_branch"], "ACTIVE"),
+            (action["new_lot_id"], action["dest"], "ACTIVE"),
+            (lot_of[chosen["pa_live_hold"]], case[chosen["pa_live_hold"]]["source_branch"], "RELEASED"),
+            (stocked[spare[1]], case[spare[1]]["source_branch"], "ACTIVE"))):
+        scratch(run_id, "INSERT INTO lot_holds (run_id, hold_id, lot_id, branch, kind, reason, placed_by, state, "
+                        "resolved_at) VALUES (:r, :h, :l, :b, 'CONDITION', 'matrix hold', :b, :s, CASE WHEN :s = "
+                        "'RELEASED' THEN now() END)", h=f"HOLD-p7-{n}", l=lot_id, b=branch, s=state)
+    on["lot_hold_own_lot"], on["lot_hold_moved_lot"] = chosen["open_unowned"], STORY
+    on["released_hold_left_out"] = chosen["pa_live_hold"]
+    # filed reports (07-CONTEXT D-16): copies of a preloaded report, two READ and one CONFIRMED
+    with db.tx() as conn:
+        base = db.one(conn, "SELECT signal_id FROM signals WHERE run_id = :r AND report_id IS NOT NULL "
+                            "ORDER BY created_at, signal_id LIMIT 1", r=run_id)
+        assert base is not None, "the template preloads a report (07-16)"
+        names = [c for c in sandbox.columns(conn, "signals")
+                 if c not in ("run_id", "signal_id", "report_id", "state", "affects", "created_at")]
+        for n, (state, scope) in enumerate((("READ", [chosen["open_unowned"], chosen["pa_live_hold"]]),
+                                            ("READ", [chosen["open_unowned"], chosen["approved"]]),
+                                            ("CONFIRMED", [chosen["open_unowned"]]))):
+            db.run(conn, f"INSERT INTO signals (run_id, signal_id, report_id, state, affects, created_at, "
+                         f"{', '.join(names)}) SELECT run_id, :s, :s, :st, CAST(:a AS jsonb), "
+                         f"now() + make_interval(secs => :n), {', '.join(names)} FROM signals WHERE run_id = :r "
+                         f"AND signal_id = :b", r=run_id, s=f"SIG-p7-{n}", st=state, a=db.js(scope), n=n,
+                   b=base["signal_id"])
+    on["new_report"] = on["confirmed_report_left_out"] = chosen["open_unowned"]
+    # closed lots still at risk (07-CONTEXT D-24): rejected; cancelled with a hold on its lot; one a successor follows
+    for cid, closed in ((spare[0], "REJECTED"), (spare[1], "CLOSED"), (spare[2], "REJECTED")):
+        scratch(run_id, "UPDATE cases SET state = :s, reason = 'matrix', lot_status = 'AT_RISK', closed_as = CASE "
+                        "WHEN :s = 'CLOSED' THEN 'CANCELLED' END WHERE run_id = :r AND case_id = :c", s=closed, c=cid)
+        scratch(run_id, "DELETE FROM reservations WHERE run_id = :r AND case_id = :c AND state = 'HELD'", c=cid)
+        if cid in stocked:  # closed now, so the one-open-case index allows a lot another case has open
+            scratch(run_id, "UPDATE cases SET lot_id = :l WHERE run_id = :r AND case_id = :c", l=stocked[cid], c=cid)
+    scratch(run_id, "UPDATE cases SET predecessor = :p WHERE run_id = :r AND case_id = :c", p=spare[2],
+            c=chosen["open_hq"])
+    on["needs_decision_or_awaiting"], on["awaiting_verification"] = spare[0], spare[1]
+    on["followed_by_successor"] = spare[2]
+    return on
+
+
+def phase7_coverage(run_id: str, on: dict[str, str], board: list[dict]) -> set[str]:
+    """Which Phase 7 states the cards show, read from the answered cards and the database (not from `phase7`'s own
+    bookkeeping beyond which case each state is on)."""
+    card = {c["case_id"]: c for c in board}
+    kinds = {cid: {b["kind"]: b for b in c["badges"]} for cid, c in card.items()}
+    have = set()
+    with db.tx() as conn:
+        sel = {r["case_id"]: r["has_by"] for r in db.rows(
+            conn, "SELECT case_id, selected ? 'decide_by' AS has_by FROM cases WHERE run_id = :r "
+                  "AND selected IS NOT NULL", r=run_id)}
+        moved_from = db.one(conn, "SELECT moved_from FROM lots WHERE run_id = :r AND lot_id = (SELECT lot_id FROM "
+                                  "lot_holds WHERE run_id = :r AND hold_id = 'HOLD-p7-1')", r=run_id)
+    if card[on["selected"]]["selected_plan"] and sel.get(on["selected"]) is True:
+        have.add("selected")
+    if card[on["selected_deadline_computed"]]["selected_plan"] and sel.get(on["selected_deadline_computed"]) is False \
+            and card[on["selected_deadline_computed"]]["decide_by"] is not None:
+        have.add("selected_deadline_computed")
+    flag = kinds[on["review_flag"]].get("review_flag")
+    if flag:
+        have.add("review_flag")
+        ids = flag["flag_ids"]
+        if "FLAG-p7-1" not in ids and "FLAG-p7-3" in ids and ids.index("FLAG-p7-0") < ids.index("FLAG-p7-3"):
+            have.add("cleared_flag_left_out")
+    if "HOLD-p7-0" in (kinds[on["lot_hold_own_lot"]].get("lot_hold") or {}).get("hold_ids", []):
+        have.add("lot_hold_own_lot")
+    if moved_from is not None and moved_from["moved_from"] == card[STORY]["lot_id"] and \
+            "HOLD-p7-1" in (kinds[STORY].get("lot_hold") or {}).get("hold_ids", []):
+        have.add("lot_hold_moved_lot")
+    if "lot_hold" not in kinds[on["released_hold_left_out"]]:
+        have.add("released_hold_left_out")
+    report = (kinds[on["new_report"]].get("new_report") or {}).get("signal_ids", [])
+    if report[-2:] == ["SIG-p7-0", "SIG-p7-1"]:
+        have.add("new_report")
+    if report and "SIG-p7-2" not in report:
+        have.add("confirmed_report_left_out")
+    if card[on["needs_decision_or_awaiting"]]["lot_status"] in ("Needs decision", "Awaiting verification"):
+        have.add("needs_decision_or_awaiting")
+    if card[on["awaiting_verification"]]["lot_status"] == "Awaiting verification":
+        have.add("awaiting_verification")
+    followed = card[on["followed_by_successor"]]
+    if followed["successor"] is not None and followed["lot_status"] is None:
+        have.add("followed_by_successor")
+    return have
+
+
+@pytest.fixture(scope="module")
+def phase7_ws(template):
+    """A synthetic workspace with SUS-19 dispatched and received short, the state matrix and Phase 7's states:
+    (run_id, {state: case_id}). Cloned from the synthetic template itself: by now `public_template` is ACTIVE for
+    this module."""
+    with db.tx() as conn:
+        run_id = sandbox.clone(conn, db.one(conn, "SELECT * FROM demo_runs WHERE run_id = :r", r=template))
+    action = prepare_story(run_id)
+    dispatched_and_short(run_id, action, 2)
+    return run_id, phase7(run_id, matrix(run_id), action)
+
+
+def test_phase7_keys_answer_byte_identical_to_base(phase7_ws, no_worker):
+    run_id, on = phase7_ws
+    seen = compare(run_id, _accounts(run_id), _case_ids(run_id))
+    have = phase7_coverage(run_id, on, seen["HQ"]["cases"]["cases"])
+    assert set(P7_STATES) <= have, f"the Phase 7 states lack {sorted(set(P7_STATES) - have)}"

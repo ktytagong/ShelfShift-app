@@ -9,7 +9,7 @@ buttons), never a quantity or an amount (04 D-14).
 
 06.1-31 moved 05.2-22's path onto the product: the account signs in on the card (`sign_in`, and `switch_seat` signs
 out and back in, 06.1-15); the mark is D-63's; ownership comes before Send for approval (D-54, D-67); the on-screen
-names are D-61's ("Request stock check", Tasks, "Prepare transfer work order"); and the product has no day control
+names are D-61's and D-36's ("Count stock", Tasks, "Prepare transfer work order"); and the product has no day control
 (D-01, D-03), so the step that checked the public set's missing day button is gone (the server's refusal of a public
 day move stays covered by tests/api).
 """
@@ -24,8 +24,9 @@ import pytest
 from playwright.sync_api import Browser, Page, expect
 
 from tests.web.conftest import Web, case_json, new_context, public_only, session_json, sign_in, switch_seat
-from tests.web.test_tasks import (count_fact, count_input, open_tasks_page, request_card, request_for,
-                                  summary_value)
+from tests.web.test_journey import acknowledge
+from tests.web.test_tasks import (checked_just_now, count_fact, count_input, open_tasks_page, request_card,
+                                  request_for, summary_value)
 
 pytestmark = [pytest.mark.web, public_only]
 
@@ -39,7 +40,8 @@ APPROVE = "Approve plan"
 PREPARE = "Prepare transfer work order"
 DISPATCH = "Record dispatch"
 ACTIONS = (TAKE, SEND, ACCEPT, APPROVE, PREPARE, DISPATCH)
-REQUEST_STOCK_CHECK = "Request stock check"
+REQUEST_STOCK_CHECK = "Count stock"  # 07-21 (07-CONTEXT D-36; was "Request stock check")
+SEND_REQUEST = "Send request"  # the request panel's submit (07-21)
 DAY_CONTROL = re.compile(r"\bday\b", re.IGNORECASE)  # any button naming the day (the Phase 5 demo panel had one)
 
 
@@ -213,7 +215,7 @@ def test_the_judges_path_on_the_public_dataset(browser: Browser, web: Web):
         day = s["day"]
 
         # Verify before you move: the start seat is the verify case's source (D-38). Its card opens the stock
-        # decision; the Context step's plan-changing count fact offers Request stock check
+        # decision; the Context step's plan-changing count fact offers Count stock
         verify = card_by_tag(page, "verify")
         assert verify["source"] == store, (verify["source"], store)
         board_region(page).get_by_test_id(f"decision-card-{verify['key']}").click()
@@ -226,12 +228,13 @@ def test_the_judges_path_on_the_public_dataset(browser: Browser, web: Web):
         steps.get_by_role("button", name="2. Context").click()
         expect(step_panel(page)).to_have_attribute("data-step", "CONTEXT")
         row = step_panel(page).locator(f"[data-fact-id='{fact['fact_id']}']")
+        row.get_by_role("button", name=REQUEST_STOCK_CHECK, exact=True).click()  # 07-21: opens the request panel
         with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/requests")) as sent:
-            row.get_by_role("button", name=REQUEST_STOCK_CHECK, exact=True).click()
+            row.get_by_test_id("request-panel").get_by_role("button", name=SEND_REQUEST, exact=True).click()
         assert sent.value.status == 200, sent.value.status
         q = request_for(page, d, fact["fact_id"])
         counter = q["to_branch"]
-        expect(row.get_by_test_id("stock-check-status")).to_have_text(f"Stock check requested from {counter}")
+        expect(row.get_by_test_id("stock-check-status")).to_have_text(q["status"])
         expect(row.get_by_role("button", name=REQUEST_STOCK_CHECK)).to_have_count(0)
         # A request blocks nothing: the source takes ownership and Send for approval is offered while the stock check
         # is still open (it is not pressed here: the confirmed count re-plans first)
@@ -250,12 +253,12 @@ def test_the_judges_path_on_the_public_dataset(browser: Browser, web: Web):
         for lot in q["lot_ids"]:
             for field in ("shelf", "backroom"):
                 count_input(card, q, lot, field).fill("0")
+        checked_just_now(card)  # Phase 7 (07 D-22): an answer says when the count was taken
         card.get_by_role("button", name="Send answer").click()
         expect(card.get_by_text("Answered · confirm the count", exact=True)).to_be_visible()
         card.get_by_label("I checked the shelf and the backroom for this lot").check()
         card.get_by_role("button", name="Confirm count").click()
-        expect(card).to_contain_text(f"Count confirmed by {counter} manager")
-        expect(summary_value(card, "Status")).to_have_text("Confirmed")
+        expect(page.get_by_test_id("task-status")).to_contain_text(f"Count confirmed by {counter} manager")  # 07-19
 
         # The confirm gave the stock decision a new version, and its pick changed to the fact's best plan if the count
         # holds: the API says so, and the Options step shows the new version and the new Recommended row
@@ -290,9 +293,11 @@ def test_the_judges_path_on_the_public_dataset(browser: Browser, web: Web):
         accounts_see(page, cid, {dest: (), None: (), src: (SEND,)}, back_to=src)
         press(page, SEND, cid, state_is("PENDING_APPROVAL"), "PENDING_APPROVAL")
         accounts_see(page, cid, {src: (), None: (), dest: (ACCEPT,)}, back_to=dest)
+        acknowledge(page, cid)  # Phase 7: Accept and Approve need the tick when the plan has Advisory facts
         press(page, ACCEPT, cid, lambda v: v["state"] == "PENDING_APPROVAL" and v["next_action"]["key"] == "approve",
               "the destination's acceptance")
         accounts_see(page, cid, {dest: (), None: (), src: (APPROVE,)}, back_to=src)
+        acknowledge(page, cid)
         press(page, APPROVE, cid, state_is("APPROVED"), "APPROVED")
         accounts_see(page, cid, {dest: (), None: (), src: (PREPARE,)}, back_to=src)
         press(page, PREPARE, cid, state_is("PREPARED"), "PREPARED")

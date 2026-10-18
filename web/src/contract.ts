@@ -14,8 +14,8 @@
 //   states the rest in a dated contract row.
 // Erasable syntax only (no enums, namespaces or parameter properties), so `node --test` runs this file as it is.
 import {
-  get, post, type ActivityEntry, type Board, type Card, type CaseDetail, type CaseState, type Eligibility, type ErrorCode,
-  type Hold, type OptionRow, type Session, type Triple,
+  get, post, stream, type ActivityEntry, type Adjustment, type Board, type Card, type CaseDetail, type CaseState, type Eligibility, type ErrorCode,
+  type FactCheck, type Hold, type OptionRow, type Owner, type Request, type Session, type Triple,
 } from "./api.ts";
 import type { BoardRisk } from "./derive.ts";
 import type { StageKey, StepKey } from "./steps.ts";
@@ -95,13 +95,104 @@ export type Comparison = {
   columns: ComparisonColumn[];
 };
 
-export type CaseDetail61 = Omit<CaseDetail, "hold"> & Card61Keys & { hold: Hold61 | null; comparison: Comparison };
+export type CaseDetail61 = Omit<CaseDetail, "hold"> & Card61Keys & {
+  hold: Hold61 | null; comparison: Comparison;
+  selected_plan?: { plan_key: string; rec_version: string; label: string } | null;
+};
 
 // Each activity entry adds the actor (null for the screen and the engine) and the ISO scenario date of `day`; the list
 // is ordered by `at`, the recorded time. vocab.historyLine reads it.
 export type ActivityEntry61 = ActivityEntry & { actor: HistoryActor | null; scenario_date: string | null };
 
 const casePath = (caseId: string, route: string) => `/api/cases/${encodeURIComponent(caseId)}/${route}`;
+
+// --- assistant (dated 2026-10-18, 04-API-CONTRACT "Gemini assistant") -----------------------------------------------
+// These are transport contracts; no model text is an executable business action. Send/adopt/approve/commit/count
+// still need the existing authorized human endpoints. Unknown detail keys remain unknown until the API supplies
+// them, like the other additive contract rows; missing measurements are null, never manufactured zeroes.
+export type AssistantBinding = { run_id: string; case_id: string; rec_version: string; plan_key: string };
+export type AssistantScope =
+  | { scope: "CASE"; session_id: null }
+  | { scope: "ASK"; session_id: string; role: Session["role"]; branch: string | null }
+  | { scope: "SIGNAL"; session_id: string | null; signal_id: string; signal_revision: number };
+export type AssistantRef = { result_id: string; path: string; kind: string; value: number };
+export type AssistantChecks = { claims: number; removed: number; [key: string]: unknown };
+export type AssistantSource = { result_id: string; kind: string; [key: string]: unknown };
+export type AssistantUsage = {
+  model_calls: number | null; tool_calls: number | null; retries: number | null;
+  input_tokens: number | null; output_tokens: number | null; thinking_tokens: number | null; total_tokens: number | null;
+  first_text_ms: number | null; total_ms: number | null; model_id: string | null; location: string | null;
+  [key: string]: unknown;
+};
+// A supplied simulation remains tied to its source and baseline tuple. Optional engine metrics live in `result`;
+// neither an empty card nor prose can create a simulation, adoptable change or fabricated metric.
+export type AssistantWhatIf = AssistantBinding & {
+  result_id: string; overrides: Adjustment[]; result: Record<string, unknown> | null; [key: string]: unknown;
+};
+export type AssistantOutput = AssistantBinding & {
+  output_id: string; request_id: string | null; kind: "BRIEF" | "ANSWER";
+  status: "CURRENT" | "HISTORICAL"; text: string; refs: AssistantRef[]; checks: AssistantChecks;
+  sources: AssistantSource[]; cards: AssistantWhatIf[]; provenance: "LIVE" | "PRECOMPUTED" | "FALLBACK";
+  model_id: string | null; assistant_version: string; reason: string | null; created_at: string;
+  usage: AssistantUsage | null; [key: string]: unknown;
+};
+export type AssistantToolProgress = {
+  seq: number; tool: string; state: string; duration_ms: number | null; [key: string]: unknown;
+};
+export type AssistantEvent =
+  | { event: "tool" | "tool_result"; data: AssistantToolProgress }
+  | { event: "answer" | "brief"; data: AssistantOutput }
+  | { event: "summary" | "state" | "generating" | "meta" | "fallback"; data: Record<string, unknown> };
+export type AssistantToolResult = AssistantBinding & AssistantScope & {
+  result_id: string; tool: string; inputs: Record<string, unknown>; result: Record<string, unknown>;
+  duration_ms: number | null; created_at: string; [key: string]: unknown;
+};
+export type EvidenceDraft = AssistantBinding & {
+  draft_id: string; fact_id: string; class: "Required" | "Advisory"; owner: string | Owner;
+  to_branch: string; sku: string; lot_ids: string[]; original_text: string;
+  refs: AssistantRef[]; checks: AssistantChecks; model_id: string; assistant_version: string; created_at: string;
+  state: "DRAFT" | "SENT" | "HISTORICAL"; request_id: string | null; request_context: Record<string, unknown>;
+  can_send?: boolean; read_only?: boolean; reason?: string; next_action?: string;
+};
+export type AssistantHistory = {
+  turns: (AssistantOutput & { question: string })[]; next_cursor: string | null; total: number | null;
+};
+export type EvidenceDrafts = {
+  rec_version: string; plan_key: string; drafts: EvidenceDraft[]; requests_left: number;
+  attention?: (FactCheck & { class: "Required" | "Advisory"; owner: string; to_branch: string;
+    reason: string; next_action: string; request: { request_id: string } | null })[];
+  reason?: string | null; next_action?: string;
+};
+// Additive server-owned request fields. Older manual records may omit them.
+export type EvidenceRequest = Request & {
+  message?: string | null; draft_id?: string | null; original_text?: string | null;
+  sent_by?: string | null; sent_at?: string | null; plan_key?: string | null;
+  due_at?: string | null; asked_at?: string | null; status?: string | null;
+  request_context?: Record<string, unknown> | null;
+};
+export type SendEvidenceDraft = { draft_id: string; rec_version: string; plan_key: string; message: string };
+
+export function sendEvidenceDraft(caseId: string, body: SendEvidenceDraft, key: string): Promise<EvidenceRequest> {
+  return post(casePath(caseId, "requests"), body, key);
+}
+
+export function askAssistant(caseId: string, question: string, key: string,
+  onEvent: (event: AssistantEvent) => void, signal: AbortSignal): Promise<void> {
+  return stream<AssistantEvent>(casePath(caseId, "chat"), { question, request_id: key }, key, onEvent, signal);
+}
+export function readBrief(caseId: string, onEvent: (event: AssistantEvent) => void,
+  signal: AbortSignal): Promise<void> {
+  return stream<AssistantEvent>(casePath(caseId, "brief"), undefined, "", onEvent, signal, "GET");
+}
+export function getAssistantHistory(caseId: string, cursor?: string): Promise<AssistantHistory> {
+  return get(query(casePath(caseId, "chat"), [["cursor", cursor]]));
+}
+export function getEvidenceDrafts(caseId: string): Promise<EvidenceDrafts> {
+  return get(casePath(caseId, "drafts"));
+}
+export function getAssistantToolResult(caseId: string, resultId: string): Promise<AssistantToolResult> {
+  return get(casePath(caseId, `tool-results/${encodeURIComponent(resultId)}`));
+}
 
 // POST /api/cases/{id}/take-ownership: the source manager or HQ (D-67); ownership grants no approval or policy right.
 export type OwnershipResult = { owner: Owner61; taken_at: string };
@@ -692,3 +783,39 @@ export type AboutPayload = {
   latest_unpublished: { run_date: string; reason: string } | null;
 };
 export const getAbout = () => get<AboutPayload>("/api/about");
+
+// --- Phase 7 banners, successor link and lot-row keys (07-22; 04-API-CONTRACT "Hold", "Review flag", "Report",
+// "Phase 7 card, detail and session keys" and the 2026-10-18 "Banner, badge and lot-row keys" row) ----------------
+// Read by decision/banners.tsx, boardview.ts and the Stock & lots row. Every key is optional on the page's side: a
+// flag's detail (needs_evaluation) carries none of them.
+
+// An ACTIVE lot hold on a lot the stock decision involves; `info` is the server's "Review before dispatch" on PREPARED.
+export type CaseHold = {
+  hold_id: string; lot_id: string; branch: string; kind: "MIXED_DATES" | "CONDITION" | string; reason: string;
+  placed_by: string; placed_at: string | null; owner_branch: string; state: string; signal_id: string | null;
+  request_id: string | null; placed_label?: string; info?: string | null;
+};
+// A review flag of the case; open while `cleared_at` is null. `fact_label` is the confirmed fact's label.
+export type CaseReviewFlag = {
+  flag_id: string; case_id: string; fact_id: string; reason: string; created_at: string | null;
+  cleared_at: string | null; cleared_by: string | null; note: string | null; fact_label?: string | null;
+  info?: string | null;
+};
+// An unconfirmed field report whose scope covers the live case (only the keys the banner reads).
+export type CaseReport = {
+  signal_id: string; report_id: string; kind: string; state: string; branch: string; created_at: string | null;
+};
+export type LotStatus = "Needs decision" | "Awaiting verification";
+export type PredecessorClosed = { key: string; closed_as: "REJECTED" | "CANCELLED"; at: string | null };
+export type CaseBannerKeys = {
+  holds?: CaseHold[];
+  review_flags?: CaseReviewFlag[];
+  reports?: CaseReport[];
+  lot_status?: LotStatus | null;
+  predecessor?: string | null;
+  successor?: string | null;
+  predecessor_closed?: PredecessorClosed | null;
+};
+// A lot row's hold and confirmed-fact label (Stock & lots, 07-UI-SPEC surface 6).
+export type LotRowHold = { hold_id: string; kind: string; reason: string };
+export type LotRowBannerKeys = { lot_hold?: LotRowHold | null; fact_label?: string | null };

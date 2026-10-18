@@ -14,12 +14,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from api import caps, config, db
-from api.app import app
+from api import caps, cases, config, db, refdata
+from api.app import COOKIE, app
 from api.errors import ApiError
 from data import config as refconfig
-from tests.api.conftest import PASSCODE, first_store, key, sign_in
-from tests.api.test_http import phantom, story
+from tests.api.conftest import PASSCODE, as_seat, first_store, fresh, key, sign_in
+from tests.api.test_http import multipart, phantom, story
 
 BANGKOK = timedelta(hours=7)  # Asia/Bangkok is UTC+7 all year (no daylight saving)
 DAILY = "The daily limit for new workspaces has been reached; it resets at midnight Bangkok time."
@@ -105,7 +105,7 @@ def test_a_kind_without_a_cap_is_never_counted(monkeypatch):
     before = total()
     spend(sid, "no-such-kind", now, n=10**6)  # never refused
     spend(None, "no-such-kind", now)
-    monkeypatch.delitem(config.SESSION_CAPS, "signal")  # a kind whose cap is removed from the settings
+    monkeypatch.delitem(config.WORKSPACE_CAPS, "signal")  # a kind whose cap is removed from the settings (07 D-20)
     spend(sid, "signal", now, n=10**6)
     assert total() == before
     spend(sid, "reset", now)  # a per-session kind with no daily cap counts for the session only
@@ -150,12 +150,16 @@ def test_a_refused_spend_rolls_back_with_the_request(client, monkeypatch):
 
 
 def test_ai_and_signal_kinds_are_capped_at_service_level(monkeypatch):
+    """The sanctioned 07-13 change (07-CONTEXT D-20): `signal` and `upload` are capped per workspace (scope
+    run:<run_id>, "this workspace's"), no longer per session; `ai` stays per session."""
     now = far_window(3)  # 10:30 in Bangkok: the hour window resets at 11:00
     monkeypatch.setitem(config.SESSION_CAPS, "ai", (2, "hour"))
-    monkeypatch.setitem(config.SESSION_CAPS, "signal", (2, "day"))
-    monkeypatch.setitem(config.SESSION_CAPS, "upload", (1, "day"))
+    monkeypatch.setitem(config.WORKSPACE_CAPS, "signal", (2, "day"))
+    monkeypatch.setitem(config.WORKSPACE_CAPS, "upload", (1, "day"))
     monkeypatch.setitem(config.GLOBAL_CAPS, "ai", 3)
+    assert "signal" not in config.SESSION_CAPS and "upload" not in config.SESSION_CAPS
     one, two = f"t-{uuid.uuid4().hex}", f"t-{uuid.uuid4().hex}"
+    workspace = f"run:t-{uuid.uuid4().hex}"
     spend(one, "ai", now)
     spend(one, "ai", now)
     with pytest.raises(ApiError) as e:
@@ -167,15 +171,17 @@ def test_ai_and_signal_kinds_are_capped_at_service_level(monkeypatch):
     with pytest.raises(ApiError) as e:
         spend(two, "ai", now)
     assert e.value.message == "The daily limit for AI requests has been reached; it resets at midnight Bangkok time."
-    spend(one, "signal", now)
-    spend(one, "signal", now)
+    spend(workspace, "signal", now)
+    spend(workspace, "signal", now)
     with pytest.raises(ApiError) as e:
-        spend(one, "signal", now)
-    assert e.value.extra["kind"] == "signal" and "(2 field reports per day)" in e.value.message
-    spend(one, "upload", now)
+        spend(workspace, "signal", now)
+    assert e.value.extra["kind"] == "signal"
+    assert e.value.message == "You have reached this workspace's limit (2 field reports per day). It resets at " \
+                              "midnight Bangkok time."
+    spend(workspace, "upload", now)
     with pytest.raises(ApiError) as e:
-        spend(one, "upload", now)
-    assert e.value.extra["kind"] == "upload"
+        spend(workspace, "upload", now)
+    assert e.value.extra["kind"] == "upload" and "this workspace's" in e.value.message
 
 
 def test_a_count_request_spends_nothing(client):
@@ -327,7 +333,7 @@ def test_no_counted_scope_holds_an_address(template, monkeypatch):
     with db.tx() as conn:
         scopes = [r["scope"] for r in db.rows(conn, "SELECT scope FROM usage_counts WHERE kind = 'passcode'")]
     assert scopes and all(s.startswith("client:") for s in scopes)
-    assert not any(part in s for s in scopes for part in ("198.51.100", "203.0.113", "d24", "10.0.0."))
+    assert not any(part in s for s in scopes for part in ("198.51.100", "203.0.113", "d24-", "10.0.0."))
 
 
 def secure(r) -> bool:
@@ -481,3 +487,211 @@ def test_load_settings_refuses_any_other_window_naming_the_path(tmp_path, window
         config.load_settings(settings_with(tmp_path, window))
     assert str(refused.value) == ("settings.caps.client.passcode: must be {limit, window} with window one of "
                                   "minute, hour, day")
+
+
+# --- the workspace allowance (07-13; 07-CONTEXT D-20; FLOW-11; acceptance check 14 without files) ---------------------
+
+def capacity_fields(client, zone: str) -> dict:
+    """A CAPACITY report's fields for today's business date (the seat's own store, from the session)."""
+    run = fresh(client.get("/api/session").json()["run_id"])
+    day = cases.iso_of(run, run["day"])
+    return {"zone": zone, "free_totes": 5, "valid_from": day, "valid_to": day}
+
+
+def file_capacity(client, fields: dict, headers: dict | None = None):
+    return client.post("/api/signals", files={"kind": (None, "CAPACITY"), "fields": (None, json.dumps(fields))},
+                       headers=key() if headers is None else headers)
+
+
+def test_workspace_allowance(client, monkeypatch):
+    """Acceptance check 14 (files left to 07-14), D-20: with the limit at 3, three reports from two seats pass and the
+    fourth from a third seat is 429 with "this workspace's" message; switching seats never refills it; a refused (400)
+    report, a retried Idempotency-Key and an answer to a request spend nothing; the counter's scope is run:<run_id>;
+    GET /api/signals shows 0 reports left and the workspace's own limits only, never the global upload cap."""
+    monkeypatch.setitem(config.WORKSPACE_CAPS, "signal", (3, "day"))
+    card = story(client)
+    run_id = client.get("/api/session").json()["run_id"]
+    scope = f"run:{run_id}"
+    fact = phantom(client.get(f"/api/cases/{card['case_id']}").json())
+    as_seat(client, card["source"])
+    q = client.post(f"/api/cases/{card['case_id']}/requests", json={"rec_version": card["rec_version"],
+                                                                     "fact_id": fact["fact_id"]}, headers=key())
+    assert q.status_code == 200, q.json()
+    as_seat(client, fact["branch"])
+    counts_given = {lot: {"shelf_units": 0, "backroom_units": 0} for lot in q.json()["lot_ids"]}
+    ans = client.post(f"/api/requests/{q.json()['request_id']}/answer", files=multipart("counted", counts_given),
+                      headers=key())
+    assert ans.status_code == 200, ans.json()
+    assert (counts(scope, "signal"), counts(scope, "upload")) == (0, 0)  # an answer spends no allowance
+    fields = capacity_fields(client, card["zone"])
+    as_seat(client, card["source"])
+    k = key()
+    first = file_capacity(client, fields, k)
+    assert first.status_code == 200, first.json()
+    again = file_capacity(client, fields, k)  # a retried key answers the stored report and spends nothing
+    assert (again.status_code, again.json()["signal_id"]) == (200, first.json()["signal_id"])
+    assert counts(scope, "signal") == 1
+    bad = file_capacity(client, {**fields, "zone": "no-such-zone"})
+    assert (bad.status_code, bad.json()["error"]) == (400, "out_of_bounds")
+    assert counts(scope, "signal") == 1  # a refused report spends nothing
+    assert file_capacity(client, fields).status_code == 200
+    as_seat(client, card["dest"])
+    assert file_capacity(client, fields).status_code == 200  # the third, from another seat
+    third = next(b for b in refdata.get(fresh(run_id)["dataset_version"]).branches
+                 if b not in (card["source"], card["dest"]))
+    for seat in (third, card["source"]):  # any seat of the workspace; switching seats never refills it
+        as_seat(client, seat)
+        r = file_capacity(client, fields)
+        assert r.status_code == 429 and r.json() == {
+            "error": "cap_reached", "kind": "signal",
+            "message": "You have reached this workspace's limit (3 field reports per day). It resets at midnight "
+                       "Bangkok time."}
+    assert counts(scope, "signal") == 3
+    with db.tx() as conn:  # counted for the workspace only, never for a session
+        sessions = [r["session_id"] for r in db.rows(conn, "SELECT session_id FROM sessions WHERE run_id = :r",
+                                                     r=run_id)]
+        assert not db.rows(conn, "SELECT * FROM usage_counts WHERE kind = 'signal' AND scope = ANY(:s)", s=sessions)
+    allowance = client.get("/api/signals").json()["allowance"]
+    assert allowance == {"reports_left": 0, "reports_limit": 3, "files_left": config.WORKSPACE_CAPS["upload"][0],
+                         "files_limit": config.WORKSPACE_CAPS["upload"][0],
+                         "resets": (caps.window_start("day") + timedelta(days=1)).astimezone(timezone.utc)
+                         .isoformat()}  # the next local midnight in the cap time zone, as UTC
+    assert config.GLOBAL_CAPS["upload"] not in allowance.values()  # never the cross-workspace cap's number
+
+
+def test_concurrent_reports_never_exceed_the_allowance(client, monkeypatch):
+    """Edge FLOW-11 concurrency (D-20): six concurrent reports in one workspace with 3 left give exactly three
+    reports and three 429s; the counter holds 3."""
+    monkeypatch.setitem(config.WORKSPACE_CAPS, "signal", (3, "day"))
+    card = story(client)
+    as_seat(client, card["dest"])
+    run_id = client.get("/api/session").json()["run_id"]
+    fields, cookie, codes = capacity_fields(client, card["zone"]), client.cookies.get(COOKIE), []
+
+    def one():
+        c = TestClient(app)
+        c.cookies.set(COOKIE, cookie)
+        codes.append(file_capacity(c, fields).status_code)
+
+    threads = [threading.Thread(target=one) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(codes) == [200, 200, 200, 429, 429, 429]
+    assert counts(f"run:{run_id}", "signal") == 3
+    with db.tx() as conn:
+        assert db.one(conn, "SELECT count(*) AS n FROM signals WHERE run_id = :r AND report_id IS NOT NULL "
+                            "AND provenance IS DISTINCT FROM 'simulated'", r=run_id)["n"] == 3  # 07-16: not preloaded
+
+
+# --- report files under the workspace's file allowance (07-14; D-20; acceptance check 14 with files) -----------------
+
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00 a test shelf photo \xff\xd9"
+PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR a test png"
+
+
+@pytest.fixture
+def uploads(tmp_path, monkeypatch):
+    """Stored files go to this test's own folder; the bucket key is unset (the local branch, never a cloud call)."""
+    monkeypatch.setattr(config, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(config, "UPLOADS_BUCKET", "")
+    return tmp_path / "uploads"
+
+
+def file_with(client, fields: dict, data: bytes | None, headers: dict | None = None):
+    """A CAPACITY report with one file part (or none)."""
+    parts = {"kind": (None, "CAPACITY"), "fields": (None, json.dumps(fields))}
+    if data is not None:
+        parts["file"] = ("shelf.bin", data, "application/octet-stream")
+    return client.post("/api/signals", files=parts, headers=key() if headers is None else headers)
+
+
+def patch_with(client, signal_id: str, revision: int, data: bytes | None = None, fields: dict | None = None):
+    """PATCH /api/signals/{id} as multipart: the revision, the fields to correct and one file part (or none)."""
+    parts = {"revision": (None, str(revision))}
+    if fields is not None:
+        parts["fields"] = (None, json.dumps(fields))
+    if data is not None:
+        parts["file"] = ("shelf.bin", data, "application/octet-stream")
+    return client.patch(f"/api/signals/{signal_id}", files=parts, headers=key())
+
+
+def counted_flag(run_id: str, signal_id: str):
+    with db.tx() as conn:
+        return db.one(conn, "SELECT file_counted FROM signals WHERE run_id = :r AND signal_id = :s", r=run_id,
+                      s=signal_id)["file_counted"]
+
+
+def test_workspace_file_allowance(client, monkeypatch, uploads):
+    """Acceptance check 14, files (D-20; T-07-55): with the file allowance at 2, two reports with a file pass and the
+    third with a file is 429 cap_reached kind upload ("this workspace's"), while a text-only report still passes. A
+    report's first file spends one workspace file and the cross-workspace count (file_counted true); adding the first
+    file to a text-only report by PATCH spends one too; replacing that file spends only the cross-workspace count
+    (file_counted false); an edit without a file, a retried key and a refused file spend nothing."""
+    monkeypatch.setitem(config.WORKSPACE_CAPS, "upload", (2, "day"))
+    card = story(client)
+    run_id = client.get("/api/session").json()["run_id"]
+    scope = f"run:{run_id}"
+    as_seat(client, card["dest"])
+    fields = capacity_fields(client, card["zone"])
+    world = counts(caps.GLOBAL, "upload")
+    k = key()
+    one = file_with(client, fields, JPEG, k)
+    assert one.status_code == 200, one.json()
+    assert one.json()["file"] == {"type": "image/jpeg", "size": len(JPEG)}
+    assert counted_flag(run_id, one.json()["signal_id"]) is True
+    assert (counts(scope, "upload"), counts(caps.GLOBAL, "upload")) == (1, world + 1)
+    again = file_with(client, fields, JPEG, k)  # a retried key answers the stored report and spends nothing
+    assert (again.status_code, again.json()["signal_id"]) == (200, one.json()["signal_id"])
+    assert (counts(scope, "upload"), counts(scope, "signal")) == (1, 1)
+    bad = file_with(client, fields, b"<svg>not a photo</svg>")
+    assert (bad.status_code, bad.json()["error"]) == (415, "bad_file")
+    assert file_with(client, fields, PNG).status_code == 200
+    r = file_with(client, fields, JPEG)
+    assert r.status_code == 429 and r.json() == {
+        "error": "cap_reached", "kind": "upload",
+        "message": "You have reached this workspace's limit (2 uploads per day). It resets at midnight Bangkok time."}
+    assert (counts(scope, "upload"), counts(scope, "signal"), counts(caps.GLOBAL, "upload")) == (2, 2, world + 2)
+    text = file_with(client, fields, None)  # a text-only report still goes through
+    assert text.status_code == 200 and text.json()["file"] is None
+    monkeypatch.setitem(config.WORKSPACE_CAPS, "upload", (3, "day"))
+    first = patch_with(client, text.json()["signal_id"], 1, JPEG)
+    assert first.status_code == 200, first.json()
+    assert (first.json()["revision"], first.json()["file"]) == (2, {"type": "image/jpeg", "size": len(JPEG)})
+    assert counted_flag(run_id, first.json()["signal_id"]) is True
+    assert (counts(scope, "upload"), counts(caps.GLOBAL, "upload")) == (3, world + 3)
+    swap = patch_with(client, text.json()["report_id"], 2, PNG)  # replacing the file: the global count only
+    assert swap.status_code == 200, swap.json()
+    assert counted_flag(run_id, swap.json()["signal_id"]) is False
+    assert (counts(scope, "upload"), counts(caps.GLOBAL, "upload")) == (3, world + 4)
+    plain = patch_with(client, text.json()["report_id"], 3, fields={**fields, "free_totes": 2})
+    assert plain.status_code == 200, plain.json()
+    assert plain.json()["file"] == {"type": "image/png", "size": len(PNG)}  # the file stays with the report
+    assert (counts(scope, "upload"), counts(caps.GLOBAL, "upload"), counts(scope, "signal")) == (3, world + 4, 3)
+    allowance = client.get("/api/signals").json()["allowance"]
+    assert (allowance["files_left"], allowance["files_limit"]) == (0, 3)
+
+
+def test_the_twentieth_report_and_the_tenth_file(client, monkeypatch, uploads):
+    """Edge FLOW-11 boundary (D-20), at the settings' own limits: the 10th first file of the day succeeds and the 11th
+    is 429 (kind upload) while a text-only report still goes through; the 20th report succeeds and the 21st is 429
+    (kind signal) for another seat of the workspace."""
+    assert (config.WORKSPACE_CAPS["signal"][0], config.WORKSPACE_CAPS["upload"][0]) == (20, 10)
+    card = story(client)
+    run_id = client.get("/api/session").json()["run_id"]
+    as_seat(client, card["dest"])
+    fields = capacity_fields(client, card["zone"])
+    for n in range(10):
+        r = file_with(client, fields, JPEG)
+        assert r.status_code == 200, (n, r.json())
+    r = file_with(client, fields, PNG)
+    assert (r.status_code, r.json()["kind"]) == (429, "upload")
+    for n in range(10):
+        r = file_with(client, fields, None)
+        assert r.status_code == 200, (n, r.json())
+    assert counts(f"run:{run_id}", "signal") == 20
+    as_seat(client, card["source"])
+    r = file_with(client, fields, None)
+    assert (r.status_code, r.json()["kind"]) == (429, "signal")
+    assert client.get("/api/signals").json()["allowance"]["reports_left"] == 0

@@ -140,6 +140,7 @@ def test_long_details_wrap_in_full_and_hashes_show_twelve_characters(visitor):
     page.set_viewport_size({"width": 360, "height": 800})
     open_archive(page, cid)
     expect(items(page)).to_have_count(len(activity_json(page, cid)))
+    history(page).locator("summary", has_text=reason[:40]).click()  # 09-21: a long detail opens from its summary
     text = history(page).inner_text()
     assert reason in text.replace("\n", " ") or reason in text, "the reason shows in full"
     assert version not in text, "a 64-character hash never shows"

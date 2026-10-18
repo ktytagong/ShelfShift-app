@@ -18,6 +18,7 @@ from api import db, refdata
 from tests.api.conftest import fresh, sign_in, take_and_send, world_lot
 from tests.api.test_execution import (committed, dispatch_body, dispatched, logged, physical_of, post, prepared,
                                       receipt_body, run_of, story_case, work_order)
+from tests.api.verify_helpers import shown  # approve names the plan the page shows (07 review C)
 
 CLOSED_COLUMNS = {"closed_as": "text", "closed_at": "timestamp with time zone", "closed_by": "text"}  # 07-11 step 2
 
@@ -240,8 +241,8 @@ def markdown_prepared(c) -> tuple[dict, dict, dict, str]:
     sign_in(c, src)
     v = case_row(run["run_id"], cid)["active_rec_version"]
     assert take_and_send(c, cid, v).json()["state"] == "PENDING_APPROVAL"
-    assert post(c, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "approve"}).json() == \
-        {"state": "APPROVED"}
+    assert post(c, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "approve",  # names the plan (07 C)
+                                                  "plan_key": shown(run, cid)}).json() == {"state": "APPROVED"}
     r = post(c, f"/api/cases/{cid}/prepare")
     assert r.json() == {"state": "PREPARED"}, r.json()
     return fresh(run["run_id"]), case, markdown_order(run["run_id"], cid), src

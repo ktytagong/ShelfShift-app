@@ -128,7 +128,11 @@ def test_real_now_and_not_in_release_signed_out(browser, web):
         block = page.locator('[data-about-section="real-now"]')
         expect(block).to_contain_text(ENGINE_VERSION)
         expect(block).to_contain_text("Demand forecasts precomputed through Google Cloud BigQuery ML: Fixture provider mix.")
-        expect(block).not_to_contain_text("Gemini on Google Cloud")
+        if "assistant" in REQUIRED_SHIPPED:  # Gemini briefs and Ask ship; field-report reading does not (release.ts)
+            expect(block).to_contain_text("writes decision briefs · answers questions.")
+            expect(block).not_to_contain_text("reads field reports")
+        else:
+            expect(block).not_to_contain_text("Gemini on Google Cloud")
         expect(page.get_by_text("Branch orders is not part of this release.", exact=True)).to_be_visible()
     finally:
         context.close()
@@ -164,7 +168,10 @@ def test_labels_in_real_tones(visitor):
     for name in ["Forecast · precomputed", "Simulated", "Estimated"]:
         expect(card.get_by_text(name, exact=True)).to_have_class(__import__("re").compile("border-dashed"))
     expect(card.get_by_text("Assumption", exact=True)).to_have_class(__import__("re").compile("bg-gray-soft"))
-    expect(card).not_to_contain_text("Gemini")
+    if "assistant" in REQUIRED_SHIPPED:
+        expect(card.get_by_text("Precomputed · Gemini model ID", exact=True)).to_be_visible()
+    else:
+        expect(card).not_to_contain_text("Gemini")
 
 
 def test_on_this_page_jumps(visitor):

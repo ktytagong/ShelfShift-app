@@ -207,3 +207,24 @@ export function useRefreshAt(until: string | null, serverNow: string | null, rel
     return () => clearTimeout(timer);
   }, [until, serverNow]);
 }
+
+// --- Phase 7 (07-19): the request deadline bar's display clock (07-UI-SPEC DeadlineBar "Clock behaviour") --------------
+// Re-renders the caller once `nextInMs` from now (the next whole minute of its deadline, or the deadline itself) and
+// each time the tab becomes visible again; returns a counter that changes on each. A display timer, never polling: it
+// fetches nothing. null schedules no timer (nothing left to count).
+export function useDisplayTick(nextInMs: number | null): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (nextInMs === null || !(nextInMs >= 0)) return;
+    const timer = setTimeout(() => setTick((t) => t + 1), Math.min(nextInMs + 50, 2_147_000_000));
+    return () => clearTimeout(timer);
+  }, [nextInMs, tick]);
+  useEffect(() => {
+    const on = () => {
+      if (document.visibilityState === "visible") setTick((t) => t + 1);
+    };
+    document.addEventListener("visibilitychange", on);
+    return () => document.removeEventListener("visibilitychange", on);
+  }, []);
+  return tick;
+}

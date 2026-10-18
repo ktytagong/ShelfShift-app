@@ -100,7 +100,7 @@ def two_visitors_never_share(a, b, web) -> None:
     assert session_json(pa)["open_requests"] >= 1, "A's own request is not counted, so B's 0 below would prove nothing"
     switch_seat(pb, counter)
     open_tasks_page(pb)
-    expect(pb.get_by_role("heading", level=2, name=f"No tasks for {counter}")).to_be_visible()
+    expect(pb.get_by_role("heading", level=2, name=f"No open tasks for {counter}")).to_be_visible()  # 07-19 wording
     assert session_json(pb)["open_requests"] == 0
     assert case_json(pb, b_milk["case_id"])["requests"] == []
 

@@ -55,13 +55,22 @@ import sqlalchemy as sa
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import Response  # the file read's bytes (07-07)
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from engine.adjust import AdjustmentError, InputError
 from engine.simulate import HorizonError
+from agent import config as assistant_config
 
 from . import (accounts, advance, caps, cases, config, db, flags, ready, refdata, sandbox, settings, signals, views, workflow,
                worker)
+from . import files  # uploads and the file read (07-CONTEXT D-20)
+from . import lotholds  # lot holds: place and release (07-CONTEXT D-11, D-13)
+from . import reviewflags  # Reviewed · keep plan (07-CONTEXT D-17)
+from . import selection  # Select another plan (07-CONTEXT D-23)
+from . import closing  # Cancel approved plan (07-CONTEXT D-23, D-25)
+from . import reports  # field reports filed by hand (07-CONTEXT D-14, D-15, D-20)
+from . import impact  # the impact preview of a report (07-CONTEXT D-16)
 from .errors import DB_BUSY, ApiError, engine_error
 
 COOKIE = "ss_session"
@@ -87,6 +96,7 @@ async def lifespan(_: FastAPI):
         raise RuntimeError(hq_problem)
     if (problem := ready.startup_problem()) is not None:
         raise RuntimeError(problem)
+    assistant_config.load()  # required finite budgets; no model/client construction or generation at setup
     if config.ENGINE_WORKER:
         worker.start()
     try:
@@ -164,11 +174,11 @@ def current_session(request: Request) -> dict:
     return s
 
 
-async def bounded_body(request: Request) -> bytes:
+async def bounded_body(request: Request, limit: int | None = None) -> bytes:
     """The raw body, read up to `config.MAX_BODY_BYTES` (a setting) whether or not the client sent a Content-Length;
     a larger one is 400 bad_request before anything else reads it (WR-02). The body is kept on the request, so a
-    form parser reading it afterwards sees the same bytes."""
-    limit = config.MAX_BODY_BYTES
+    form parser reading it afterwards sees the same bytes. An upload route passes its own `limit` (research F-5)."""
+    limit = config.MAX_BODY_BYTES if limit is None else limit
     size = request.headers.get("content-length")
     if size is not None and (not size.strip().isdigit() or int(size) > limit):
         raise ApiError(400, "bad_request", TOO_LARGE)
@@ -280,17 +290,38 @@ def _read(s: dict, fn):
 
 
 async def answer_form(request: Request) -> dict:
-    """The count answer's multipart fields: `text` (a string, may be empty) and `counts` (a string holding a JSON
-    object, or blank). A file part is 415 bad_file until Phase 7 adds uploads; anything malformed is 400."""
+    """The answer's multipart fields: `text` (a string, may be empty), `counts` (a string holding a JSON object, or
+    blank), `dates` and `checked_lot` (an expiry part's printed dates as a JSON object, or blank, and "true" for the
+    tick "I checked the specified lot"; 07-CONTEXT D-11), `observed` ("When did you check?": "now" or an ISO-8601
+    time with its offset; absent is None, which the service refuses as 400 check_time, never a default; 07-CONTEXT
+    D-22) and one optional `file` part (PNG,
+    JPEG or PDF by content; D-20). The body is read up to `uploads.max_bytes` + `uploads.form_bytes` (research F-5),
+    the fields beside the file up to `uploads.form_bytes`; a file part over `uploads.max_bytes` is 413 too_large, one
+    of another type 415 bad_file, a second file part (or a file under another name) 400. An empty file part is no
+    file. The returned `file` (bytes) travels beside the fields; `file_sha256` and `file_size` go into the body hash
+    with them, so a retried key with another file is 409 idempotency_conflict. Anything malformed is 400."""
     ctype = request.headers.get("content-type", "")
     if not ctype.startswith(("multipart/form-data", "application/x-www-form-urlencoded")):
         raise ApiError(400, "bad_request", "Send the answer as multipart/form-data")
-    await bounded_body(request)  # the same bound as a JSON body (WR-02)
-    form = await request.form()
-    if "file" in form or any(not isinstance(v, str) for _, v in form.multi_items()):
-        raise ApiError(415, "bad_file", "Photos can be attached from a later version; enter the counts")
-    text, raw = form.get("text", ""), form.get("counts") or ""
-    if "\x00" in text or "\x00" in raw:
+    await bounded_body(request, config.UPLOAD_MAX_BYTES + config.UPLOAD_FORM_BYTES)
+    form = await request.form(max_files=1, max_fields=20)
+    upload = form.get("file")
+    if isinstance(upload, str):  # a field, not a file part: blank is no file (an empty file input), else 400
+        if upload:
+            raise ApiError(400, "bad_request", "Attach the file as a file part")
+        upload = None
+    if any(not isinstance(v, str) for k, v in form.multi_items() if k != "file") or len(form.getlist("file")) > 1:
+        raise ApiError(400, "bad_request", "Attach one file, as the file part")
+    if sum(len(v.encode("utf-8")) for _, v in form.multi_items() if isinstance(v, str)) > config.UPLOAD_FORM_BYTES:
+        raise ApiError(400, "bad_request", TOO_LARGE)
+    data = await upload.read(config.UPLOAD_MAX_BYTES + 1) if upload is not None else b""
+    if len(data) > config.UPLOAD_MAX_BYTES:
+        raise files.too_large()
+    if data:
+        files.sniff(data)  # 415 before anything is written (the service stores what it sniffs again)
+    text, raw, observed = form.get("text", ""), form.get("counts") or "", form.get("observed")
+    raw_dates, tick = form.get("dates") or "", form.get("checked_lot") or ""
+    if any("\x00" in v for v in (text, raw, observed or "", raw_dates, tick)):
         raise ApiError(400, "bad_request", "The answer holds a NUL character")
     counts = None
     if raw.strip():
@@ -300,7 +331,19 @@ async def answer_form(request: Request) -> dict:
             raise ApiError(400, "bad_request", "counts must be a JSON object of lot counts") from None
         if not isinstance(counts, dict):
             raise ApiError(400, "bad_request", "counts must be a JSON object of lot counts")
-    return {"text": text, "counts": counts}
+    dates = None  # an expiry part's printed dates: {lot_id: "YYYY-MM-DD" | "MIXED"} (07-CONTEXT D-11)
+    if raw_dates.strip():
+        try:
+            dates = json.loads(raw_dates)
+        except (ValueError, RecursionError):
+            raise ApiError(400, "bad_request", "dates must be a JSON object of printed dates") from None
+        if not isinstance(dates, dict):
+            raise ApiError(400, "bad_request", "dates must be a JSON object of printed dates")
+    if tick not in ("", "true", "false"):
+        raise ApiError(400, "bad_request", "checked_lot is \"true\" or left out")
+    return {"text": text, "counts": counts, "observed": observed, "dates": dates, "checked_lot": tick == "true",
+            "file": data or None, "file_sha256": hashlib.sha256(data).hexdigest() if data else None,
+            "file_size": len(data) or None}
 
 
 def _prune() -> None:
@@ -546,15 +589,18 @@ def evaluate_item(request: Request, case_id: str, s: dict = Session, body: dict 
 @app.post("/api/cases/{case_id}/adopt")
 def adopt(request: Request, case_id: str, s: dict = Session, body: dict = Body):
     return _write(request, s, f"adopt:{case_id}", body, lambda conn, run, actor, s: workflow.adopt(
-        conn, run, actor, case_id, body.get("overrides"), body.get("note")))
+        conn, run, actor, case_id, body.get("overrides"), body.get("note"),
+        rec_version=body.get("rec_version"), plan_key=body.get("plan_key")))
 
 
 @app.post("/api/cases/{case_id}/decision")
 def decision(request: Request, case_id: str, s: dict = Session, body: dict = Body):
     version, choice = _text(body, "rec_version"), _text(body, "decision")
     reason = _text(body, "reason", required=False)
+    acknowledged = body.get("acknowledged")  # {rec_version, plan_key, fact_ids} on approve and accept (07-CONTEXT D-26)
+    plan_key = _text(body, "plan_key", required=False)  # the plan the page shows (07 review C; 07-CONTEXT D-23, D-32)
     return _write(request, s, f"decision:{case_id}", body, lambda conn, run, actor, s: workflow.decide(
-        conn, run, actor, case_id, version, choice, reason))
+        conn, run, actor, case_id, version, choice, reason, acknowledged, plan_key))
 
 
 @app.post("/api/cases/{case_id}/prepare")
@@ -573,11 +619,29 @@ def reject(request: Request, case_id: str, s: dict = Session, body: dict = Body)
 
 @app.post("/api/cases/{case_id}/requests")
 def request_count(request: Request, case_id: str, s: dict = Session, body: dict = Body):
-    """The source manager asks the branch holding the lots for a count of a flagged fact (D-20; no cap spent)."""
-    version, fact_id = _text(body, "rec_version"), _text(body, "fact_id")
-    recount_of = _text(body, "recount_of", required=False)  # an ANSWERED request this one replaces (G-05-2 item 12)
+    """The source manager asks the branch holding the lots to check a flagged fact (D-20; no cap spent): a count or a
+    printed expiry date (`fact_id`), or both asked together (`fact_ids`, one or two; 07-CONTEXT D-11).
+    A draft supplies its immutable fact binding; only its final human message is editable (09 D-23)."""
+    version = _text(body, "rec_version")
+    draft_id = _text(body, "draft_id") if "draft_id" in body else None
+    message = _text(body, "message") if "message" in body else None
+    plan_key = _text(body, "plan_key") if "plan_key" in body else None
+    fact_ids = body.get("fact_ids")
+    if "draft_id" in body:
+        if set(body) != {"draft_id", "rec_version", "plan_key", "message"}:
+            raise ApiError(400, "bad_request", "Send the draft binding and final message without changing its context")
+        fact_id = None
+    elif fact_ids is None:
+        fact_id = _text(body, "fact_id")
+    elif (not isinstance(fact_ids, list) or not 1 <= len(fact_ids) <= 2
+          or not all(isinstance(f, str) for f in fact_ids)) or body.get("fact_id") is not None:
+        raise ApiError(400, "bad_request", "fact_ids lists one or two facts, in place of fact_id")
+    else:
+        fact_id = None
+    recount_of = _text(body, "recount_of", required=False)  # the request this one replaces (Ask again, D-07)
     return _write(request, s, f"requests:{case_id}", body, lambda conn, run, actor, s: signals.request_evidence(
-        conn, run, actor, case_id, version, fact_id, recount_of=recount_of))
+        conn, run, actor, case_id, version, fact_id, recount_of=recount_of, fact_ids=fact_ids,
+        draft_id=draft_id, message=message, plan_key=plan_key))
 
 
 @app.get("/api/requests")
@@ -587,10 +651,13 @@ def requests_inbox(s: dict = Session):
 
 @app.post("/api/requests/{request_id}/answer")
 def answer_request(request: Request, request_id: str, s: dict = Session, form: dict = Depends(answer_form)):
-    """The addressed manager answers with per-lot shelf and backroom counts (multipart). The body hash covers text
-    and counts."""
-    return _write(request, s, f"answer:{request_id}", form, lambda conn, run, actor, s: signals.answer(
-        conn, run, actor, request_id, form["text"], form["counts"]))
+    """The addressed manager answers with per-lot shelf and backroom counts (multipart), states when it checked and
+    may attach one file. The body hash covers text, counts, observed and the file's sha256 and size (the bytes travel
+    beside it)."""
+    body = {k: v for k, v in form.items() if k != "file"}
+    return _write(request, s, f"answer:{request_id}", body, lambda conn, run, actor, s: signals.answer(
+        conn, run, actor, request_id, form["text"], form["counts"], form["observed"], form["file"], form["dates"],
+        form["checked_lot"]))
 
 
 @app.post("/api/signals/{signal_id}/confirm")
@@ -598,8 +665,289 @@ def confirm_count(request: Request, signal_id: str, s: dict = Session, body: dic
     """The addressed manager confirms a complete count on its current revision, with the scope tick. Approves and
     holds nothing. The run is locked FOR UPDATE, so no commit or prepare rechecks while the record changes (WR-01)."""
     revision = _whole(body, "revision")
-    return _write(request, s, f"confirm:{signal_id}", body, lambda conn, run, actor, s: signals.confirm(
-        conn, run, actor, signal_id, revision, body.get("checked_both")), mode="UPDATE")
+
+    def work(conn, run, actor, s):  # a field report goes to its owner's confirmation (07-13; 07-CONTEXT D-15)
+        if reports.is_report(conn, run, signal_id):  # a STOCK_COUNT report takes the tick as an answer does (07-14)
+            return reports.confirm(conn, run, actor, signal_id, revision, body.get("checked_both"))
+        return signals.confirm(conn, run, actor, signal_id, revision, body.get("checked_both"))
+    return _write(request, s, f"confirm:{signal_id}", body, work, mode="UPDATE")
+
+
+# --- verify before you move (Phase 7) -------------------------------------------------------------------------------
+
+@app.post("/api/requests/{request_id}/cant-check")
+def cant_check(request: Request, request_id: str, s: dict = Session, body: dict = Body):
+    """The addressed manager closes the response attempt with Can't check; the fact stays unverified (07-CONTEXT
+    D-07). Body `{}`."""
+    return _write(request, s, f"cant-check:{request_id}", body, lambda conn, run, actor, s: signals.cant_check(
+        conn, run, actor, request_id))
+
+
+@app.get("/api/tasks")
+def tasks(request: Request, s: dict = Session):
+    """The seat's Tasks: addressed requests and the tile counts, read at one now() (07-CONTEXT D-04), plus the six
+    tiles and one page of the one task list for `view` (open or closed) and `tile`, in the server's order
+    (api/tasklist.py; D-36; 07-19)."""
+    view, tile = _query_text(request, "view") or "open", _query_text(request, "tile")
+    page, size = _query_int(request, "page", 1), _query_int(request, "page_size", 1)
+    from . import tasklist  # it reads signals, execution and movement at import
+    return _read(s, lambda conn, run, actor, s: tasklist.view(conn, run, actor, view=view, tile=tile, page=page or 1,
+                                                              page_size=size))
+
+
+@app.get("/api/signals/{signal_id}/file")
+def signal_file(signal_id: str, s: dict = Session):
+    """A signal's file, found by the session's workspace only (another workspace's is 404), read back through the API
+    with the stored type, nosniff, private no-store and attachment for a PDF; never a redirect or a bucket URL
+    (07-CONTEXT D-20; acceptance check 15). Only a seat party to the item reads it (`files.may_read`, else 403). The
+    bytes are read after the transaction, holding no connection."""
+    def party(conn, run, actor, s):
+        found = files.lookup(conn, run, signal_id)
+        files.may_read(actor, found["signal"], found["request"], found["case"])
+        return found
+    found = _read(s, party)
+    return Response(files.read(found["uri"]), media_type=found["mime"],
+                    headers=files.headers(found["mime"], found["signal_id"]))
+
+
+async def _report_parts(request: Request, names: tuple[str, ...]) -> tuple[dict, bytes]:
+    """A report form's text parts and its one optional file part (07-CONTEXT D-14, D-20), read as the answer's are:
+    the body up to `uploads.max_bytes` + `uploads.form_bytes` (research F-5), the text parts up to
+    `uploads.form_bytes`; a file part over `uploads.max_bytes` is 413 too_large, one of another type 415 bad_file
+    (sniffed before anything is written), a second file part (or a file under another name) 400. An empty file part
+    is no file. Anything malformed is 400."""
+    ctype = request.headers.get("content-type", "")
+    if not ctype.startswith(("multipart/form-data", "application/x-www-form-urlencoded")):
+        raise ApiError(400, "bad_request", "Send the report as multipart/form-data")
+    await bounded_body(request, config.UPLOAD_MAX_BYTES + config.UPLOAD_FORM_BYTES)
+    form = await request.form(max_files=1, max_fields=20)
+    upload = form.get("file")
+    if isinstance(upload, str):  # a field, not a file part: blank is no file (an empty file input), else 400
+        if upload:
+            raise ApiError(400, "bad_request", "Attach the file as a file part")
+        upload = None
+    if any(not isinstance(v, str) for k, v in form.multi_items() if k != "file") or len(form.getlist("file")) > 1:
+        raise ApiError(400, "bad_request", "Attach one file, as the file part")
+    if sum(len(v.encode("utf-8")) for _, v in form.multi_items() if isinstance(v, str)) > config.UPLOAD_FORM_BYTES:
+        raise ApiError(400, "bad_request", TOO_LARGE)
+    if any(len(form.getlist(n)) > 1 for n in names) or any("\x00" in (form.get(n) or "") for n in names):
+        raise ApiError(400, "bad_request", "The report is malformed")
+    data = await upload.read(config.UPLOAD_MAX_BYTES + 1) if upload is not None else b""
+    if len(data) > config.UPLOAD_MAX_BYTES:
+        raise files.too_large()
+    if data:
+        files.sniff(data)  # 415 before anything is written (the service sniffs again before it stores)
+    return {n: form.get(n) for n in names}, data
+
+
+def _report_fields(raw: str | None) -> dict | None:
+    """A form's `fields` part as the kind's JSON object; None when blank (PATCH: no field to correct)."""
+    if raw is None or not raw.strip():
+        return None
+    try:
+        fields = json.loads(raw)
+    except (ValueError, RecursionError):
+        raise ApiError(400, "bad_request", "fields must be a JSON object of the report's fields") from None
+    if not isinstance(fields, dict):
+        raise ApiError(400, "bad_request", "fields must be a JSON object of the report's fields")
+    return fields
+
+
+def _file_keys(data: bytes) -> dict:
+    """The file beside a form's fields: its bytes travel apart, its sha256 and size go into the body hash, so a
+    retried key with another file is 409 idempotency_conflict."""
+    return {"file": data or None, "file_sha256": hashlib.sha256(data).hexdigest() if data else None,
+            "file_size": len(data) or None}
+
+
+async def report_form(request: Request) -> dict:
+    """A field report's multipart fields (07-CONTEXT D-14): `kind`, `fields` (a string holding the kind's JSON
+    object), `text` (may be empty), `case_id` and `corrects` (blank is none), `observed` ("When did you check?" for
+    STOCK_COUNT and EXPIRY: "now" or an ISO-8601 time with its offset; absent is None, never a default, D-22) and one
+    optional `file` part (PNG, JPEG or PDF by content, at most `uploads.max_bytes`; 07-14), read by `_report_parts`."""
+    parts, data = await _report_parts(request, ("kind", "fields", "text", "case_id", "corrects", "observed"))
+    return {"kind": parts["kind"], "fields": _report_fields(parts["fields"]) or {}, "text": parts["text"] or "",
+            "case_id": parts["case_id"] or None, "corrects": parts["corrects"] or None,
+            "observed": parts["observed"], **_file_keys(data)}
+
+
+async def patch_form(request: Request) -> dict:
+    """PATCH /api/signals/{id}'s body (07-CONTEXT D-15, D-20): JSON `{"revision", "fields"?, "text"?, "observed"?}`,
+    or the same as multipart parts (`revision` a whole number as text, `fields` a JSON object as text) with one
+    optional `file` part, read by `_report_parts`. Anything malformed is 400."""
+    if request.headers.get("content-type", "").startswith("application/json"):
+        body = await json_body(request)
+        for name in ("text", "observed"):
+            if body.get(name) is not None and not isinstance(body[name], str):
+                raise ApiError(400, "bad_request", f"{name} must be text")
+        if body.get("fields") is not None and not isinstance(body["fields"], dict):
+            raise ApiError(400, "bad_request", "fields must be a JSON object of the report's fields")
+        return {"revision": _whole(body, "revision"), "fields": body.get("fields"), "text": body.get("text"),
+                "observed": body.get("observed"), **_file_keys(b"")}
+    parts, data = await _report_parts(request, ("revision", "fields", "text", "observed"))
+    raw = (parts["revision"] or "").strip()
+    if not re.fullmatch(r"[0-9]{1,9}", raw):
+        raise ApiError(400, "bad_request", "revision is required as a whole number")
+    return {"revision": int(raw), "fields": _report_fields(parts["fields"]), "text": parts["text"],
+            "observed": parts["observed"], **_file_keys(data)}
+
+
+@app.post("/api/signals")
+def file_report(request: Request, s: dict = Session, form: dict = Depends(report_form)):
+    """A manager files a field report for their own store, HQ a transport report (07-CONTEXT D-14, D-15): READ,
+    applied to nothing until its owner confirms it. It spends the workspace's report allowance (scope run:<run_id>,
+    D-20) in the same transaction, so a refused report and a retried key spend nothing. The run is locked FOR UPDATE
+    (the report records the live cases in its scope)."""
+    def work(conn, run, actor, s):
+        caps.spend(conn, reports.workspace_scope(run), "signal")
+        return reports.create(conn, run, actor, form["kind"], form["fields"], form["text"], form["case_id"],
+                              form["corrects"], form["observed"], form["file"])
+    body = {k: v for k, v in form.items() if k != "file"}  # the file's sha256 and size stand in for its bytes
+    return _write(request, s, "report", body, work, mode="UPDATE")
+
+
+@app.get("/api/signals")
+def list_reports(request: Request, s: dict = Session):
+    """The seat's field reports (HQ: every store's), newest first, one row per report, in pages (`page`,
+    `page_size`), with the workspace's allowance (D-20); `state` and `kind` filter them."""
+    state, kind = _query_text(request, "state"), _query_text(request, "kind")
+    page, size = _query_int(request, "page", 1) or 1, _query_int(request, "page_size", 1)
+    mine, store, case = _query_text(request, "mine"), _query_text(request, "store"), _query_text(request, "case")
+    if state is not None and state not in reports.STATES:
+        raise ApiError(400, "bad_request", f"state must be one of {', '.join(reports.STATES)}")
+    if kind is not None and kind not in reports.KINDS:
+        raise ApiError(400, "bad_request", f"kind must be one of {', '.join(reports.KINDS)}")
+    if mine not in (None, "1"):
+        raise ApiError(400, "bad_request", "mine must be 1")
+    return _read(s, lambda conn, run, actor, s: reports.listing(conn, run, actor, state, kind, page, size,
+                                                                mine == "1", store, case))
+
+
+@app.post("/api/signals/preview")
+def preview_draft(request: Request, s: dict = Session, body: dict = Body):
+    """The impact preview of a report not filed yet (07-CONTEXT D-16; 07-20, the Report an observation sheet):
+    `{"kind", "fields", "corrects"?}` from a seat that may file it. The stored preview's shape with signal_id,
+    report_id and revision null; it files nothing, stores no report, spends only the `preview` cap (before any engine
+    run, and none when every what-if is already stored: impact._computed) and changes nothing active (the what-if versions are stored with is_whatif true, as for a filed
+    report's preview). The run is locked FOR UPDATE."""
+    fields, corrects = body.get("fields"), body.get("corrects")
+    if not isinstance(fields, dict):
+        raise ApiError(400, "bad_request", "fields must be a JSON object of the report's fields")
+    if corrects is not None and not isinstance(corrects, str):
+        raise ApiError(400, "bad_request", "corrects must name a report")
+    return _write(request, s, "preview-draft", body, lambda conn, run, actor, s: impact.draft(
+        conn, run, actor, body.get("kind"), fields, corrects), mode="UPDATE")
+
+
+@app.get("/api/signals/{signal_id}")
+def read_report(signal_id: str, s: dict = Session):
+    """A field report with its revisions, for a seat party to it (07-CONTEXT D-14)."""
+    return _read(s, lambda conn, run, actor, s: reports.get(conn, run, actor, signal_id))
+
+
+@app.patch("/api/signals/{signal_id}")
+def edit_report(request: Request, signal_id: str, s: dict = Session, form: dict = Depends(patch_form)):
+    """The reporter or the owner edits a report before confirmation (07-CONTEXT D-15, D-20): a new revision of the
+    same report, the earlier one REPLACED; JSON or multipart with one optional file. The body hash covers the
+    revision, fields, text, observed and the file's sha256 and size. The run is locked FOR UPDATE (the revision
+    records the live cases in its scope)."""
+    body = {k: v for k, v in form.items() if k != "file"}
+    return _write(request, s, f"edit:{signal_id}", body, lambda conn, run, actor, s: reports.patch(
+        conn, run, actor, signal_id, form["revision"], form["fields"], form["text"], form["observed"],
+        form["file"]), mode="UPDATE")
+
+
+@app.post("/api/signals/{signal_id}/preview")
+def preview_report(request: Request, signal_id: str, s: dict = Session, body: dict = Body):
+    """The impact preview (07-CONTEXT D-16): `{"revision"}` from a seat party to the report; up to
+    reports.preview_cases affected live cases re-run as what-ifs, labelled "Potential impact · unconfirmed", stored
+    per revision. Changes nothing, blocks nothing, spends only the `preview` cap (impact._computed). The run is locked
+    FOR UPDATE, so two previews of one revision run the engine once."""
+    revision = _whole(body, "revision")
+    return _write(request, s, f"preview:{signal_id}", body, lambda conn, run, actor, s: impact.preview(
+        conn, run, actor, signal_id, revision), mode="UPDATE")
+
+
+@app.post("/api/signals/{signal_id}/withdraw")
+def withdraw_report(request: Request, signal_id: str, s: dict = Session, body: dict = Body):
+    """The reporter withdraws a report before confirmation (07-CONTEXT D-15): `{}`; no operational effect."""
+    return _write(request, s, f"withdraw:{signal_id}", body, lambda conn, run, actor, s: reports.withdraw(
+        conn, run, actor, signal_id))
+
+
+@app.post("/api/signals/{signal_id}/dismiss")
+def dismiss_report(request: Request, signal_id: str, s: dict = Session, body: dict = Body):
+    """The owner dismisses a report (07-CONTEXT D-15): `{"reason"?}`; never applied, the history kept."""
+    return _write(request, s, f"dismiss:{signal_id}", body, lambda conn, run, actor, s: reports.dismiss(
+        conn, run, actor, signal_id, body.get("reason")))
+
+
+@app.post("/api/signals/{signal_id}/done")
+def mark_task_done(request: Request, signal_id: str, s: dict = Session, body: dict = Body):
+    """Mark done (07-CONTEXT D-13): `{}` from the report branch's manager closes an advisory task (a confirmed display
+    issue); who and when are recorded, its history is kept, and no hold is touched."""
+    return _write(request, s, f"done:{signal_id}", body, lambda conn, run, actor, s: reports.mark_done(
+        conn, run, actor, signal_id))
+
+
+@app.post("/api/lots/{lot_id}/holds")
+def place_hold(request: Request, lot_id: str, s: dict = Session, body: dict = Body):
+    """The lot's branch manager holds the lot for review (a CONDITION hold, 07-CONTEXT D-13): `{"reason",
+    "signal_id"?}`; the active one when it exists. Only the lot's manager places it (the seat from the session)."""
+    reason, signal_id = _text(body, "reason"), _text(body, "signal_id", required=False)
+    return _write(request, s, f"holds:{lot_id}", body, lambda conn, run, actor, s: lotholds.place(
+        conn, run, actor, lot_id, "CONDITION", reason, signal_id=signal_id))
+
+
+@app.post("/api/holds/{hold_id}/release")
+def release_hold(request: Request, hold_id: str, s: dict = Session, body: dict = Body):
+    """The lot's branch manager inspects and releases a hold with a note (07-CONTEXT D-13): `{"note"}`. Nothing else
+    releases or clears a hold."""
+    note = _text(body, "note")
+    return _write(request, s, f"release:{hold_id}", body, lambda conn, run, actor, s: lotholds.release(
+        conn, run, actor, hold_id, note))
+
+
+@app.post("/api/cases/{case_id}/review")
+def review_keep(request: Request, case_id: str, s: dict = Session, body: dict = Body):
+    """"Reviewed · keep plan" (07-CONTEXT D-17): `{"flag_ids", "note"}` from a person authorised to approve the case;
+    exactly those open review flags clear. Never clears a hold or settles a Required check."""
+    return _write(request, s, f"review:{case_id}", body, lambda conn, run, actor, s: reviewflags.keep(
+        conn, run, actor, case_id, body.get("flag_ids"), body.get("note")))
+
+
+@app.post("/api/cases/{case_id}/select")
+def select_plan(request: Request, case_id: str, s: dict = Session, body: dict = Body):
+    """Select another plan (07-CONTEXT D-23): `{"rec_version", "plan_key"}` from the source manager; only a row key of
+    the active version's engine options, rechecked, with its own fact checks; a pending round is cancelled. Never
+    clears a lot hold."""
+    version, plan_key = _text(body, "rec_version"), _text(body, "plan_key")
+    return _write(request, s, f"select:{case_id}", body, lambda conn, run, actor, s: selection.select(
+        conn, run, actor, case_id, version, plan_key))
+
+
+@app.post("/api/cases/{case_id}/cancel")
+def cancel_plan(request: Request, case_id: str, s: dict = Session, body: dict = Body):
+    """Cancel approved plan (07-CONTEXT D-23, D-25): `{"reason"}` from a person authorised to approve the plan (the
+    source manager, or the destination manager of a transfer); APPROVED or PREPARED only. Stored CLOSED with closed_as
+    CANCELLED; the work orders and decisions stay in history, marked cancelled; the reservations are released."""
+    return _write(request, s, f"cancel:{case_id}", body, lambda conn, run, actor, s: closing.cancel(
+        conn, run, actor, case_id, body.get("reason")))
+
+
+@app.post("/api/cases/{case_id}/reassess")
+def reassess_lot(request: Request, case_id: str, s: dict = Session, body: dict = Body):
+    """Reassess (07-CONTEXT D-24): `{}` from the closed case's source manager; REJECTED, or CLOSED as CANCELLED. A lot
+    still on the record with stock that still qualifies gets one successor case, linked → {case_id, key}; otherwise
+    409 not_at_risk, and the case's stored lot_status becomes null (in a transaction of its own, since the refusal
+    rolls the write back)."""
+    try:
+        return _write(request, s, f"reassess:{case_id}", body, lambda conn, run, actor, s: closing.reassess(
+            conn, run, actor, case_id))
+    except ApiError as exc:
+        if exc.code == "not_at_risk":
+            db.in_tx(lambda conn: closing.forget(conn, db.lock_run(conn, s["run_id"]), case_id))
+        raise
 
 
 # --- policy settings (D-09, D-23) -----------------------------------------------------------------------------------

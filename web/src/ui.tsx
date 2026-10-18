@@ -4,6 +4,7 @@
 // Chart.js loads on the first chart's mount (a separate chunk), so pages without a chart never download it.
 import {
   useEffect, useId, useLayoutEffect, useRef, useState, type ComponentPropsWithRef, type KeyboardEvent, type ReactNode,
+  type Ref,
 } from "react";
 import type { Chart, ChartConfiguration, ChartDataset } from "chart.js";
 import { post, type ApiError, type CaseDetail, type Eligibility, type Session } from "./api.ts";
@@ -12,14 +13,14 @@ import {
   type SegmentState,
 } from "./bars.ts";
 import {
-  DESIGNED_EXAMPLE, DESIGNED_TIP, DESIGNED_TIP_LABEL, EVALUATING, EXCLUDED_HEADING, NEEDS_EVALUATION, PRODUCT_CODE,
-  eligibilityLine, flagBody, pagerText, retryable,
+  CHECK_TIME, DESIGNED_EXAMPLE, DESIGNED_TIP, DESIGNED_TIP_LABEL, EVALUATING, EXCLUDED_HEADING, NEEDS_EVALUATION,
+  PRODUCT_CODE, checkTimeLabel, eligibilityLine, flagBody, pagerText, retryable, type CheckTimeValue,
 } from "./copy.ts";
 import { badgeChip } from "./boardview.ts";
 import { pageInRange } from "./derive.ts";
-import { dateLabel, units } from "./format.ts";
+import { dateLabel, units, zonedNow } from "./format.ts";
 import { useAction } from "./hooks.ts";
-import { BACK_TO_BOARD, TERMS } from "./vocab.ts";
+import { ASSISTANT_HISTORY_EMPTY, BACK_TO_BOARD, TERMS, historyCount, historySummary } from "./vocab.ts";
 
 // --- 06.1 primitive strings (06.1-UI-SPEC). "(proposed)" marks wording the user has not confirmed: one constant each,
 // so a change is one line. The others are the UI-SPEC's own words. ------------------------------------------------------
@@ -32,7 +33,7 @@ export const STALE_REFRESH_FAILED = "Couldn't refresh. Showing what was loaded b
 export const STALE_VERSION_CHANGED = "Something changed in your workspace since this page loaded."; // (proposed)
 export const REFRESH = "Refresh"; // (proposed) the version-change banner's action
 export const HISTORY_FILTER_LABEL = "Show"; // (proposed) the accessible name of the All · Decisions · Data control
-export const HISTORY_FILTERS: HistoryFilter[] = ["All", "Decisions", "Data"];
+export const HISTORY_FILTERS: HistoryFilter[] = ["All", "Decisions", "Data", "Assistant"];
 export const ASSUMPTION_SOURCE_LABEL = "Source of this assumption"; // (proposed) the Assumption chip's info button
 export const KIND_TEXT = {
   simulated: "Simulated",
@@ -62,6 +63,7 @@ const PATHS = {
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>,
   user: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  pulse: <path d="M2 12h5l3-8 4 16 3-8h5" />,
   snow: <path d="M12 2v20M4.9 6.5l14.2 11M19.1 6.5 4.9 17.5" />,
   next: <><path d="m6 5 10 7-10 7z" /><path d="M19 5v14" /></>,
   reset: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></>,
@@ -166,9 +168,9 @@ const TONE = {
 };
 export type Tone = keyof typeof TONE;
 
-export function Pill({ tone = "gray", icon, children }: { tone?: Tone; icon?: IconName; children: ReactNode }) {
+export function Pill({ tone = "gray", icon, children, wrap = false }: { tone?: Tone; icon?: IconName; children: ReactNode; wrap?: boolean }) {
   return (
-    <span className={`inline-flex h-5 items-center gap-1 rounded-md px-1 text-label font-semibold whitespace-nowrap ${TONE[tone]}`}>
+    <span className={`inline-flex items-center gap-1 rounded-md px-1 text-label font-semibold ${wrap ? "min-h-5 max-w-full whitespace-normal [overflow-wrap:anywhere]" : "h-5 whitespace-nowrap"} ${TONE[tone]}`}>
       {icon && <Icon name={icon} size={12} />}
       {children}
     </span>
@@ -293,10 +295,54 @@ export function ErrorLine({ error, action, id, className = "" }: {
   );
 }
 
+// --- CheckTime: "When did you check?" (07-CONTEXT D-22; 07-UI-SPEC `CheckTime`) ---------------------------------------
+// A fieldset with its legend and two radios, neither chosen on load (no default); "At a date and time" reveals a
+// datetime-local read as wall time in the session's zone (Bangkok, fixed +07:00) whose `max` is that zone's time now.
+// The caller keeps the value in its draft (a refetch never wipes it) and validates on submit (copy.checkTimeObserved):
+// it passes the reason as `error`, which shows under the legend, marks the group aria-invalid, and the caller focuses
+// `firstRef`. A typed time past `max` is reported through `onInvalid` (the browser's own check), so the reason shows in
+// the UI-SPEC's words, never as the browser's bubble.
+export function CheckTime({ id, value, onChange, timeZone, error, disabled = false, firstRef, onInvalid }: {
+  id: string; value: CheckTimeValue; onChange: (next: CheckTimeValue) => void; timeZone: string; error: string | null;
+  disabled?: boolean; firstRef?: Ref<HTMLInputElement>; onInvalid?: (reason: string) => void;
+}) {
+  const errorId = `${id}-error`;
+  const boxId = `${id}-at`;
+  const radio = "flex min-h-11 items-center gap-2 text-body md:min-h-0";
+  return (
+    <fieldset aria-invalid={error !== null || undefined} aria-describedby={error !== null ? errorId : undefined}
+      disabled={disabled} className="m-0 flex min-w-0 flex-col gap-1 border-0 p-0">
+      <legend className="mb-1 p-0 text-body font-semibold">{CHECK_TIME.legend}</legend>
+      {error !== null && <p id={errorId} className="m-0 text-label text-bad">{error}</p>}
+      <label className={radio}>
+        <input ref={firstRef} type="radio" name={`${id}-when`} checked={value.mode === "now"}
+          onChange={() => onChange({ ...value, mode: "now" })} />
+        {CHECK_TIME.now}
+      </label>
+      <label className={radio}>
+        <input type="radio" name={`${id}-when`} checked={value.mode === "at"} onChange={() => onChange({ ...value, mode: "at" })} />
+        {CHECK_TIME.at}
+      </label>
+      {value.mode === "at" && (
+        <span className="flex min-w-0 flex-col gap-1 pl-6">
+          <label htmlFor={boxId} className="text-label text-tx3">{checkTimeLabel(timeZone)}</label>
+          <input id={boxId} type="datetime-local" value={value.at} max={zonedNow(timeZone, Date.now()) || undefined}
+            onChange={(e) => onChange({ ...value, at: e.target.value })}
+            onInvalid={(e) => {
+              e.preventDefault();
+              onInvalid?.(e.currentTarget.validity.rangeOverflow ? CHECK_TIME.later : CHECK_TIME.missing);
+            }}
+            className="num h-11 w-56 max-w-full rounded-md border border-line-2 bg-white px-2 text-body md:h-8" />
+        </span>
+      )}
+    </fieldset>
+  );
+}
+
 // --- Provenance: in Phase 5 only the template summary pill (05-CONTEXT D-14) ----------------------------------------
 
-export function Provenance() {
-  return <Pill tone="gray">Template summary · from the engine's figures</Pill>;
+export function Provenance({ label = "Template summary · from the engine's figures" }: { label?: string }) {
+  return <Pill tone="gray" wrap icon={label === "Precomputed" ? "clock" : label === "Live" ? "pulse" : "info"}>{label}</Pill>;
 }
 
 // --- Tooltip: an info button with a short note (the waste-flip lines; UI-SPEC "Accessibility Contract") ----------
@@ -601,7 +647,7 @@ export function QtyBar({ committed, dispatched, received, damaged, className = "
 
 // Entries come already formatted by the caller (vocab.historyLine, 06.1-03) and sorted by recorded time (D-58): line 1
 // the event and who, line 2 both clocks, an optional detail line. Text nodes only (T-06.1-03).
-export type HistoryEntry = { title: ReactNode; meta: ReactNode; detail?: ReactNode; group: string };
+export type HistoryEntry = { id?: string; title: ReactNode; meta: ReactNode; detail?: ReactNode; detailText?: string; group: string };
 
 export function HistoryList({ entries, filter, onFilter, emptyText }: {
   entries: HistoryEntry[]; filter: HistoryFilter; onFilter: (f: HistoryFilter) => void; emptyText: string;
@@ -609,7 +655,7 @@ export function HistoryList({ entries, filter, onFilter, emptyText }: {
   const shown = historyFilter(entries, filter);
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div role="group" aria-label={HISTORY_FILTER_LABEL} className="inline-flex w-fit gap-1 rounded-lg bg-sunken p-1">
+      <div role="group" aria-label={HISTORY_FILTER_LABEL} className="inline-flex w-fit max-w-full flex-wrap gap-1 rounded-lg bg-sunken p-1">
         {HISTORY_FILTERS.map((f) => (
           <button key={f} type="button" aria-pressed={filter === f} onClick={() => onFilter(f)}
             className={`h-7 rounded-md px-2 text-label font-semibold max-md:h-11 ${filter === f ? "bg-surface text-ink shadow-card" : "text-ink-2 hover:text-ink"}`}>
@@ -618,20 +664,33 @@ export function HistoryList({ entries, filter, onFilter, emptyText }: {
         ))}
       </div>
       {shown.length === 0
-        ? <p className="m-0 text-body text-ink-2">{emptyText}</p>
+        ? <p className="m-0 text-body text-ink-2">{filter === "Assistant" ? ASSISTANT_HISTORY_EMPTY : emptyText}</p>
         : (
+          <>
+          {shown.length > 1 && <p className="m-0 text-label text-ink-2">{historyCount(shown.length)}</p>}
           <ol className="m-0 flex list-none flex-col gap-2 p-0">
             {shown.map((e, i) => (
-              <li key={i} className="min-w-0">
+              <li key={e.id ?? `${e.title}-${e.meta}-${i}`} className="min-w-0 [overflow-wrap:anywhere]">
                 <p className="m-0 text-body font-semibold break-words text-ink">{e.title}</p>
                 <p className="num m-0 text-label break-words text-ink-2">{e.meta}</p>
-                {e.detail && <p className="m-0 text-label break-words text-ink-2">{e.detail}</p>}
+                {e.detail && <HistoryDetail entry={e} />}
               </li>
             ))}
           </ol>
+          </>
         )}
     </div>
   );
+}
+
+function HistoryDetail({ entry }: { entry: HistoryEntry }) {
+  const text = entry.detailText ?? (typeof entry.detail === "string" ? entry.detail : "");
+  return text.length > 90 ? <details className="min-w-0 text-label text-ink-2">
+    <summary className="cursor-pointer py-1 max-md:min-h-11">
+      {historySummary(text)} <span className="text-navy-800 underline">Show full event</span>
+    </summary>
+    <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{entry.detail}</div>
+  </details> : <div className="m-0 text-label text-ink-2 [overflow-wrap:anywhere]">{entry.detail}</div>;
 }
 
 // --- toolbar controls and link buttons more than one page uses (06.1-30 hoist from Schedule, Branch transfers, the
@@ -1015,5 +1074,260 @@ export function EligibilityLine({ e }: { e: Eligibility | undefined }) {
         {lines.map((x, i) => <li key={i} className="break-words">{x}</li>)}
       </ul>
     </div>
+  );
+}
+
+// === Phase 7 Tasks primitives (07-19; 07-UI-SPEC "DeadlineBar", "Lifecycle", "FilePick", "ConfirmStep") =============
+// Kept in their own block, with their own imports, so the parallel Phase 7 lanes merge cleanly.
+import { useDisplayTick } from "./hooks.ts";
+import {
+  barAt, barShare, barText, hhmmIn, middle, minutesWords, msLeft, LIFECYCLE_LABEL, partLane,
+} from "./taskview.ts";
+import type { Request as TaskRequest } from "./api.ts";
+
+// DeadlineBar: the real 60-minute deadline drawn to scale between asked_at and due_at (D-05, D-06). The minutes come
+// from the server's due_at and server_now plus the time elapsed since that response (`receivedAt` and Date.now(), one
+// device clock), so a wrong device clock never moves them. It re-renders on the next whole minute and when the tab is
+// visible again (no polling), and calls `onZero` once when the deadline passes on screen (the page's one refetch).
+// Display only: the state chip beside it always comes from the server. A complete answer is a navy marker; a late one
+// sits on a dashed extension past the end tick with "Answered after deadline".
+export function DeadlineBar({ askedAt, dueAt, serverNow, receivedAt, answeredAt = null, late = false, closed = false,
+  onZero, compact = false }: {
+  askedAt: string; dueAt: string; serverNow: string; receivedAt: number; answeredAt?: string | null; late?: boolean;
+  closed?: boolean; onZero?: () => void; compact?: boolean;
+}) {
+  const ms0 = msLeft(dueAt, serverNow, receivedAt, Date.now());
+  const counting = answeredAt === null && !closed && ms0 !== null && ms0 > 0;
+  const next = !counting || ms0 === null ? null : ms0 % 60_000 === 0 ? 60_000 : ms0 % 60_000;
+  useDisplayTick(next);
+  const ms = msLeft(dueAt, serverNow, receivedAt, Date.now()) ?? 0;
+  const fired = useRef(ms <= 0);
+  const zero = useRef(onZero);
+  zero.current = onZero;
+  useEffect(() => {
+    if (ms <= 0 && !fired.current && answeredAt === null && !closed) {
+      fired.current = true;
+      zero.current?.();
+    }
+  }, [ms, answeredAt, closed]);
+  const share = answeredAt !== null || closed ? Math.min(1, barShare(askedAt, dueAt, ms)) : barShare(askedAt, dueAt, ms);
+  const over = answeredAt === null && !closed && ms <= 0;
+  const text = answeredAt !== null ? (late ? "Answered after deadline" : "") : closed ? "" : barText(ms);
+  const mark = answeredAt === null ? null : barAt(askedAt, dueAt, answeredAt);
+  return (
+    <span data-testid="deadline-bar" className={`inline-flex min-w-0 flex-wrap items-center gap-2 ${compact ? "" : "w-full"}`}>
+      <span aria-hidden="true" className={`relative inline-block h-2 shrink-0 ${compact ? "w-40" : "w-full max-w-md"}`}>
+        <span className="absolute inset-0 rounded-full bg-sunken" />
+        <span className={`absolute inset-y-0 left-0 rounded-full ${over ? "bg-warn" : "bg-navy-800"}`}
+          style={{ width: `${(over ? 1 : share) * 100}%` }} />
+        <span className="absolute -top-0.5 right-0 h-3 w-0.5 bg-navy-800" />
+        {!over && mark === null && !closed && (
+          <span className="absolute -top-0.5 h-3 w-3 -translate-x-1/2 rounded-full bg-gold-500 ring-2 ring-navy-800"
+            style={{ left: `${share * 100}%` }} />
+        )}
+        {mark !== null && mark <= 1 && (
+          <span className="absolute -top-0.5 h-3 w-3 -translate-x-1/2 rounded-full bg-navy-800" style={{ left: `${mark * 100}%` }} />
+        )}
+        {mark !== null && mark > 1 && (
+          <span className="absolute -top-0.5 -right-7 h-3 w-6 border-t-2 border-dashed border-navy-800">
+            <span className="absolute -top-1.5 right-0 h-3 w-3 rounded-full bg-navy-800" />
+          </span>
+        )}
+      </span>
+      {text !== "" && <span data-testid="deadline-text" className={`num text-label whitespace-nowrap ${mark !== null && mark > 1 ? "pl-6" : ""} ${over ? "text-warn" : "text-tx2"}`}>{text}</span>}
+    </span>
+  );
+}
+
+// One Lifecycle node: its state draws the dot; `text` is its full accessible text.
+type LifeStep = { name: string; at: string | null; state: "done" | "current" | "pending" | "problem" | "closed"; text: string;
+  extra?: ReactNode };
+
+function LifeNode({ n, timeZone }: { n: LifeStep; timeZone: string }) {
+  const dot = {
+    done: "bg-navy-800",
+    current: "bg-gold-500 ring-2 ring-navy-800",
+    pending: "bg-white ring-2 ring-line-2",
+    problem: "bg-white ring-2 ring-warn",
+    closed: "bg-gray-soft ring-2 ring-line-2",
+  }[n.state];
+  return (
+    <li aria-current={n.state === "current" ? "step" : undefined} aria-label={n.text}
+      className="flex min-w-16 flex-col items-center gap-1 text-center">
+      <span aria-hidden="true" className={`h-3 w-3 rounded-full ${dot}`} />
+      <span aria-hidden="true" className={`text-label break-words ${n.state === "current" ? "font-semibold" : ""} ${n.state === "closed" || n.state === "pending" ? "text-tx3" : "text-tx2"}`}>
+        {n.name}
+      </span>
+      <span aria-hidden="true" className="num text-label text-tx3">{hhmmIn(n.at, timeZone)}</span>
+      {n.extra}
+    </li>
+  );
+}
+
+// Lifecycle (R-3): Asked → Respond by → Checked → Answered → Confirmed. One header lane (Asked, Respond by) and, for a
+// combined request, one Checked → Answered → Confirmed lane per part ("Count", "Expiry"), each with its own state, so
+// the parts never merge. `confirmedAt` maps a part's request id to its confirmation time. An ordered list with each
+// item's full text; the deadline bar beside it is aria-hidden and its meaning is in the Respond by item.
+export function Lifecycle({ parts, confirmedAt, timeZone, msLeftNow, fmt }: {
+  parts: TaskRequest[]; confirmedAt: Record<string, string>; timeZone: string; msLeftNow: number | null;
+  fmt: (iso: string) => string;
+}) {
+  const head = parts[0];
+  const said = (name: string, at: string | null, state: string, more = "") =>
+    `${name}${at === null ? "" : `, ${fmt(at)}`}${more}, ${state}`;
+  const answeredOnTime = parts.every((p) => p.answered_at != null && !p.late);
+  const respondState: LifeStep["state"] = answeredOnTime ? "done" : msLeftNow !== null && msLeftNow <= 0 ? "problem" : "current";
+  const header: LifeStep[] = [
+    { name: "Asked", at: head.asked_at ?? null, state: "done", text: said("Asked", head.asked_at ?? null, "done") },
+    { name: "Respond by", at: head.due_at ?? null, state: respondState,
+      text: said("Respond by", head.due_at ?? null, respondState === "done" ? "answered in time" : "",
+        msLeftNow === null || respondState === "done" ? "" : `, ${minutesWords(msLeftNow)}`).replace(/, $/, "") },
+  ];
+  const lane = (p: TaskRequest): LifeStep[] => {
+    const closedNoAnswer = p.state === "CANT_CHECK" || p.state === "HELD";
+    const superseded = p.state === "SUPERSEDED";
+    const answered = p.answered_at ?? null;
+    const checked = p.observed_at ?? null;
+    const confirmed = confirmedAt[p.request_id] ?? null;
+    const partial = p.status_kind === "PHOTO_PARTIAL" || p.status_kind === "TEXT_PARTIAL";
+    const st = (done: boolean, current: boolean): LifeStep["state"] =>
+      superseded || closedNoAnswer ? (done ? "done" : "closed") : done ? "done" : partial && current ? "problem" : current ? "current" : "pending";
+    const answerDone = answered !== null && !partial;
+    return [
+      { name: "Checked", at: checked, state: st(checked !== null, checked === null), text: said("Checked", checked, checked !== null ? "done" : "not yet") },
+      { name: "Answered", at: answerDone ? answered : null, state: st(answerDone, checked !== null && !answerDone),
+        text: said("Answered", answerDone ? answered : null, answerDone ? "done" : closedNoAnswer ? "closed without an answer" : "not yet", p.late ? ", answered after deadline" : ""),
+        extra: p.late ? <Pill tone="gray" icon="clock">Answered after deadline</Pill> : undefined },
+      { name: "Confirmed", at: confirmed, state: st(confirmed !== null, answerDone && confirmed === null),
+        text: said("Confirmed", confirmed, confirmed !== null ? "done" : superseded ? "superseded" : "not yet") },
+    ];
+  };
+  return (
+    <ol aria-label={LIFECYCLE_LABEL} className="m-0 flex min-w-0 list-none flex-wrap items-start gap-x-4 gap-y-3 p-0">
+      {header.map((n) => <LifeNode key={n.name} n={n} timeZone={timeZone} />)}
+      {parts.length === 1
+        ? lane(head).map((n) => <LifeNode key={n.name} n={n} timeZone={timeZone} />)
+        : parts.map((p) => (
+          <li key={p.request_id} aria-label={partLane(p.part)} className="flex min-w-0 basis-full flex-col gap-1">
+            <span className="text-label font-semibold text-tx2">{partLane(p.part)}</span>
+            <ol aria-label={`${partLane(p.part)} progress`} className="m-0 flex list-none flex-wrap gap-x-4 gap-y-3 p-0">
+              {lane(p).map((n) => <LifeNode key={n.name} n={n} timeZone={timeZone} />)}
+            </ol>
+          </li>
+        ))}
+    </ol>
+  );
+}
+
+// FilePick: "Add photo" (answers) or "Add file" (reports); the helper "PNG, JPEG or PDF, up to 5 MB"; after choosing,
+// the name middle-truncated to 32 characters (the full name in title), its size and Remove. The size and type checks
+// here are a courtesy: the server checks the content and enforces the limit, and its refusal shows word for word.
+export const FILE_HELP = "PNG, JPEG or PDF, up to 5 MB";
+export const FILE_TOO_LARGE = "This file is larger than 5 MB. Choose a smaller file.";
+export const FILE_BAD_TYPE = "Only PNG, JPEG or PDF files can be attached.";
+const FILE_MAX = 5 * 1024 * 1024; // 07-CONTEXT D-20: the upload limit the server enforces (uploads.max_bytes)
+const FILE_TYPES = ["image/png", "image/jpeg", "application/pdf"];
+
+export function fileSize(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+export function FilePick({ id, label = "Add photo", file, onFile, disabled = false, note }: {
+  id: string; label?: string; file: File | null; onFile: (f: File | null) => void; disabled?: boolean; note?: string;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const box = useRef<HTMLInputElement>(null);
+  return (
+    <span className="flex min-w-0 flex-col gap-1">
+      <input ref={box} id={id} type="file" accept="image/png,image/jpeg,application/pdf" disabled={disabled}
+        className="sr-only" aria-describedby={`${id}-help`}
+        onChange={(e) => {
+          const f = e.target.files?.[0] ?? null;
+          e.target.value = "";
+          if (f === null) return;
+          if (f.size > FILE_MAX) { setError(FILE_TOO_LARGE); return; }
+          if (!FILE_TYPES.includes(f.type)) { setError(FILE_BAD_TYPE); return; }
+          setError(null);
+          onFile(f);
+        }} />
+      {file === null ? (
+        <label htmlFor={id} className={`inline-flex min-h-11 w-max cursor-pointer items-center rounded-md border border-transparent px-2 text-body font-semibold text-tx2 hover:bg-gray-soft md:min-h-8 ${disabled ? "pointer-events-none opacity-80" : ""}`}>
+          {label}
+        </label>
+      ) : (
+        <span className="inline-flex w-max max-w-full items-center gap-2 rounded-md bg-sunken px-2 py-1 text-body">
+          <span title={file.name} className="min-w-0 truncate">{middle(file.name)}</span>
+          <span className="num text-label text-tx3">{fileSize(file.size)}</span>
+          <button type="button" disabled={disabled} aria-label={`Remove file ${file.name}`} onClick={() => onFile(null)}
+            className="text-label font-semibold text-navy-800 underline">Remove</button>
+        </span>
+      )}
+      <span id={`${id}-help`} className="text-label text-tx3">{FILE_HELP}</span>
+      {note !== undefined && <span className="text-label text-tx3">{note}</span>}
+      {error !== null && <span role="alert" className="text-label text-bad">{error}</span>}
+    </span>
+  );
+}
+
+// ConfirmStep: an inline second step for a consequential action (never a modal). The trigger is replaced in place by
+// a panel with its sentence (focused, tabindex -1), any fields (`children`), the confirm button and a named dismiss
+// button; Esc or the dismiss restores the trigger and its focus. There is no default dismiss label, and never "Cancel".
+export function ConfirmStep({ trigger, triggerKind = "plain", sentence, confirm, confirmKind = "danger", dismiss, onConfirm,
+  busy = false, disabled = false, disabledReason, triggerDisabled = false, children }: {
+  trigger: string; triggerKind?: ButtonKind; sentence: string; confirm: string; confirmKind?: ButtonKind; dismiss: string;
+  onConfirm: () => void; busy?: boolean; disabled?: boolean; disabledReason?: string; triggerDisabled?: boolean;
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const said = useRef<HTMLParagraphElement>(null);
+  const back = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open) said.current?.focus();
+    else if (wasOpen.current) back.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+  if (!open) {
+    return <Button ref={back} kind={triggerKind} disabled={triggerDisabled} className="min-h-11 md:min-h-8" onClick={() => setOpen(true)}>{trigger}</Button>;
+  }
+  return (
+    <div role="group" aria-label={trigger} className="flex max-w-md flex-col gap-2 rounded-md border border-line-2 bg-side p-2"
+      onKeyDown={(e) => { if (e.key === "Escape" && !busy) setOpen(false); }}>
+      <p ref={said} tabIndex={-1} className="m-0 text-label text-tx outline-none">{sentence}</p>
+      {children}
+      <span className="flex flex-wrap items-center gap-2">
+        <Button kind={confirmKind} busy={busy} disabled={disabled} className="min-h-11 md:min-h-8" onClick={onConfirm}>{confirm}</Button>
+        <Button kind="ghost" disabled={busy} className="min-h-11 md:min-h-8" onClick={() => setOpen(false)}>{dismiss}</Button>
+        {disabled && disabledReason !== undefined && <span className="text-label text-tx3">{disabledReason}</span>}
+      </span>
+    </div>
+  );
+}
+// --- 07-21: CommitState, the summary's Commitment tile (07-UI-SPEC "CommitState"; 07-CONTEXT D-12). Own block,
+// additive. It draws what the page derived from the case read (derive.blockersOf over the server's
+// commitment.blocks, copy.blockerText) and fetches nothing: "Blocks commitment" with at most two blocker lines, then
+// "+N more", each linking to the Context step; else "No blocking checks" with the advisory count to acknowledge. The
+// chip never says safe, verified or clear (VER-06), and Send is never disabled by it.
+export type CommitStateLink = { text: string; href: string };
+export type CommitStateView = {
+  blocked: boolean; chip: string; lines: CommitStateLink[]; more: CommitStateLink | null; note: string | null;
+};
+export function CommitState({ view }: { view: CommitStateView }) {
+  const link = "text-label font-normal text-navy-800 underline underline-offset-2 break-words";
+  return (
+    <span data-testid="commit-state" className="flex min-w-0 flex-col items-start gap-1">
+      {view.blocked ? <Pill tone="bad" icon="lock">{view.chip}</Pill> : <Pill tone="good" icon="check">{view.chip}</Pill>}
+      {view.lines.length > 0 && (
+        <span className="flex min-w-0 flex-col gap-1">
+          {view.lines.map((l, i) => <a key={i} href={l.href} className={link}>{l.text}</a>)}
+        </span>
+      )}
+      {view.more !== null && <a href={view.more.href} className={link}>{view.more.text}</a>}
+      {view.note !== null && (
+        <span className="flex min-w-0 items-start gap-1 text-label font-normal text-warn break-words">
+          <Icon name="info" size={12} className="mt-0.5 shrink-0" />{view.note}
+        </span>
+      )}
+    </span>
   );
 }

@@ -21,6 +21,7 @@ from engine.model import TRANSFER, scheduled_pct, trip_cost
 from tests.api.conftest import fresh, own_series, owned_send, seat, world_lot
 from tests.api.test_advance import advance_once, prepare_story
 from tests.api.test_workflow import STORY, call, holds, pick, source_of, state, version
+from tests.api.verify_helpers import ack, shown  # approve and accept acknowledge (D-26) and name the plan (07 review C)
 
 UNITS_AT_RISK = 400  # a test value: far more than a branch sells of one SKU in the few days left
 
@@ -78,7 +79,8 @@ def executed_keep_case(run, units: float, expiry_day: int, branch: str | None = 
     assert rec["result"]["recommended"] == "keep", "one unit with days to sell: the engine keeps it"
     v = version(run, case_id)
     owned_send(run, seat(branch), case_id, v)
-    assert call(run, workflow.decide, seat(branch), case_id, v, "approve", None) == {"state": "EXECUTED"}
+    assert call(run, workflow.decide, seat(branch), case_id, v, "approve", None, None, shown(run, case_id)) == \
+        {"state": "EXECUTED"}
     with db.tx() as conn:  # it sells slower than forecast: more is left than the Keep plan expected
         for table in ("lots", "truth_lots"):
             db.run(conn, f"UPDATE {table} SET qty = :q WHERE run_id = :r AND world = 'shelfshift' AND lot_id = :l",
@@ -194,8 +196,9 @@ def test_a_second_look_needs_a_fresh_approval_and_pays_each_trip_once(run, monke
     v, plan = version(run, STORY), pick(run, STORY)
     owned_send(run, src, STORY, v)
     if plan.kind == TRANSFER:
-        call(run, workflow.decide, seat(plan.dest), STORY, v, "accept")
-    assert call(run, workflow.decide, src, STORY, v, "approve")["state"] == "APPROVED"
+        call(run, workflow.decide, seat(plan.dest), STORY, v, "accept", None, ack(run, STORY), shown(run, STORY))
+    assert call(run, workflow.decide, src, STORY, v, "approve", None, ack(run, STORY), shown(run, STORY))["state"] == \
+        "APPROVED"
     call(run, workflow.prepare, src, STORY)
     advance_once(run)
     with db.tx() as conn:

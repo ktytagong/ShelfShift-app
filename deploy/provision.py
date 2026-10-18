@@ -40,6 +40,11 @@ setup data [--new-passcode] (after the early bench):
        `setup data: budget=<created|updated|unchanged|manual>`, right after the missing-HQ-secret line when there is
        one.
 
+setup ai (Phase 9, before the first release that runs the baseline briefs job; 09-24 deploy checklist item 3):
+    1. gcloud services enable aiplatform.googleapis.com (base enables it too; repeating it changes nothing)
+    2. roles/aiplatform.user on the project for the run account (the service) and the deploy account (the build job,
+       whose executions include `python -m agent.briefs`), `--condition None`, repeated every run; nothing else
+
 The grant split (06-RESEARCH Pitfall 5): the schema grants here are applied once by hand, as postgres; the build job's
 migrate() grants the runtime user every table and sequence at every build (api/db.py), so a clone never silently
 skips a table information_schema would hide.
@@ -48,10 +53,11 @@ Describe-or-create: a resource that exists is left as it is, so either mode is s
 repeated every run (adding a binding that exists changes nothing); if one fails right after its account was created,
 the account has not reached IAM yet: wait a minute and re-run.
 
-Deliberately absent (least privilege, D-04): the Phase 7 uploads bucket and its role arrive in Phase 7, and Gemini's
-roles/aiplatform.user in Phase 9. Enabling the aiplatform API grants nobody anything.
+Deliberately absent from base and data (least privilege, D-04): the Phase 7 uploads bucket and its role arrive in
+Phase 7, and Gemini's roles/aiplatform.user comes only from `setup ai`. Enabling the aiplatform API grants nobody
+anything.
 
-CLI: python -m deploy.provision {base,data} [--dry-run] [--env-file PATH]; data also takes --new-passcode.
+CLI: python -m deploy.provision {base,data,ai} [--dry-run] [--env-file PATH]; data also takes --new-passcode.
 A refused configuration prints "config error: ..." lines on stderr and exits 2 before any command; a failed command
 (other than the budget's) stops the run with exit 1 (fix the cause and re-run).
 """
@@ -105,6 +111,19 @@ def base(cfg: dict[str, str], runner: Runner) -> None:
         for role in PROJECT_ROLES:
             runner.run(gcloud("projects", "add-iam-policy-binding", project, "--member",
                               f"serviceAccount:{cfg[key]}", "--role", role, "--condition", "None", project=project))
+
+
+AI_ROLE = "roles/aiplatform.user"
+
+
+def ai(cfg: dict[str, str], runner: Runner) -> None:
+    """Gemini access for Phase 9: the Vertex AI API, then roles/aiplatform.user for the run and deploy accounts on the
+    project (no condition), and nothing else."""
+    project = cfg["PROJECT"]
+    runner.run(gcloud("services", "enable", "aiplatform.googleapis.com", project=project))
+    for key, _ in ACCOUNTS:
+        runner.run(gcloud("projects", "add-iam-policy-binding", project, "--member", f"serviceAccount:{cfg[key]}",
+                          "--role", AI_ROLE, "--condition", "None", project=project))
 
 
 def grant_sql(cfg: dict[str, str]) -> list[str]:
@@ -277,6 +296,7 @@ def data(cfg: dict[str, str], runner: Runner, new_passcode: Callable[[], str], *
 
 NEXT = {
     "base": "Next (runbook): the model metadata check, then bash deploy/bench-early.sh",
+    "ai": "Next (runbook step 7): bash deploy/release.sh, which runs the paid baseline briefs job before activation",
 }
 
 
@@ -294,6 +314,8 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
                             help="Cloud SQL, database, IAM users, passcode secret, budget, grant SQL")
     data_p.add_argument("--new-passcode", action="store_true",
                         help="add a newly generated passcode as a new version of an existing secret")
+    sub.add_parser("ai", parents=[common],
+                   help="Phase 9: enable Vertex AI and grant roles/aiplatform.user to the run and deploy accounts")
     args = ap.parse_args(argv)
     try:
         cfg = envfile.load(args.env_file or envfile.LOCAL)  # LOCAL read at call time
@@ -308,6 +330,8 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
     try:
         if args.mode == "base":
             base(cfg, runner)
+        elif args.mode == "ai":
+            ai(cfg, runner)
         else:
             # The dry run never generates a passcode: its DryRunner gets a marker it never prints.
             generator = (lambda: DRY_RUN_STDIN) if args.dry_run else new_passcode

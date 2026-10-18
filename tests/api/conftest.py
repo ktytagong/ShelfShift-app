@@ -17,6 +17,9 @@ os.environ["DEMO_PASSCODE"] = secrets.token_urlsafe(16)  # generated per test se
 os.environ["HQ_PASSCODE"] = secrets.token_urlsafe(16)  # HQ's own credential (06.1 D-47), generated the same way
 os.environ["DEMO_MODE"] = "on"  # the suite drives Next day and reset (06.1 D-04); off is the default (D-62),
 # and a test of off sets config.DEMO_MODE to False itself
+# The preloaded material's packaged files and samples (07-16): the test fixture folder, never the team's photos in
+# data/demo_signals/ (its photo-only answer names fixture-photo.jpg, a downscaled copy with no metadata)
+os.environ["DEMO_SIGNALS_DIR"] = str(pathlib.Path(__file__).parent / "fixtures" / "demo_signals")
 
 from api import config, db, refdata  # noqa: E402
 
@@ -30,6 +33,16 @@ def require_test_database(url: str) -> None:
     name = sa.engine.make_url(url).database or ""
     if not name.endswith("_test"):
         raise RuntimeError(f"API tests drop the schema: point DATABASE_URL at a *_test database, not {name!r}")
+
+
+@pytest.fixture(autouse=True)
+def _previews_out_of_reach(monkeypatch):
+    """The suite previews many times a minute across workspaces, so the `preview` cap (api/settings.json; 07-20
+    review) is out of reach here and tested on its own in test_signals
+    (test_previews_spend_their_own_cap_before_the_engine_and_filing_stays_open), which sets its own limits."""
+    from api import config
+    monkeypatch.setitem(config.WORKSPACE_CAPS, "preview", (10**6, "minute"))
+    monkeypatch.setitem(config.GLOBAL_CAPS, "preview", 10**6)
 
 
 @pytest.fixture(scope="session")

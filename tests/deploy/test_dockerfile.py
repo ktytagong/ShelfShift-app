@@ -83,9 +83,12 @@ def test_the_runtime_copies_exactly_the_app_agent_reference_data_and_the_web_bui
     assert ("COPY", "reference reference") in [(w, r) for _, w, r in runtime]
 
 
-def test_the_runtime_ships_the_agent_package():
-    runtime = stages()[-1]
-    assert ("COPY", "agent agent") in [(w, r) for _, w, r in runtime]
+def test_the_agent_package_ships_right_after_the_api():
+    """Phase 9 (09-24 deploy checklist item 1): the service and the baseline briefs job import agent/."""
+    _, runtime = stages()
+    steps = [(w, r) for _, w, r in runtime]
+    assert ("COPY", "agent agent") in steps
+    assert steps[steps.index(("COPY", "api api")) + 1] == ("COPY", "agent agent")
 
 
 def test_no_copy_ships_the_tests_deploy_or_the_whole_context():

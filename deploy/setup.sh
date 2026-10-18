@@ -6,8 +6,10 @@
 #   bash deploy/setup.sh data   Cloud SQL with IAM login, the database and its IAM users, the passcode secret,
 #                               the release-data bucket and its reader, the budget alert, and the schema grants to
 #                               apply by hand
+#   bash deploy/setup.sh ai     Phase 9: the Vertex AI API and roles/aiplatform.user for the run and deploy accounts
 #
-# Order: base; then the model metadata check and bash deploy/bench-early.sh; then data. Both modes are safe to re-run:
+# Order: base; then the model metadata check and bash deploy/bench-early.sh; then data; ai before the first Phase 9
+# release. Every mode is safe to re-run:
 # what exists is left as it is.
 # Options (after the mode): --dry-run prints every command and runs nothing; --env-file PATH reads another
 # configuration (give an absolute path: the script runs from the repository root).

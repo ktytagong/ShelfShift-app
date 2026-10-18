@@ -12,7 +12,7 @@
 //   booked. The decision re-reads on open, on focus and visibility, and once at the hold's end (useRefreshAt).
 // Strings marked (proposed) are Claude's wording, one constant each, so a change is one line.
 import { useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { post } from "../api.ts";
+import { ApiError, post } from "../api.ts";
 import { takeOwnership, type CaseDetail61, type Session61 } from "../contract.ts";
 import { errorAction } from "../copy.ts";
 import { useAction } from "../hooks.ts";
@@ -22,7 +22,7 @@ import { BOOKING_CONFIRMED, CHECK_AVAILABILITY, HOLD_EXPIRED, RELOAD_DECISION, h
 import { TAKE_OWNERSHIP } from "./steps/trigger.tsx";
 import type { StepProps } from "./types.ts";
 import { KeepBoardLocation } from "./location.ts";
-import { casePath, prepareWrite, sendWrite, type StepWrite } from "./writes.ts";
+import { casePath, decisionBody, prepareWrite, sendWrite, type Decision, type StepWrite } from "./writes.ts";
 
 // --- strings ---------------------------------------------------------------------------------------------------------
 
@@ -31,13 +31,26 @@ export { CHECK_AVAILABILITY };
 export const REJECT_OPEN = "Reject stock decision…";
 export const REJECT_SUBMIT = "Reject stock decision";
 export const KEEP_DECISION = "Keep the stock decision";
-export const REJECT_HELPER = "A rejected stock decision is not reopened. The lot follows the markdown schedule.";
+// 07-21 (07-CONTEXT D-24, D-36): closing a plan never hides the lot; the 06.1 line said it was not reopened.
+export const REJECT_HELPER = "The lot stays on the Decision board while it's at risk."; // D-36, with the D-61 term
 export const DECLINE_OPEN = "Decline transfer…";
 export const DECLINE_SUBMIT = "Decline transfer";
 export const KEEP_TRANSFER = "Keep the transfer";
 export const REASON = "Reason";
 export const REJECT_FORM_NAME = "Reject stock decision";
 export const DECLINE_FORM_NAME = "Decline transfer";
+// 07-21: Cancel approved plan… (07-UI-SPEC "Consequential actions"; 07-CONTEXT D-23, D-25, D-36) and the required
+// reason's hint while the box is empty (the confirm button stays disabled with it, never a bare "Cancel").
+export const CANCEL_OPEN = "Cancel approved plan…";
+export const CANCEL_SUBMIT = "Cancel approved plan";
+export const KEEP_APPROVED = "Keep approved plan";
+export const CANCEL_SENTENCE = "Cancel this approved plan? Its reservations are released and its work order can't be "
+  + "prepared or executed. The decision and work order stay in history, marked cancelled.";
+export const ADD_A_REASON = "Add a reason";
+// A refused acknowledgement and a changed plan (07-CONTEXT D-26, D-32; the orchestrator's 07-17 wording): the step
+// unticks its box and reads the stock decision again, so no button goes with these lines.
+export const ACK_AGAIN = "These facts changed · acknowledge again";
+export const PLAN_CHANGED_AGAIN = "This plan changed · review it again";
 export const APPROVAL_CANCELLED = // (proposed; 05's line with the D-61 term)
   "Approval cancelled: the stock decision got a new version. Send for approval again.";
 
@@ -45,10 +58,11 @@ export const APPROVAL_CANCELLED = // (proposed; 05's line with the D-61 term)
 
 // casePath, sendWrite and prepareWrite live in writes.ts, so the Decision board's moves build the same writes (D-69).
 export { casePath, prepareWrite, sendWrite, type StepWrite };
+export { cancelWrite, selectWrite } from "./writes.ts"; // 07-21
 
-export const decisionWrite = (d: CaseDetail61, decision: "approve" | "accept" | "reject" | "decline", reason?: string): StepWrite => ({
-  path: casePath(d.case_id, "decision"),
-  body: reason === undefined ? { rec_version: d.rec_version, decision } : { rec_version: d.rec_version, decision, reason },
+// The body is writes.decisionBody: an approve or accept names the plan shown and carries the acknowledgement (D-26).
+export const decisionWrite = (d: CaseDetail61, decision: Decision, reason?: string): StepWrite => ({
+  path: casePath(d.case_id, "decision"), body: decisionBody(d, decision, reason),
 });
 export const rejectWrite = (d: CaseDetail61, reason: string): StepWrite => ({ path: casePath(d.case_id, "reject"), body: { reason } });
 
@@ -96,8 +110,10 @@ export function mayTake(d: CaseDetail61, s: Session61): boolean {
 export function WriteError({ write, d, session, reload, check }: {
   write: StepWriteAction; d: CaseDetail61; session: Session61; reload: () => void; check?: () => void;
 }) {
-  const err = write.error;
-  if (err === null) return null;
+  const raw = write.error;
+  if (raw === null) return null;
+  const line = raw.code === "ack_required" ? ACK_AGAIN : raw.code === "stale_plan" ? PLAN_CHANGED_AGAIN : null;
+  const err = line === null ? raw : new ApiError(raw.status, raw.code, line, raw.extra);
   const next = errorAction(err.code);
   const reloadAction = { label: RELOAD_DECISION, onClick: () => { write.clear(); reload(); } };
   let action: { label: string; onClick: () => void } | undefined;
@@ -143,7 +159,7 @@ function TakeOwnershipAgain({ d, reload }: { d: CaseDetail61; reload: () => void
 // Reject stock decision… and Decline transfer… (06.1-UI-SPEC "Destructive and consequential actions"): a required
 // Reason focused on open, the danger submit and the keep button that closes the form and returns focus to its opener.
 export function ReasonForm({ kind, d, session, reload, onClose, write: makeWrite }: {
-  kind: "reject" | "decline"; d: CaseDetail61; session: Session61; reload: () => void; onClose: () => void;
+  kind: "reject" | "decline" | "cancel"; d: CaseDetail61; session: Session61; reload: () => void; onClose: () => void;
   write: (reason: string) => StepWrite;
 }) {
   const [reason, setReason] = useState("");
@@ -156,20 +172,29 @@ export function ReasonForm({ kind, d, session, reload, onClose, write: makeWrite
     void write.run(makeWrite(reason));
   };
   const reject = kind === "reject";
+  const cancel = kind === "cancel";
+  const blank = reason.trim() === "";
   return (
-    <form data-testid={`${kind}-form`} aria-label={reject ? REJECT_FORM_NAME : DECLINE_FORM_NAME} onSubmit={submit}
+    <form data-testid={`${kind}-form`} aria-label={cancel ? CANCEL_SUBMIT : reject ? REJECT_FORM_NAME : DECLINE_FORM_NAME}
+      onSubmit={submit}
       className="flex w-full min-w-0 max-w-full flex-col items-start gap-2 rounded-lg border border-line bg-white p-4">
+      {cancel && <p className="m-0 text-label text-tx break-words">{CANCEL_SENTENCE}</p>}
       <div className="flex w-full min-w-0 flex-col gap-1">
         <label htmlFor={id} className="text-label text-tx3">{REASON}</label>
         <input ref={input} id={id} type="text" required value={reason} readOnly={write.busy}
           onChange={(e) => setReason(e.target.value)}
           className="h-8 w-96 max-w-full rounded-md border border-line-2 bg-white px-2 text-body read-only:bg-side max-md:h-11" />
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Button kind="danger" type="submit" busy={write.busy}>{reject ? REJECT_SUBMIT : DECLINE_SUBMIT}</Button>
-        <Button kind="ghost" onClick={onClose} disabled={write.busy}>{reject ? KEEP_DECISION : KEEP_TRANSFER}</Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button kind="danger" type="submit" busy={write.busy} disabled={blank}>
+          {cancel ? CANCEL_SUBMIT : reject ? REJECT_SUBMIT : DECLINE_SUBMIT}
+        </Button>
+        <Button kind="ghost" onClick={onClose} disabled={write.busy}>
+          {cancel ? KEEP_APPROVED : reject ? KEEP_DECISION : KEEP_TRANSFER}
+        </Button>
+        {blank && <span className="text-label text-tx3">{ADD_A_REASON}</span>}
       </div>
-      {reject && <p className="m-0 text-label text-tx3">{REJECT_HELPER}</p>}
+      {(reject || cancel) && <p className="m-0 text-label text-tx3">{REJECT_HELPER}</p>}  {/* D-36: both closes */}
       <WriteError write={write} d={d} session={session} reload={reload} />
     </form>
   );

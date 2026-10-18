@@ -18,6 +18,7 @@ import pytest
 from api import cases, config, db, execution, worker
 from api.app import COOKIE
 from tests.api.conftest import fresh, key, sign_in, world_lot, world_rows
+from tests.api.verify_helpers import ack, shown
 
 STORY_TAG = cases.STORY_TAG
 
@@ -60,10 +61,13 @@ def prepared(c) -> tuple[dict, dict, str, str]:
                a=src, r=run["run_id"], c=cid)
     assert post(c, f"/api/cases/{cid}/send", {"rec_version": v}).json()["state"] == "PENDING_APPROVAL"
     sign_in(c, plan.dest)
-    assert post(c, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "accept"}).status_code == 200
+    given = ack(run["run_id"], cid)  # approve and accept acknowledge the Advisory facts (07-CONTEXT D-26)
+    page = shown(run, cid)  # and name the plan the page shows (07 review C)
+    assert post(c, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "accept", "plan_key": page,
+                                                  "acknowledged": given}).status_code == 200
     sign_in(c, src)
-    assert post(c, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "approve"}).json() == \
-        {"state": "APPROVED"}
+    assert post(c, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "approve", "plan_key": page,
+                                                  "acknowledged": given}).json() == {"state": "APPROVED"}
     assert post(c, f"/api/cases/{cid}/prepare").json() == {"state": "PREPARED"}
     action = work_order(run["run_id"], cid)
     assert action["state"] == "PLANNED"

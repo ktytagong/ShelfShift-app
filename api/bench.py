@@ -40,6 +40,14 @@ seconds; the two-decimal value printed never decides.
 api/bench_input.json is engine input produced by code (the export above), not a hand fixture and not an expected
 output, so re-exporting it after an engine or data change is allowed: the hand-fixture rule (01-CONTEXT D-23) does
 not apply to it. tests/api/test_bench.py fails when it no longer matches the template's SUS-19 input.
+
+`python -m api.bench --baseline --runs 10 --report PATH` additionally requires a checked brief for every
+baseline case, inventories every copied row and its full logical bytes, sweeps
+all case inputs, repeats the slowest case, and times creation/reset through
+transaction commit. It reports p50/p95/max and machine conditions, enforcing the
+unchanged 4x local gates (case <=0.75 s, reset/creation <=0.5 s). Run local timing
+under the shared slot. It generates no briefs, seeds no fixture, and exits 2
+rather than reporting an empty/incomplete workload as a passing budget.
 """
 from __future__ import annotations
 
@@ -49,12 +57,16 @@ _T0 = time.perf_counter()  # before the engine and api imports, so the startup l
 
 import argparse  # noqa: E402
 import dataclasses  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
 import hashlib  # noqa: E402
 import json  # noqa: E402
+import math  # noqa: E402
 import os  # noqa: E402
 import pathlib  # noqa: E402
+import platform  # noqa: E402
 import statistics  # noqa: E402
 import sys  # noqa: E402
+import uuid  # noqa: E402
 
 from engine import ENGINE_VERSION, from_dict, to_dict  # noqa: E402
 from engine.simulate import HorizonError  # noqa: E402
@@ -68,6 +80,154 @@ RUNS = 3
 SHORTLIST_INFO = (5, 10)  # information only: the gate always times the shipped input
 CGROUP = pathlib.Path("/sys/fs/cgroup")
 REEXPORT = "re-export with make bench-input"
+RESET_BUDGET_S = 2.0  # spec §8, unchanged; reset is timed through transaction commit.
+LOCAL_MARGIN = 4  # established local-to-db-f1-micro margin, not a production measurement.
+
+
+def _distribution(seconds):
+    values = sorted(seconds)
+    if not values or any(not math.isfinite(v) or v < 0 for v in values):
+        raise ValueError("timing samples must be finite, nonnegative and nonempty")
+    return {"count": len(values), "p50_s": statistics.median(values),
+            "p95_s": values[math.ceil(.95 * len(values)) - 1], "max_s": values[-1],
+            "samples_s": list(seconds)}
+
+
+def assess_baseline_budget(case_seconds, reset_seconds):
+    """Nearest-rank p95 and the fixed 4x local gate; every measured sample counts."""
+    case, reset = _distribution(case_seconds), _distribution(reset_seconds)
+    return {"production_targets_s": {"case_open": BUDGET_S, "reset": RESET_BUDGET_S},
+            "local_targets_s": {"case_open": BUDGET_S / LOCAL_MARGIN, "reset": RESET_BUDGET_S / LOCAL_MARGIN},
+            "local_margin": LOCAL_MARGIN, "case_open": case, "reset": reset,
+            "production_targets_met": case["max_s"] < BUDGET_S and reset["max_s"] < RESET_BUDGET_S,
+            "passed": case["max_s"] <= BUDGET_S / LOCAL_MARGIN and reset["max_s"] <= RESET_BUDGET_S / LOCAL_MARGIN}
+
+
+def _machine(conn):
+    return {"platform": platform.platform(), "processor": platform.processor(),
+            "python": platform.python_version(), "cpu_count": os.cpu_count(),
+            "memory_bytes": os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"),
+            "load_before": list(os.getloadavg()), "engine_worker": bool(config.ENGINE_WORKER),
+            "worker_start_method": worker._context().get_start_method() if config.ENGINE_WORKER else "inline",
+            "postgres": db.one(conn, "SELECT version() AS version")["version"],
+            "pool_size": config.POOL_SIZE, "max_overflow": config.MAX_OVERFLOW,
+            "conditions": "Local warm reference cache; isolated timing slot; other editors/agents may remain active."}
+
+
+def _inventory(conn, run_id):
+    from . import overlay
+    # Names come only from the same trusted schema discovery used by clone.
+    # JSON text size measures full logical content, including toasted JSONB;
+    # pg_column_size alone would under-report out-of-line compact tool results.
+    out = {}
+    for table in sandbox.per_run_tables(conn):
+        if table not in overlay.OVERLAID:
+            row = db.one(conn, f"SELECT count(*) AS rows, coalesce(sum(octet_length(row_to_json(t)::text)), 0) "
+                               f"AS logical_bytes FROM {table} t WHERE run_id = :r", r=run_id)
+            out[table] = {key: int(value) for key, value in row.items()}
+    return out
+
+
+def _case_open(template, case_id):
+    """Conservative case path: full engine/fact checks plus stored detail/brief JSON.
+
+    No generation/admission runs here. Recomputing even an already stored input
+    includes the unchanged engine budget rather than timing a cheap cache hit.
+    """
+    from agent import jobs
+    from . import selection
+    start = time.perf_counter()
+    with db.tx() as conn:
+        case = cases.case_row(conn, template["run_id"], case_id)
+        rec = cases.active_rec(conn, case)
+        plan = selection.plan_in_force(case, rec)[0]
+        saved = db.one(conn, "SELECT * FROM ai_outputs WHERE run_id = :r AND case_id = :c "
+                            "AND rec_version = :v AND plan_key = :p AND kind = 'BRIEF' "
+                            "AND status = 'CURRENT' AND provenance = 'PRECOMPUTED' "
+                            "ORDER BY created_at DESC, output_id DESC LIMIT 1",
+                       r=template["run_id"], c=case_id, v=rec["rec_version"], p=plan)
+        if saved is None:
+            raise ValueError(f"no exact checked baseline brief for {case_id}")
+        worker.run(evaluate._compute, from_dict(rec["engine_input"]))
+        detail = cases.detail(conn, template, case_id)
+        json.dumps({"case": detail, "brief": jobs.output_view(conn, saved, detail["summary"])}, default=str)
+    return time.perf_counter() - start
+
+
+def baseline_report(runs=10):
+    """Measure all prepared cases and exact reset copies, never seed or generate.
+
+    Call under the integration manifest's owner-checked timing slot locally.
+    This reports local evidence, not a deployed/db-f1-micro performance claim.
+    Throwaway sessions and clones alone are removed, including on a failure.
+    """
+    if runs < 2:
+        raise ValueError("at least two timing samples are required")
+    with db.tx() as conn:
+        template = sandbox.active_template(conn)
+        if template is None:
+            return {"baseline_complete": False, "eligible_cases": 0, "prepared_cases": 0,
+                    "case_open": None, "reset": None, "reason": "no ACTIVE template"}
+        run_id = template["run_id"]
+        candidates = db.rows(conn, "SELECT case_id FROM cases WHERE run_id = :r "
+                                  "AND active_rec_version IS NOT NULL ORDER BY case_id", r=run_id)
+        prepared = db.one(conn, "SELECT count(DISTINCT c.case_id) AS n FROM cases c JOIN ai_outputs o "
+            "ON o.run_id = c.run_id AND o.case_id = c.case_id AND o.rec_version = c.active_rec_version "
+            "JOIN ai_usage u ON u.run_id = o.run_id AND u.output_id = o.output_id "
+            "WHERE c.run_id = :r AND o.kind = 'BRIEF' AND o.status = 'CURRENT' "
+            "AND o.provenance = 'PRECOMPUTED' AND u.precomputed IS TRUE AND u.status = 'DONE'", r=run_id)["n"]
+        report = {"measured_at": datetime.now(timezone.utc).isoformat(), "template_run_id": run_id,
+                  "dataset_version": template["dataset_version"], "eligible_cases": len(candidates),
+                  "prepared_cases": int(prepared), "baseline_complete": bool(candidates) and prepared == len(candidates),
+                  "rows": _inventory(conn, run_id), "machine": _machine(conn),
+                  "case_open": None, "creation": None, "reset": None,
+                  "case_path": "Full engine evaluation/fact checks + stored case detail/checked brief JSON, through transaction commit",
+                  "byte_measure": "Sum of uncompressed row_to_json UTF-8 bytes; not disk or network bytes"}
+    if not report["baseline_complete"]:
+        report["reason"] = "Every evaluated baseline case needs its checked brief and successful retained baseline usage before timing."
+        return report
+    started = config.ENGINE_WORKER and worker.pid() is None
+    sessions, clones, creation, resets = [], [], [], []
+    if started:
+        worker.start()  # the same warm one-worker path used by the original bench
+    try:
+        # Visit every case once, then repeat the actual slowest, rather than
+        # picking only a guide/urgent case or relying on a construction estimate.
+        sweep = [(row["case_id"], _case_open(template, row["case_id"])) for row in candidates]
+        slowest = max(sweep, key=lambda row: row[1])[0]
+        case_times = [seconds for _, seconds in sweep]
+        case_times.extend(_case_open(template, slowest) for _ in range(runs))
+        sid = "bench-baseline-" + uuid.uuid4().hex
+        with db.tx() as conn:
+            db.run(conn, "INSERT INTO sessions (session_id, role) VALUES (:s, 'hq')", s=sid)
+        sessions.append(sid)
+        for i in range(runs + 1):
+            start = time.perf_counter()
+            new, _ = db.in_tx(sandbox.reset, sid)  # session -> old-run locks; clone; commit
+            seconds = time.perf_counter() - start
+            clones.append(new)
+            (creation if i == 0 else resets).append(seconds)
+        report.update(case_open=_distribution(case_times), creation=_distribution(creation), reset=_distribution(resets),
+                      slowest_case_id=slowest, swept_cases=len(sweep),
+                      budget=assess_baseline_budget(case_times, creation + resets))
+    finally:
+        if started:
+            worker.stop()
+        from .casebench import _drop
+        with db.tx() as conn:
+            _drop(conn, clones, sessions)  # exact throwaway IDs, never a shared run
+        report["machine"]["load_after"] = list(os.getloadavg())
+    return report
+
+
+def _baseline_main(runs, path):
+    report = baseline_report(runs)
+    if path:
+        pathlib.Path(path).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(report, sort_keys=True))
+    if not report["baseline_complete"]:
+        return 2
+    return 0 if report["budget"]["passed"] else 1
 
 
 def story_input(conn, template: dict):
@@ -206,13 +366,22 @@ def main(argv: list[str] | None = None) -> int:
                            "api/bench_input.json")
     mode.add_argument("--export", metavar="FILE",
                       help="local only: write SUS-19's raw input from the ACTIVE template to FILE")
+    mode.add_argument("--baseline", action="store_true",
+                      help="measure copied checked AI rows and the fixed local gates")
     mode.add_argument("--top", metavar="N", type=_positive,
                       help="the public-set gate: time the N slowest cases by api/casebench.py's rule")
     ap.add_argument("--resets", metavar="M", type=_not_negative, default=0,
                     help="with --top: also time M resets (default 0)")
     ap.add_argument("--shortlist-info", action="store_true",
                     help="also time shortlist_step 5 and 10 (information only, never the gate)")
+    ap.add_argument("--runs", type=int, default=10, help="with --baseline: repetitions after the every-case sweep "
+                    "(default 10)")
+    ap.add_argument("--report", help="with --baseline: write the row/byte/timing/machine report as JSON")
     args = ap.parse_args([] if argv is None else argv)
+    if args.baseline:
+        if args.runs < 2:
+            ap.error("--runs must be at least 2")
+        return _baseline_main(args.runs, args.report)
     if args.resets and not args.top:
         ap.error("--resets applies to --top only")
     if args.top:

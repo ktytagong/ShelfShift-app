@@ -16,16 +16,17 @@
 // Strings marked (proposed) are Claude's wording, one constant each, so a change is one line.
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { scaled } from "../../bars.ts";
-import type { CaseDetail61, ComparisonColumn, ComparisonColumnKey } from "../../contract.ts";
+import { type CaseDetail61, type ComparisonColumn, type ComparisonColumnKey } from "../../contract.ts";
 import { flipLines, planBranches, totalsScope, transportLine } from "../../copy.ts";
 import { dateLabel, expected, hhmm, money, units } from "../../format.ts";
 import { useSession } from "../../shell.tsx";
-import { Button, KindChip, Provenance } from "../../ui.tsx";
+import { Button, KindChip } from "../../ui.tsx";
 import {
   ApprovalCancelled, BookingLine, CHECK_AVAILABILITY, REJECT_OPEN, ReasonForm, SEND_FOR_APPROVAL, WriteError, isOwner,
   rejectWrite, sendWrite, useFormOpener, useRefetchOnFocus, useStepWrite,
 } from "../approval.tsx";
 import type { StepModule, StepProps } from "../types.ts";
+import { DecisionBrief } from "../assistant.tsx";
 
 // --- strings ---------------------------------------------------------------------------------------------------------
 
@@ -205,6 +206,7 @@ function changeLines(d: CaseDetail61, currency: string): string[] {
   return [...(transport === null ? [] : [transport]), ...flipLines(c.waste_price, currency).map((x) => x.text)];
 }
 
+
 function Panel(props: StepProps) {
   const { d, session, activity, reload, go } = props;
   const { session: plain } = useSession();
@@ -212,6 +214,16 @@ function Panel(props: StepProps) {
   const [flash, setFlash] = useState<Flash>(null);
   const netRow = useRef<HTMLDivElement>(null);
   const changeBox = useRef<HTMLDivElement>(null);
+  // The Approve backlink changes only the viewed step. The usual current-brief
+  // reader supplies the destination; navigation never starts a source or action.
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.hash.split("?")[1]);
+    if (query.get("focus") !== "decision-brief") return;
+    const heading = document.getElementById("decision-brief");
+    heading?.focus();
+    query.delete("focus");
+    window.history.replaceState(window.history.state, "", `${window.location.hash.split("?")[0]}?${query}`);
+  }, []);
   useEffect(() => {
     if (flash === null) return;
     const timer = setTimeout(() => setFlash(null), FLASH_MS);
@@ -231,39 +243,42 @@ function Panel(props: StepProps) {
   const sure = sureLines(d);
   const change = changeLines(d, plain.currency);
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="@container flex min-w-0 flex-col gap-4">
       <ApprovalCancelled d={d} activity={activity} />
       <BookingLine d={d} session={session} activity={activity} keep={keep} />
       <p className="m-0 flex flex-wrap items-center gap-2 text-label text-tx2">
         <KindChip kind="simulated" /><span>{SIMULATED_LINE}</span>
       </p>
-      <CompareGrid d={d} flash={flash} netRow={netRow} onRef={open} />
-      <p data-testid="totals-scope" className="num m-0 text-label text-tx3 break-words">{totalsScope(planBranches(d.engine_input, d.source))}</p>
-      <div className="grid min-w-0 gap-4 md:grid-cols-2">
-        <div data-testid="how-sure" className="flex min-w-0 flex-col gap-2 rounded-xl border border-line p-4">
-          <h3 className="m-0 text-label font-semibold tracking-[.06em] text-tx3 uppercase">{HOW_SURE}</h3>
-          {sure.map((x) => <p key={x} className="num m-0 text-body text-tx break-words">{x}</p>)}
-        </div>
-        <div ref={changeBox} data-testid="what-would-change" data-flash={flash === "change" ? "true" : undefined}
-          className={`flex min-w-0 flex-col gap-2 rounded-xl border border-line p-4 ${flash === "change" ? RING : ""}`}>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="m-0 text-label font-semibold tracking-[.06em] text-tx3 uppercase">{WHAT_WOULD_CHANGE}</h3>
-            <FigureRef id="X1" onOpen={open} />
+      <div data-testid="compare-layout" className="grid min-w-0 items-start gap-4 @min-[960px]:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="flex min-w-0 flex-col gap-4">
+        <CompareGrid d={d} flash={flash} netRow={netRow} onRef={open} />
+        <p data-testid="totals-scope" className="num m-0 text-label text-tx3 break-words">{totalsScope(planBranches(d.engine_input, d.source))}</p>
+        <div className="grid min-w-0 gap-4 md:grid-cols-2">
+          <div data-testid="how-sure" className="flex min-w-0 flex-col gap-2 rounded-xl border border-line p-4">
+            <h3 className="m-0 text-label font-semibold tracking-[.06em] text-tx3 uppercase">{HOW_SURE}</h3>
+            {sure.map((x) => <p key={x} className="num m-0 text-body text-tx break-words">{x}</p>)}
           </div>
-          {change.length === 0 ? <p className="m-0 text-body text-tx2">{NO_CROSSOVERS}</p>
-            : change.map((x) => <p key={x} className="num m-0 text-body text-tx break-words">{x}</p>)}
+          <div ref={changeBox} data-testid="what-would-change" data-flash={flash === "change" ? "true" : undefined}
+            className={`flex min-w-0 flex-col gap-2 rounded-xl border border-line p-4 ${flash === "change" ? RING : ""}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="m-0 text-label font-semibold tracking-[.06em] text-tx3 uppercase">{WHAT_WOULD_CHANGE}</h3>
+              <FigureRef id="X1" onOpen={open} />
+            </div>
+            {change.length === 0 ? <p className="m-0 text-body text-tx2">{NO_CROSSOVERS}</p>
+              : change.map((x) => <p key={x} className="num m-0 text-body text-tx break-words">{x}</p>)}
+          </div>
         </div>
+        </div>
+        <section data-testid="explanation" aria-label={EXPLANATION} className="flex min-w-0 flex-col gap-2 rounded-xl bg-navy-50 p-4">
+          <DecisionBrief d={d} reload={reload} />
+          <p className="m-0 flex flex-wrap items-center gap-2 text-label text-tx2">
+            <span>{SOURCES}</span>
+            {(Object.keys(REFS) as RefKey[]).map((id) => (
+              <span key={id} className="inline-flex items-center gap-1"><FigureRef id={id} onOpen={open} /><span>{REFS[id]}</span></span>
+            ))}
+          </p>
+        </section>
       </div>
-      <section data-testid="explanation" aria-label={EXPLANATION} className="flex min-w-0 flex-col gap-2 rounded-xl bg-navy-50 p-4">
-        <span><Provenance /></span>
-        <p data-testid="template-summary" className="m-0 text-body text-tx break-words">{d.summary}</p>
-        <p className="m-0 flex flex-wrap items-center gap-2 text-label text-tx2">
-          <span>{SOURCES}</span>
-          {(Object.keys(REFS) as RefKey[]).map((id) => (
-            <span key={id} className="inline-flex items-center gap-1"><FigureRef id={id} onOpen={open} /><span>{REFS[id]}</span></span>
-          ))}
-        </p>
-      </section>
     </div>
   );
 }

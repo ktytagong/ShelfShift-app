@@ -16,8 +16,16 @@ What goes in, and from where (contract-diff rows 6, 13, 15, 24, 29-34; IN-01):
 - markdown_schedule: the product's schedule, as seeded;
 - sales_yesterday: the reference history before the first day, the outcome rows afterwards; a branch with no row is
   left out (unknown is not zero, row 15);
-- reported facts: confirmed facts valid today that apply to this input, with every number a float or int (row 11);
-- overrides: what the caller passes (the adopted assumptions still in effect, `adopted_in_effect`).
+- reported facts: confirmed facts valid today that apply to this input, with every number a float or int (row 11); a
+  fact whose adjustments carry their own days (capacity, a demand multiplier) from the day it is confirmed until its
+  range ends, so a demand event next week changes today's plan on those days (07-13 review T1); a confirmed printed
+  expiry date older than yesterday is clamped to yesterday, the engine's floor, so the lot still reads expired
+  (`facts_in_effect`; 07 review B); a replaced fact never, and a zone fact only on its zone (07-13);
+- overrides: what the caller passes (the adopted assumptions still in effect, `adopted_in_effect`);
+- an unconfirmed report (`Unconfirmed`, the impact preview only): the input as the report's confirmation would leave
+  today's data, read only: its fact in effect after every confirmed one, the fact a correction replaces left out, the
+  record a count corrects, and the bookings of the pending approvals the same confirmation cancels first left out
+  (07-15 review P1, P2, P4).
 
 In a workspace the lots, deliveries and outcomes are read through api/overlay.py: its own rows for a series it has
 written, its template's otherwise (05.2 D-08..D-10).
@@ -27,10 +35,10 @@ and store, cache and export only this raw form (rows 6, 26).
 """
 from __future__ import annotations
 
-from dataclasses import fields, replace
+from dataclasses import dataclass, fields, replace
 from decimal import Decimal
 
-from engine.adjust import AdjustmentError, validate
+from engine.adjust import KINDS, AdjustmentError, validate
 from engine.model import (ENGINE_VERSION, Bookings, Capacity, EngineInput, Forecast, Inbound, Lot, Policy, Run)
 
 from . import db, eligibility, overlay, refdata
@@ -39,6 +47,27 @@ LIVE = "(state = 'COMMITTED' OR (state = 'HELD' AND expires_at > now()))"  # a b
 # a case's input leaves out only the deliveries that case created; with no case, every delivery counts, scheduled
 # supplier deliveries (no source case) included (quick 261017-ofn)
 INBOUND_NOT_OWN = "(CAST(:c AS text) IS NULL OR source_case_id IS DISTINCT FROM :c)"
+# adjustment kinds that carry their own business days (engine.adjust.KINDS: day_from..day_to; capacity and
+# demand_multiplier), which the engine applies to those days only (D-16)
+DAY_RANGED = frozenset(kind for kind, spec in KINDS.items() if "day_from" in spec)
+
+
+@dataclass(frozen=True)
+class Unconfirmed:
+    """A report as its confirmation would leave today's data, for the impact preview (api/impact.py; 07-CONTEXT D-16,
+    07-15 review P1, P2, P4). Nothing is written: `build_input` only reads it.
+
+    - `fact`: the report's fact {adjustments, sku, zone, valid_from, valid_to}, in effect after every confirmed fact
+      (it would be confirmed last) by `adjustments_in_effect`'s rule;
+    - `replaced`: the fact a correction replaces (facts.replace sets its replaced_by), never in effect;
+    - `counted`: ((lot_id, units), ...), the record a count corrects (facts.correct_record: the lot's qty, and
+      last_verified_day the business day), read as corrected, so a lot counted at zero leaves the input as it would;
+    - `released`: ((case_id, look_round), ...), the cases whose pending approval the same confirmation cancels before
+      this input is built: their current look's bookings read as released (bookings.release)."""
+    fact: dict | None = None
+    replaced: str | None = None
+    counted: tuple[tuple[str, float], ...] = ()
+    released: tuple[tuple[str, int], ...] = ()
 
 # The template build's batched reads and writes (quick 261018-4nj): products are read and written PRODUCT_BATCH at a
 # time, in sku order, so a read holds at most one batch's rows (05.2 D-11's bound) and the round trips no longer grow
@@ -96,19 +125,29 @@ def case_runs(ref: refdata.Ref, source: str, day: int, lot: dict | None = None, 
     return eligibility.eligible_runs(ref, {**lot, "branch": source}, product, day, policy)[0]
 
 
-def booking_rows(conn, run_id: str, exclude_case: str | None, look_round: int = 0) -> list[dict]:
-    """The run's live bookings summed by (kind, bucket, day), without this case's rounds above its look_round."""
+def booking_rows(conn, run_id: str, exclude_case: str | None, look_round: int = 0,
+                 released: tuple[tuple[str, int], ...] = ()) -> list[dict]:
+    """The run's live bookings summed by (kind, bucket, day), without this case's rounds above its look_round and
+    without each `released` (case_id, look_round)'s rounds above its look_round (an impact preview's, `bookings`)."""
+    gone = "".join(f"AND NOT (case_id = :gc{i} AND round > :gn{i}) " for i in range(len(released)))
+    extra = {**{f"gc{i}": c for i, (c, _) in enumerate(released)}, **{f"gn{i}": n for i, (_, n) in enumerate(released)}}
     return db.rows(conn, f"SELECT kind, bucket, day, sum(qty) AS qty FROM reservations WHERE run_id = :r "
-                         f"AND NOT (case_id = :c AND round > :n) AND {LIVE} "
+                         f"AND NOT (case_id = :c AND round > :n) {gone}AND {LIVE} "
                          f"GROUP BY kind, bucket, day ORDER BY kind, bucket, day",
-                   r=run_id, c=exclude_case or "", n=look_round)
+                   r=run_id, c=exclude_case or "", n=look_round, **extra)
 
 
 def bookings(conn, run_id: str, exclude_case: str | None, sku: str, zone: str, day: int, lot_ids: set[str],
-             look_round: int = 0, rows: list[dict] | None = None) -> Bookings:
-    """Other cases' live bookings that touch this input; this case's rounds above its look_round are left out.
-    `rows`: `booking_rows` already read for the same run, case and look_round (a morning screen's ScreenReads)."""
-    rs = booking_rows(conn, run_id, exclude_case, look_round) if rows is None else rows
+             look_round: int = 0, rows: list[dict] | None = None,
+             released: tuple[tuple[str, int], ...] = ()) -> Bookings:
+    """Other cases' live bookings that touch this input; this case's rounds above its look_round are left out, and so
+    are those of each `released` (case_id, look_round): a pending approval an unconfirmed report's confirmation would
+    cancel first (`Unconfirmed`; bookings.release ends the current look's rounds).
+    `rows`: `booking_rows` already read for the same run, case and look_round (a morning screen's ScreenReads, which
+    never carries `released`: a ScreenReads and an unconfirmed report never meet, build_input)."""
+    if rows is not None and released:
+        raise ValueError("shared booking rows are read without released rounds: pass one or the other")
+    rs = booking_rows(conn, run_id, exclude_case, look_round, released) if rows is None else rows
     demand, totes, run_totes, lot_units, lot_price = [], [], [], [], []
     for r in rs:
         a, _, b = r["bucket"].partition("|")
@@ -126,28 +165,72 @@ def bookings(conn, run_id: str, exclude_case: str | None, sku: str, zone: str, d
     return Bookings(tuple(demand), tuple(totes), tuple(run_totes), tuple(lot_units), tuple(lot_price))
 
 
-def fact_rows(conn, run_id: str, day: int) -> list[dict]:
-    """The run's confirmed reported facts valid on `day` (adjustments, sku), in confirmation order."""
-    return db.rows(conn, "SELECT adjustments, sku FROM reported_facts WHERE run_id = :r AND valid_from <= :d "
-                         "AND valid_to >= :d ORDER BY confirmed_at, fact_id", r=run_id, d=day)
+def _expired_floor(adj: dict, probe: EngineInput) -> dict:
+    """A confirmed printed expiry date (`expiry`) older than yesterday, clamped to yesterday: the engine's own floor
+    for an expiry adjustment (engine/adjust.py EXPIRY_DAY), which still reads the lot as expired. Dropped instead, the
+    lot would read its recorded estimate again once the printed date is two days old (07 review B; 07-CONTEXT D-11,
+    D-21). Only the input changes: the stored fact keeps the printed date, and the engine is untouched. Anything else
+    is returned as it is."""
+    floor = probe.today - 1
+    day = adj.get("expiry_day")
+    if adj.get("kind") == "expiry" and isinstance(day, int) and not isinstance(day, bool) and day < floor:
+        return {**adj, "expiry_day": floor}
+    return adj
+
+
+def fact_rows(conn, run_id: str, day: int, replaced: str | None = None) -> list[dict]:
+    """The run's confirmed reported facts whose range has not ended by `day` and that no later correction replaced
+    (adjustments, sku, zone, valid_from, valid_to), in confirmation order: what `facts_in_effect` judges, one read per
+    run and day (a morning screen's ScreenReads shares it across lots; quick 261017-nhi, 07-13). `replaced` names a
+    fact an unconfirmed correction would replace: it is left out as if replaced already (the impact preview, 07-15
+    review P1)."""
+    left_out = " AND fact_id <> :x" if replaced is not None else ""
+    return db.rows(conn, "SELECT adjustments, sku, zone, valid_from, valid_to FROM reported_facts WHERE run_id = :r "
+                         "AND valid_to >= :d AND replaced_by IS NULL" + left_out + " ORDER BY confirmed_at, fact_id",
+                   r=run_id, d=day, **({"x": replaced} if replaced is not None else {}))
 
 
 def facts_in_effect(conn, run_id: str, day: int, sku: str, probe: EngineInput,
-                    rows: list[dict] | None = None) -> tuple[dict, ...]:
-    """Confirmed reported facts valid today that apply to this input (other branches, runs or lots are skipped).
-    Every number is converted from Decimal first, so the engine's direct `validate` sees a float (row 11).
-    `rows`: `fact_rows` already read for the same run and day (a morning screen's ScreenReads)."""
+                    rows: list[dict] | None = None, replaced: str | None = None) -> tuple[dict, ...]:
+    """Confirmed reported facts that apply to this input today (other branches, runs or lots are skipped): a fact
+    valid today, and an adjustment with its own days (`DAY_RANGED`: capacity, a demand multiplier) of a fact whose
+    range has not ended, even when it starts later, since the engine applies it to those days only and they may lie
+    inside today's horizon (07-13 review T1). Facts without their own days (counts, printed dates, transport on a run)
+    keep the valid-today rule: a run code names no day. Every number is converted from Decimal first, so the engine's
+    direct `validate` sees a float (row 11). A printed expiry date older than yesterday is clamped to yesterday
+    (`_expired_floor`), never skipped (07 review B). A fact a later correction replaced (`replaced_by`) is never in
+    effect, so two corrections never stack, and a fact about one storage zone (`zone`, a CAPACITY report) applies only
+    to an input whose product is in that zone (07-CONTEXT D-15; research F-9). `replaced` names a fact an unconfirmed
+    correction would replace: it is left out as if replaced already (the impact preview, 07-15 review P1).
+    `rows`: `fact_rows` already read for the same run and day (a morning screen's ScreenReads, which never carries
+    `replaced`)."""
+    if rows is not None and replaced is not None:
+        raise ValueError("shared fact rows are read without a replaced fact: pass one or the other")
     out = []
-    for f in fact_rows(conn, run_id, day) if rows is None else rows:
-        if f["sku"] not in (None, sku):
-            continue
-        for adj in plain(f["adjustments"]):
-            try:
-                validate(adj, probe)
-            except AdjustmentError:
-                continue
-            out.append(adj)
+    for f in fact_rows(conn, run_id, day, replaced) if rows is None else rows:
+        out += adjustments_in_effect(f, day, sku, probe)
     return tuple(out)
+
+
+def adjustments_in_effect(fact: dict, day: int, sku: str, probe: EngineInput) -> list[dict]:
+    """The adjustments of one fact ({adjustments, sku, zone, valid_from, valid_to}) that reach this input today, by
+    `facts_in_effect`'s rule: none when its range has ended or its SKU or zone is another; an adjustment without its
+    own days only once the fact is valid; a printed date older than yesterday clamped (`_expired_floor`); one the
+    engine refuses on this input skipped. The impact preview judges a report's adjustments by this same rule, so the
+    preview and the applied result agree (07-CONTEXT D-16; 07-15)."""
+    if fact["valid_to"] < day or fact["sku"] not in (None, sku) or fact["zone"] not in (None, probe.product.zone):
+        return []
+    out = []
+    for adj in plain(fact["adjustments"]):
+        if fact["valid_from"] > day and adj.get("kind") not in DAY_RANGED:
+            continue  # not valid yet, and nothing in it names the days it is about
+        adj = _expired_floor(adj, probe)
+        try:
+            validate(adj, probe)
+        except AdjustmentError:
+            continue
+        out.append(adj)
+    return out
 
 
 def adopted_in_effect(adopted, runs, branches) -> tuple[tuple[dict, ...], list[dict]]:
@@ -242,12 +325,18 @@ class ScreenReads:
 
 def build_input(conn, run: dict, lot_id: str, world: str = "shelfshift", exclude_case: str | None = None,
                 overrides: tuple[dict, ...] = (), extra: Bookings | None = None,
-                extra_inbound: tuple[Inbound, ...] = (), reads: ScreenReads | None = None) -> EngineInput:
+                extra_inbound: tuple[Inbound, ...] = (), reads: ScreenReads | None = None,
+                unconfirmed: Unconfirmed | None = None) -> EngineInput:
     """The raw EngineInput for `lot_id` on the run's day. LookupError when the lot is not on the record.
 
     `reads`: a morning screen's ScreenReads (cases.open_cases and advance.baseline_morning only); the input is the
     same with or without it (tests/api/test_inputs.py). exclude_case None (a morning screen, the store rule, casebench)
-    leaves nothing out, so every delivery in the window counts."""
+    leaves nothing out, so every delivery in the window counts.
+    `unconfirmed` (the impact preview only): the input as that report's confirmation would leave today's data. The two
+    never meet: a morning screen previews nothing, and a preview reads today's data on its own (ValueError if both)."""
+    pending = unconfirmed or Unconfirmed()
+    if reads is not None and pending != Unconfirmed():
+        raise ValueError("a ScreenReads serves a morning screen, never an impact preview")
     ref = refdata.get(run["dataset_version"])
     day, run_id = run["day"], run["run_id"]
     if reads is not None and (reads.run["run_id"], reads.run["day"]) != (run_id, day):
@@ -267,13 +356,19 @@ def build_input(conn, run: dict, lot_id: str, world: str = "shelfshift", exclude
     runs = case_runs(ref, source, day, lot=case_lot, product=product, policy=policy)
     branches = sorted({source} | {r.dest for r in runs})
     inside = set(branches)
+    counted = dict(pending.counted)
     if reads is None:
         lots_in, p = overlay.series_filter(conn, run, world, sku, branches, "lots")
-        lot_rows = db.rows(conn, f"SELECT * FROM lots WHERE {lots_in} AND (qty > 0 OR lot_id = :l) ORDER BY lot_id",
-                           l=lot_id, **p)
-    else:  # the same rows the series query returns, in its order
+        also = " OR lot_id = ANY(:counted_ids)" if counted else ""
+        lot_rows = db.rows(conn, f"SELECT * FROM lots WHERE {lots_in} AND (qty > 0 OR lot_id = :l{also}) ORDER BY lot_id",
+                           l=lot_id, **({"counted_ids": sorted(counted)} if counted else {}), **p)
+    else:  # the same rows the series query returns, in its order (a ScreenReads carries no counted lot)
         lot_rows = [l for l in reads.product("lots", world, sku)
                     if l["branch"] in inside and (l["qty"] > 0 or l["lot_id"] == lot_id)]
+    if counted:  # the record as the count's confirmation corrects it (facts.correct_record), read only
+        lot_rows = [{**l, "qty": counted[l["lot_id"]], "last_verified_day": day} if l["lot_id"] in counted else l
+                    for l in lot_rows]
+        lot_rows = [l for l in lot_rows if l["qty"] > 0 or l["lot_id"] == lot_id]
     lots = tuple(Lot(l["lot_id"], l["branch"], float(l["qty"]), l["expiry_day"], l["received_seq"],
                      l["markdown_pct"], l["expiry_source"], l["last_verified_day"]) for l in lot_rows)
     if reads is None:
@@ -320,7 +415,8 @@ def build_input(conn, run: dict, lot_id: str, world: str = "shelfshift", exclude
     if world == "shelfshift":
         rows = None if reads is None else reads.get(
             ("res", exclude_case, look_round), lambda: booking_rows(conn, run_id, exclude_case, look_round))
-        booked = bookings(conn, run_id, exclude_case, sku, product.zone, day, lot_ids, look_round, rows=rows)
+        booked = bookings(conn, run_id, exclude_case, sku, product.zone, day, lot_ids, look_round, rows=rows,
+                          released=pending.released)
     else:
         booked = Bookings()
     if extra is not None:
@@ -332,7 +428,9 @@ def build_input(conn, run: dict, lot_id: str, world: str = "shelfshift", exclude
                       policy=policy, bookings=booked, markdown_schedule=ref.schedules[sku])
     if world == "shelfshift":
         rows = None if reads is None else reads.get(("facts", day), lambda: fact_rows(conn, run_id, day))
-        facts = facts_in_effect(conn, run_id, day, sku, inp, rows=rows)
+        facts = facts_in_effect(conn, run_id, day, sku, inp, rows=rows, replaced=pending.replaced)
+        if pending.fact is not None:  # confirmed last, so in effect after every other fact
+            facts += tuple(adjustments_in_effect(pending.fact, day, sku, inp))
     else:
         facts = ()
     return replace(inp, reported_facts=facts, overrides=tuple(plain(o) for o in overrides))

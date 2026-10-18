@@ -15,6 +15,7 @@ from api import cases, db, ownership, workflow
 from api.app import app
 from api.errors import ApiError
 from tests.api.conftest import by_tag, key, seat, sign_in, take
+from tests.api.verify_helpers import ack, shown  # approve and accept acknowledge (D-26) and name the plan (07 review C)
 
 NOT_OWNED = "Take ownership before sending this stock decision."
 NOT_OWNER = "Only the owner of this stock decision can send it."
@@ -200,8 +201,10 @@ def test_ownership_grants_no_approval(run):
     assert call(run, workflow.send, hq, cid, v)["state"] == "PENDING_APPROVAL"
     for decision in ("approve", "accept"):
         assert raises(call, run, workflow.decide, hq, cid, v, decision).status == 403
-    assert call(run, workflow.decide, dest, cid, v, "accept") == {"state": "PENDING_APPROVAL"}
-    assert call(run, workflow.decide, src, cid, v, "approve") == {"state": "APPROVED"}
+    assert call(run, workflow.decide, dest, cid, v, "accept", None, ack(run, cid), shown(run, cid)) == \
+        {"state": "PENDING_APPROVAL"}
+    assert call(run, workflow.decide, src, cid, v, "approve", None, ack(run, cid), shown(run, cid)) == \
+        {"state": "APPROVED"}
 
 
 def test_the_warm_up_takes_ownership_as_the_source_store(template):

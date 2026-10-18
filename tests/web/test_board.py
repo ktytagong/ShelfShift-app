@@ -325,3 +325,47 @@ def test_a_failed_poll_keeps_the_cards_and_shows_the_stale_banner(visitor):
     expect(page.get_by_text("Couldn't refresh. Showing what was loaded before.")).to_be_visible()
     expect(page.get_by_role("button", name="Try again")).to_be_visible()
     expect(card).to_be_visible()
+
+
+# --- Phase 7 badges, the owner line, the Blocked filter and a closed lot still at risk (07-22) -------------------------
+
+def test_a_held_card_shows_its_badges_in_priority_and_who_resolves_it(visitor):
+    """07-UI-SPEC "Board badges" and surface 2: with a Mixed dates hold (its report stays unconfirmed) and a Required
+    check on the story case, the card shows "Lot hold" and "Required check" first, then "+N" whose accessible name
+    lists the rest (the new report among them); its Next line reads "Resolve hold" and the hold's owner; the
+    Blocked filter (the server's) counts and lists it."""
+    from tests.api.conftest import fresh
+    from tests.api.verify_helpers import required_fixture
+    from tests.web.conftest import run_id
+    from tests.web.test_banners import mixed_hold
+    page = visitor.page
+    story = as_story_source(page)
+    required_fixture(fresh(run_id(page)))
+    mixed_hold(page, case_json(page, story["case_id"]))
+    open_board(page)
+    card = board_region(page).get_by_test_id(f"decision-card-{STORY}")
+    pills = card.locator("span", has_text=re.compile(r"^(Lot hold|Required check)$"))
+    expect(pills.first).to_have_text("Lot hold")
+    expect(card).to_contain_text("Required check")
+    more = card.get_by_role("img", name=re.compile(r"^\+\d+: "))
+    expect(more).to_have_attribute("aria-label", re.compile(r"New report"))
+    expect(card).to_contain_text("Resolve hold")
+    expect(card).to_contain_text(f"{story['source']} manager")
+    blocked = page.get_by_role("button", name=re.compile(r"^Blocked only \(\d+\)$"))
+    with page.expect_response(lambda r: is_board(r.url) and params(r.url).get("blocked") == "1") as got:
+        blocked.click()
+    assert STORY in [c["key"] for c in got.value.json()["cases"]]
+    assert got.value.json()["blocked_total"] >= 1
+    expect(board_region(page).get_by_test_id(f"decision-card-{STORY}")).to_be_visible()
+
+
+def test_a_rejected_lot_still_at_risk_reads_needs_decision_on_its_card(visitor):
+    """D-24: rejecting never hides at-risk stock: the closed card reads "Needs decision"."""
+    from tests.web.test_banners import post
+    from tests.web.test_transfers import case_path
+    page = visitor.page
+    story = as_story_source(page)
+    take_ownership(page, story["case_id"])
+    post(page, case_path(story["case_id"], "reject"), {"reason": "Not this week"})
+    open_board(page)
+    expect(board_region(page).get_by_test_id(f"decision-card-{STORY}")).to_contain_text("Needs decision")

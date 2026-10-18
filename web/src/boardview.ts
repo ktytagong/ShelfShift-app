@@ -11,6 +11,7 @@ import {
   CAPACITY_HOLD_EXPIRED, DISPATCH_BLOCKED, IN_STORE, LOGISTICS, MISSING_DATA, NEXT_ACTION_LABEL, RECEIPT_DISCREPANCY_BADGE,
   ROLE_LABEL, STOCK_CHECK_REQUESTED,
 } from "./vocab.ts";
+import { NEW_CONFIRMED_INFO } from "./vocab.ts"; // Phase 7 badge words (07-22)
 
 // --- the columns -----------------------------------------------------------------------------------------------------
 
@@ -76,8 +77,62 @@ export function badgeChip(b: Badge, currency: string): BadgeChip {
         : (notAllowed ? unverifiedExposureOther : unverifiedExposure)(money(b.decision_regret, currency));
       return { kind: b.kind, tone: "warn", icon: "alert", text };
     }
-    default: return { kind: b.kind, tone: "gray", icon: null, text: b.text };
+    default: return phase7Badge(b) ?? { kind: b.kind, tone: "gray", icon: null, text: b.text };
   }
+}
+
+// --- Phase 7 badges, their priority and who resolves a block (07-UI-SPEC "Board badges", surface 2; 07-22) -------------
+
+export const LOT_HOLD = "Lot hold";
+export const REQUIRED_CHECK = "Required check";
+export const NEW_REPORT = "New report";
+export const RESOLVE_HOLD = "Resolve hold";
+export const RESOLVE_CHECK = "Resolve check"; // (proposed) a Required check's owner line
+
+// The four kinds Phase 7 adds, in words; null for any other kind.
+function phase7Badge(b: { kind: string; text: string }): BadgeChip | null {
+  switch (b.kind) {
+    case "lot_hold": return { kind: b.kind, tone: "bad", icon: "hold", text: LOT_HOLD };
+    case "required_check": return { kind: b.kind, tone: "bad", icon: "lock", text: REQUIRED_CHECK };
+    case "review_flag": return { kind: b.kind, tone: "warn", icon: "flag", text: NEW_CONFIRMED_INFO };
+    case "new_report": return { kind: b.kind, tone: "info", icon: "info", text: NEW_REPORT };
+    default: return null;
+  }
+}
+
+// The UI-SPEC's priority: lot hold, Required check, plan may not be allowed, review flag, exposure, stock check
+// requested, new report. 06.1's blocking badges (missing data, dispatch blocked, capacity hold expired, receipt
+// discrepancy) keep their place ahead of them, and every other kind follows, each group in the server's order.
+const FIRST = ["missing_data", "dispatch_blocked", "hold_expired", "discrepancy"];
+function rank(c: BadgeChip): number {
+  if (FIRST.includes(c.kind)) return 0;
+  if (c.kind === "unverified") return c.text.startsWith(UNVERIFIED_NOT_ALLOWED) ? 3 : 5;
+  const at = ["lot_hold", "required_check", "", "review_flag", "", "evidence_requested", "new_report"].indexOf(c.kind);
+  return at < 0 ? 8 : at + 1;
+}
+export function byPriority(chips: readonly BadgeChip[]): BadgeChip[] {
+  return chips.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i).map((x) => x.c);
+}
+
+type Blockable = { badges?: Badge[]; blocked_reasons?: readonly string[]; state?: string };
+const ownerOf = (b: Badge | undefined): string[] => {
+  const o = (b as { owner_branches?: unknown } | undefined)?.owner_branches;
+  return Array.isArray(o) ? o.map(String) : [];
+};
+
+// The Next line of a card a lot hold or a Required check blocks: "Resolve hold" with the hold's owners (also on
+// prepared work, whose dispatch the hold blocks, D-36), else "Resolve check" with the facts' owners; null otherwise.
+export function blockedLine(card: Blockable): { action: string; who: string } | null {
+  const reasons = card.blocked_reasons ?? [];
+  const find = (k: string) => (card.badges ?? []).find((b) => b.kind === k);
+  const hold = find("lot_hold");
+  const names = (b: Badge | undefined) => ownerOf(b).map((x) => `${x} manager`).join(" · ");
+  if (hold !== undefined && (reasons.includes("lot_hold") || reasons.includes("dispatch_blocked"))) {
+    return { action: RESOLVE_HOLD, who: names(hold) };
+  }
+  const check = find("required_check");
+  if (check !== undefined && reasons.includes("required_check")) return { action: RESOLVE_CHECK, who: names(check) };
+  return null;
 }
 
 export function cardBadges(
@@ -94,7 +149,7 @@ export function cardBadges(
   if (card.next_action?.key === "reconcile") {
     out.push({ kind: "discrepancy", tone: "bad", icon: "alert", text: RECEIPT_DISCREPANCY_BADGE });
   }
-  return out;
+  return byPriority(out); // the UI-SPEC's priority (07-22)
 }
 
 // --- the Next line and who ------------------------------------------------------------------------------------------
@@ -106,7 +161,9 @@ export function actorName(w: { role: Session["role"]; branch: string | null }): 
 
 // The Next line (UI-SPEC "Card" row 6): the action in words and who does it, several joined with " · "; null when
 // the server names no next action (an archived decision, or one waiting on the morning's re-evaluation).
-export function nextLine(card: Pick<Card61, "next_action">): { action: string; who: string } | null {
+export function nextLine(card: Pick<Card61, "next_action"> & Blockable): { action: string; who: string } | null {
+  const blocked = blockedLine(card); // a lot hold or Required check names who resolves it (07-22)
+  if (blocked !== null) return blocked;
   const key = card.next_action?.key ?? null;
   if (key === null) return null;
   return { action: NEXT_ACTION_LABEL[key] ?? key, who: card.next_action.who.map(actorName).join(" · ") };

@@ -28,6 +28,17 @@ plan, its bookings or its approval round.
 Every send, decision, commit, wait, rejection and adoption writes its activity entry in the same transaction
 (T-04-24).
 
+The commitment rule (Phase 7, api/commitment.py; 07-CONTEXT D-12, D-13): the decision that commits and Prepare refuse
+with 409 commitment_blocked while a lot hold on a lot the case involves or a Required check of the plan in force
+remains, before anything is locked, booked or written. Send is never refused for it.
+
+Every close by a person (reject, the reject or decline decision; Cancel approved plan in api/closing.py) stores the
+lot's decision-inputs fingerprint and its status after the release (closing.on_close; 07-CONTEXT D-24, D-28).
+
+The plan in force (Phase 7, api/selection.py; 07-CONTEXT D-23) is what every action here works on: the plan the source
+manager selected among the active version's engine options, while that selection is bound to the active version, else
+the recommended plan.
+
 Prepare (spec §8 Prepare and dispatch; source manager, APPROVED only) verifies the shipment and rechecks on the raw
 input again, then writes the simulated work order for the shelfshift world: a TRANSFER action whose origin is the
 case's source branch (the booked transfer's, never guessed), with the run's day and its costs as approved (the
@@ -49,6 +60,9 @@ from engine.simulate import HorizonError
 from engine.timing import markdown_effective_day
 
 from . import accounts, advance, bookings, cases, db, evaluate, inputs, ownership, refdata
+from . import commitment  # Phase 7: Required checks and lot holds refuse commit and Prepare (07-CONTEXT D-12, D-13)
+from . import selection  # Phase 7: the plan in force, the selection bound to the active version (07-CONTEXT D-23)
+from . import closing  # Phase 7: every close records the lot's fingerprint and status (07-CONTEXT D-24, D-28)
 from .errors import ApiError, engine_error
 
 ENGINE_ERRORS = (InputError, AdjustmentError, HorizonError)
@@ -56,6 +70,10 @@ STALE = "This recommendation was replaced by a newer version. Reload the stock d
 CONFLICT = "This plan can't go ahead now; see the reasons."
 NO_SOURCE = "This transfer has no verifiable source; nothing was booked."
 EXPIRED = "Capacity hold expired. Check availability and book again."  # 06.1 D-57, word for word
+STALE_PLAN = "The approvals in this round were for another plan. Send it for approval again."  # 07-CONTEXT D-23
+# a decision naming another plan than the one in force: the page is stale (07 review C; 07-CONTEXT D-23, D-32)
+PLAN_CHANGED = "The plan changed since this page was loaded. Reload the stock decision."
+NAMES_PLAN = ("approve", "accept")  # these must name the plan key the page shows; reject and decline may
 DEST_ONLY = "Only the destination manager can accept or decline this transfer"
 ROLE_OF = {"approve": "source", "reject": "source", "accept": "destination", "decline": "destination"}
 TRIP_KINDS = ("transport_quote", "handling_cost")  # adopted for one trip: the run code and that run's day
@@ -90,10 +108,20 @@ def _version(case: dict, rec_version) -> None:
 
 
 def _plan(conn, case: dict) -> Plan:
+    """The plan in force (api/selection.py): the selection bound to the active version, else the recommended plan.
+    Send holds it, each decision records its key, the commit and Prepare commit it (07-CONTEXT D-23)."""
     rec = cases.active_rec(conn, case)
     if rec is None:
         raise ApiError(409, "missing_data", "This case has no recommendation")
-    return cases.parse_plan(rec["result"]["recommended"])
+    key, _, _ = selection.plan_in_force(case, rec)
+    return cases.parse_plan(key)
+
+
+def _refuse_if_blocked(conn, run: dict, case: dict, plan: Plan) -> None:
+    """The commitment rule on the plan in force (api/commitment.py): 409 commitment_blocked while a lot hold on an
+    involved lot or a Required check remains (07-CONTEXT D-12, D-13)."""
+    rec = cases.active_rec(conn, case)
+    commitment.refuse_if_blocked(conn, run, case, rec, plan, commitment.checks_in_force(case, rec))
 
 
 def _current_input(conn, run: dict, case: dict, plan: Plan) -> EngineInput:
@@ -180,10 +208,28 @@ def send(conn, run: dict, actor: dict, case_id: str, rec_version: str) -> dict:
     return {"state": "PENDING_APPROVAL", "round": round_}
 
 
+def _refuse_other_plan(plan: Plan, decision: str, plan_key) -> None:
+    """409 stale_plan (with the plan in force's `plan_key`) when the decision names another plan than the plan in
+    force: an approve or accept must name it (`plan_key`, the key the page shows; none named is refused too), a
+    reject or decline only when it names one (07 review C; 07-CONTEXT D-23, D-32). A page loaded before a selection
+    therefore never approves the newly selected plan."""
+    if plan_key is None and decision not in NAMES_PLAN:
+        return
+    if plan_key != plan.key:
+        raise ApiError(409, "stale_plan", PLAN_CHANGED, plan_key=plan.key)
+
+
 def decide(conn, run: dict, actor: dict, case_id: str, rec_version: str, decision: str,
-           reason: str | None = None) -> dict:
+           reason: str | None = None, acknowledged=None, plan_key: str | None = None) -> dict:
     """Record one side's decision on the current round. A transfer needs the source's approval and the destination's
-    acceptance, in either order; Keep and markdown need the source only. The last required decision commits."""
+    acceptance, in either order; Keep and markdown need the source only. The last required decision commits.
+
+    An approve or accept names the plan the page shows (`plan_key`), checked after the seat, version and reason
+    checks: none named, or another key than the plan in force's, is 409 stale_plan and records nothing; a reject or
+    decline is checked only when it names one (`_refuse_other_plan`; 07 review C, D-32). An approve or accept on a
+    plan with Advisory facts then carries `acknowledged` {rec_version, plan_key, fact_ids} (api/commitment.py
+    check_ack: 409 ack_required, missing or stale; 07-CONTEXT D-12, D-26). Every decision stores the plan in force's
+    key, and the acknowledgement when one was needed, on its row and in its `decision` entry."""
     expired = bookings.expire_holds(conn, run, case_id)
     case = cases.case_row(conn, run["run_id"], case_id, lock=True)
     role = ROLE_OF.get(decision)
@@ -201,19 +247,28 @@ def decide(conn, run: dict, actor: dict, case_id: str, rec_version: str, decisio
         require_manager(actor, plan.dest if plan.kind == TRANSFER else None, DEST_ONLY)
     if decision in ("reject", "decline") and not (isinstance(reason, str) and reason.strip()):
         raise ApiError(400, "bad_request", "A reason is required")
-    n = db.run(conn, "INSERT INTO decisions (run_id, case_id, rec_version, round, role, decision, session_id, reason) "
-                     "VALUES (:r, :c, :v, :n, :role, :d, :s, :why) ON CONFLICT DO NOTHING",
+    _refuse_other_plan(plan, decision, plan_key)  # the page's plan is the plan in force (07 review C; D-23, D-32)
+    ack = None
+    if decision in ("approve", "accept"):  # the Advisory facts of the plan in force are acknowledged (D-12, D-26)
+        rec = cases.active_rec(conn, case)
+        checks = commitment.checks_in_force(case, rec)
+        ack = commitment.check_ack(acknowledged, commitment.expected_ack(rec, plan, checks), checks)
+    n = db.run(conn, "INSERT INTO decisions (run_id, case_id, rec_version, round, role, decision, session_id, reason, "
+                     "acknowledged, plan_key) VALUES (:r, :c, :v, :n, :role, :d, :s, :why, CAST(:ack AS jsonb), :key) "
+                     "ON CONFLICT DO NOTHING",
                r=run["run_id"], c=case_id, v=rec_version, n=case["round"], role=role, d=decision,
-               s=actor.get("session_id"), why=reason)
+               s=actor.get("session_id"), why=reason, ack=db.js(ack) if ack is not None else None, key=plan.key)
     if not n:
         raise ApiError(409, "already_decided", f"The {role} has already decided in this round")
     db.log(conn, run["run_id"], run["day"], "decision", case_id, role=role, decision=decision, reason=reason,
-           round=case["round"], rec_version=rec_version, actor=accounts.logged_actor(actor))
+           round=case["round"], rec_version=rec_version, plan_key=plan.key, acknowledged=ack,
+           actor=accounts.logged_actor(actor))
     if decision in ("reject", "decline"):
         bookings.release(conn, run["run_id"], case_id)
         why = f"{'Rejected' if decision == 'reject' else 'Declined'}: {reason.strip()}"
         db.run(conn, "UPDATE cases SET state = 'REJECTED', reason = :why WHERE run_id = :r AND case_id = :c",
                why=why, r=run["run_id"], c=case_id)
+        closing.on_close(conn, run, case, "rejected" if decision == "reject" else "declined")  # D-24, D-28
         return {"state": "REJECTED"}
     needed = {"source", "destination"} if plan.kind == TRANSFER else {"source"}
     if needed - set(cases.decided_roles(conn, case)):
@@ -221,12 +276,28 @@ def decide(conn, run: dict, actor: dict, case_id: str, rec_version: str, decisio
     return _commit(conn, run, actor, case, plan)
 
 
+def _refuse_stale_plan(conn, case: dict, plan: Plan) -> None:
+    """409 stale_plan when a decision of the current round on the active version was given for another plan key than
+    the plan in force's (07-CONTEXT D-23): an approval belongs to one exact plan. A decision with no key (stored before
+    Phase 7) counts as the recommended plan's."""
+    rec = cases.active_rec(conn, case)
+    recommended = rec["result"]["recommended"] if rec else None
+    keys = {d["plan_key"] or recommended for d in db.rows(
+        conn, "SELECT plan_key FROM decisions WHERE run_id = :r AND case_id = :c AND rec_version = :v AND round = :n",
+        r=case["run_id"], c=case["case_id"], v=case["active_rec_version"] or "", n=case["round"])}
+    if keys - {plan.key}:
+        raise ApiError(409, "stale_plan", STALE_PLAN)
+
+
 def _commit(conn, run: dict, actor: dict, case: dict, plan: Plan) -> dict:
-    """Every required decision is in: one transaction checks the round's holds, locks again, rechecks on today's data
-    without this case's own bookings, and turns the holds into bookings (spec §8 Commit). All or nothing."""
+    """Every required decision is in: one transaction checks the round's holds, that every decision of the round was
+    given for the plan in force (409 stale_plan), the commitment rule, locks again, rechecks on today's data without
+    this case's own bookings, and turns the holds into bookings (spec §8 Commit). All or nothing."""
     run_id, case_id = run["run_id"], case["case_id"]
     if not bookings.held_ok(conn, run_id, case_id, case["round"]):
         raise ApiError(409, "hold_expired", EXPIRED)
+    _refuse_stale_plan(conn, case, plan)  # an approval for another plan never commits this one (D-23)
+    _refuse_if_blocked(conn, run, case, plan)  # a Required check or a lot hold: nothing is booked (D-12, D-13)
     raw = _locked_input(conn, run, case, plan)
     eff = _recheck(raw, plan)
     bookings.commit(conn, run_id, case_id, case["round"], plan, eff)
@@ -250,6 +321,7 @@ def prepare(conn, run: dict, actor: dict, case_id: str) -> dict:
     if case["state"] != "APPROVED":
         raise _wrong_state(case)
     plan = _plan(conn, case)
+    _refuse_if_blocked(conn, run, case, plan)  # before the recheck: nothing is written (D-12, D-13)
     raw = _locked_input(conn, run, case, plan)
     eff = _recheck(raw, plan)
     lot, n, sku = eff.case_lot(), case["round"], eff.product.sku
@@ -295,7 +367,9 @@ def wait(conn, run: dict, actor: dict, case_id: str, until_day: int, reason: str
 
 def reject(conn, run: dict, actor: dict, case_id: str, reason: str) -> dict:
     """Reject the recommendation (source manager, case OPEN or WAITING; a pending case is rejected through decide).
-    A reason is required; versions, decisions and the activity history stay, and the screen never reopens it."""
+    A reason is required; versions, decisions and the activity history stay, and the case itself never reopens: the
+    close records the lot's fingerprint and status (api/closing.py on_close; 07-CONTEXT D-24, D-28), so a lot still at
+    risk stays on the board and a successor may open under the D-28 rule (07-12)."""
     bookings.expire_holds(conn, run, case_id)
     case = cases.case_row(conn, run["run_id"], case_id, lock=True)
     require_source(actor, case)
@@ -308,6 +382,7 @@ def reject(conn, run: dict, actor: dict, case_id: str, reason: str) -> dict:
            why=f"Rejected: {_text(reason)}", r=run["run_id"], c=case_id)
     db.log(conn, run["run_id"], run["day"], "rejected", case_id, reason=_text(reason),
            rec_version=case["active_rec_version"], actor=accounts.logged_actor(actor))
+    closing.on_close(conn, run, case, "rejected")  # D-24, D-28: closing a plan never hides the lot
     return {"state": "REJECTED"}
 
 
@@ -337,12 +412,17 @@ def _scope(adj: dict, inp: EngineInput) -> tuple[dict | None, str | None]:
     return None, None
 
 
-def adopt(conn, run: dict, actor: dict, case_id: str, overrides, note: str) -> dict:
+def adopt(conn, run: dict, actor: dict, case_id: str, overrides, note: str,
+          rec_version: str | None = None, plan_key: str | None = None) -> dict:
     """Use these assumptions (spec §7 Overrides): adoptable kinds only, with a source note; the case re-evaluates
     and a version change cancels a pending approval (cases.evaluate_case). Returns the new active version."""
     bookings.expire_holds(conn, run, case_id)
     case = cases.case_row(conn, run["run_id"], case_id, lock=True)
     require_source(actor, case)
+    if rec_version is not None:
+        _version(case, rec_version)
+    if plan_key is not None:
+        _refuse_other_plan(_plan(conn, case), "adopt", plan_key)
     if not _text(note):
         raise ApiError(400, "bad_request", "Say where these assumptions come from")
     if case["state"] not in ("OPEN", "WAITING", "PENDING_APPROVAL"):

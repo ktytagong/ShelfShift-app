@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as moves from "./boardmove.ts";
 import { MOVE_TARGETS, moveChoice, moveDone, moveRefreshKey, sameMove, targetName, type MoveCard } from "./boardmove.ts";
 import { mayAct } from "./decision/shared.ts";
-import { prepareWrite, sendWrite } from "./decision/writes.ts";
+import { ackIdentity, decisionBody, prepareWrite, sendWrite } from "./decision/writes.ts";
 import { STAGES } from "./steps.ts";
 import type { NextActionKey } from "./vocab.ts";
 
@@ -162,4 +162,37 @@ test("every move string and templated line holds no banned word", () => {
   lines.push(...MOVE_TARGETS.map(targetName));
   assert.ok(lines.length >= 20, String(lines.length));
   for (const line of lines) assert.doesNotMatch(line, BANNED);
+});
+
+// --- the decision body (07-17; 07-CONTEXT D-12, D-26; 07 review C, D-32) ---------------------------------------------
+
+const ACK = { rec_version: "v1", plan_key: "T:S2:R02", fact_ids: ["b", "a"] };
+
+test("approve and accept name the plan shown and carry the detail's acknowledgement", () => {
+  const d = { rec_version: "v1", suggested_key: "T:S2:R02", commitment: { ack: ACK } };
+  for (const decision of ["approve", "accept"] as const) {
+    assert.deepEqual(decisionBody(d, decision),
+      { rec_version: "v1", decision, plan_key: "T:S2:R02", acknowledged: ACK });
+  }
+});
+
+test("with no Advisory fact an approve sends no acknowledgement; a detail without the rule neither", () => {
+  assert.deepEqual(decisionBody({ rec_version: "v1", suggested_key: "K", commitment: { ack: null } }, "approve"),
+    { rec_version: "v1", decision: "approve", plan_key: "K" });
+  assert.deepEqual(decisionBody({ rec_version: "v1", suggested_key: "K" }, "accept"),
+    { rec_version: "v1", decision: "accept", plan_key: "K" });
+});
+
+test("reject and decline keep their reason and send neither the plan nor an acknowledgement", () => {
+  const d = { rec_version: "v1", suggested_key: "K", commitment: { ack: ACK } };
+  assert.deepEqual(decisionBody(d, "reject", "No space"), { rec_version: "v1", decision: "reject", reason: "No space" });
+  assert.deepEqual(decisionBody(d, "decline", "Full"), { rec_version: "v1", decision: "decline", reason: "Full" });
+});
+
+test("a tick belongs to one exact set: version, plan and facts in any order", () => {
+  assert.equal(ackIdentity(null), "");
+  assert.equal(ackIdentity(ACK), ackIdentity({ ...ACK, fact_ids: ["a", "b"] }));
+  assert.notEqual(ackIdentity(ACK), ackIdentity({ ...ACK, rec_version: "v2" }));
+  assert.notEqual(ackIdentity(ACK), ackIdentity({ ...ACK, plan_key: "KEEP" }));
+  assert.notEqual(ackIdentity(ACK), ackIdentity({ ...ACK, fact_ids: ["a"] }));
 });

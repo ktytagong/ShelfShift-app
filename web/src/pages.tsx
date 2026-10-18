@@ -31,6 +31,10 @@ export const NOT_YET_PROVEN = [
   "Execution is simulated.",
   FORECAST_DOES_NOT_LEARN,
   "Stock, lots and deliveries are simulated from the public sales.",
+  // Phase 7's stated limitations, word for word (07-UI-SPEC surface 7; 07-CONTEXT D-11, D-12, D-22; 07-22)
+  "Fact checks test each unresolved fact on its own: a plan that survives each fact alone but fails when two are true together is not detected, so ShelfShift claims no complete feasibility protection.",
+  "A lot with mixed expiry dates is held for people to separate; the app doesn't split it.",
+  "Staff must state when they checked a count or a date; that stops silent misdating but can't prove a typed time accurate.",
 ];
 
 // A paragraph whose web addresses are links (the dataset and the license, CC BY 4.0 §3(a)(1)(A)(v), (C)).

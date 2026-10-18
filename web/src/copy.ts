@@ -10,8 +10,11 @@ import type {
   Session, Settings, TransportCrossover, WasteCrossover,
 } from "./api.ts";
 import { COUNT_KINDS, type BoardRisk } from "./derive.ts";
-import { LOCALE, centsDown, centsUp, dateLabel, expected, factor, markDate, money, signed, units, weekday, type Cal } from "./format.ts";
-import type { Tone } from "./ui.tsx";
+import {
+  LOCALE, centsDown, centsUp, dateLabel, expected, factor, markDate, money, signed, units, weekday, zonedToUtc, type Cal,
+} from "./format.ts";
+import type { IconName, Tone } from "./ui.tsx";
+import { cityOf } from "./vocab.ts";
 
 // What the control next to an error offers:
 // - reload_case: the stock decision moved on (a newer version, another state, the other side already decided):
@@ -417,16 +420,75 @@ export function replacedText(r: Pick<Request, "fact_kind">): string {
   return COUNT_KINDS.includes(r.fact_kind) ? "Replaced by a recount" : "Replaced by a new request";
 }
 
-const STATE_PILL: Record<Exclude<RequestState, "SUPERSEDED">, { tone: Tone; text: string }> = {
-  OPEN: { tone: "gray", text: "Open" },
-  ANSWERED: { tone: "warn", text: "Answered · confirm the count" },
-  CONFIRMED: { tone: "good", text: "Confirmed" },
-  EXPIRED: { tone: "gray", text: "Expired" },
+const STATE_PILL: Record<Exclude<RequestState, "SUPERSEDED">, { tone: Tone; text: string; icon: IconName }> = {
+  OPEN: { tone: "gray", text: "Open", icon: "inbox" }, // a legacy row without the server's sentence
+  ANSWERED: { tone: "warn", text: "Answered · confirm the count", icon: "alert" },
+  CONFIRMED: { tone: "good", text: "Confirmed", icon: "check" },
+  EXPIRED: { tone: "gray", text: "Expired", icon: "clock" }, // legacy rows only: nothing sets EXPIRED since Phase 7
+  CANT_CHECK: { tone: "gray", text: "Can't check", icon: "x" },
+  HELD: { tone: "bad", text: "Mixed dates · lot held", icon: "lock" },
 };
 
-// A request's state pill on the Requests page. SUPERSEDED is grey and reads by kind (user decision 6, 2026-10-16).
-export function statePill(r: Pick<Request, "state" | "fact_kind">): { tone: Tone; text: string } {
-  return r.state === "SUPERSEDED" ? { tone: "gray", text: replacedText(r) } : STATE_PILL[r.state];
+// The server's sentence for an open request part (07-CONTEXT D-06; 04-API-CONTRACT Request `status_kind`), shown word
+// for word in its tone: "Awaiting response · respond by {t}", "Unanswered · Unverified", "Photo received · count
+// missing" and the partial note, each " · overdue" once due.
+const SENTENCE: Record<string, { tone: Tone; icon: IconName }> = {
+  AWAITING: { tone: "info", icon: "clock" },
+  UNANSWERED: { tone: "warn", icon: "clock" },
+  PHOTO_PARTIAL: { tone: "warn", icon: "alert" },
+  TEXT_PARTIAL: { tone: "warn", icon: "alert" },
+};
+
+type PillInput = Pick<Request, "state" | "fact_kind"> & Partial<Pick<Request, "status" | "status_kind" | "part">>;
+
+function pillOf(r: PillInput): { tone: Tone; text: string; icon: IconName } {
+  const said = r.status_kind === undefined ? undefined : SENTENCE[r.status_kind];
+  if (said !== undefined && typeof r.status === "string") return { ...said, text: r.status };
+  if (r.state === "SUPERSEDED") return { tone: "gray", text: replacedText(r), icon: "redo" };
+  if (r.state === "ANSWERED" && r.part === "expiry") return { tone: "warn", text: "Answered · confirm the printed date", icon: "alert" };
+  const known = Object.hasOwn(STATE_PILL, r.state) ? STATE_PILL[r.state as Exclude<RequestState, "SUPERSEDED">] : undefined;
+  return known ?? { tone: "gray", text: typeof r.status === "string" && r.status !== "" ? r.status : String(r.state), icon: "info" };
+}
+
+// A request's state pill on Tasks: the server's sentence while a part is open (D-06), the stored states' labels
+// (SUPERSEDED grey and by kind, user decision 6), and a grey pill with the server's text for a state the page does not
+// know, never undefined.
+export function statePill(r: PillInput): { tone: Tone; text: string } {
+  const { tone, text } = pillOf(r);
+  return { tone, text };
+}
+
+// The pill's icon, so no chip is colour alone (R-6).
+export function stateIcon(r: PillInput): IconName {
+  return pillOf(r).icon;
+}
+
+// --- "When did you check?" (07-CONTEXT D-22; 07-UI-SPEC CheckTime and its errors) ------------------------------------
+
+export const CHECK_TIME = {
+  legend: "When did you check?",
+  now: "Checked just now",
+  at: "At a date and time",
+  missing: "Choose when you checked: Checked just now, or a date and time.",
+  later: "The check time can't be later than now.",
+} as const;
+
+// "Date and time checked (Bangkok time)": the city of the session's zone (caps.time_zone).
+export const checkTimeLabel = (timeZone: string) => `Date and time checked (${cityOf(timeZone)} time)`;
+
+// The draft's choice: none on load (no default, D-22), "now", or a typed `datetime-local` value.
+export type CheckTimeValue = { mode: "" | "now" | "at"; at: string };
+export const NO_CHECK_TIME: CheckTimeValue = { mode: "", at: "" };
+
+// The `observed` field for an answer, or the reason it can't be sent: no choice (or a time it can't read) is
+// CHECK_TIME.missing; a typed time later than `nowMs` is CHECK_TIME.later. A typed time is wall time in `timeZone`,
+// sent as UTC; "Checked just now" sends "now", and the server records its own time (D-22).
+export function checkTimeObserved(v: CheckTimeValue, timeZone: string, nowMs: number): { observed: string } | { error: string } {
+  if (v.mode === "now") return { observed: "now" };
+  if (v.mode !== "at") return { error: CHECK_TIME.missing };
+  const iso = zonedToUtc(v.at, timeZone);
+  if (iso === null) return { error: CHECK_TIME.missing };
+  return Date.parse(iso) > nowMs ? { error: CHECK_TIME.later } : { observed: iso };
 }
 
 // --- the response summary (user wording 2026-10-16; the user's decisions 3 to 6 of the 05 plan revision) ------------
@@ -487,8 +549,11 @@ export function responseStatus(r: Pick<Request, "state" | "fact_kind">): string 
 // stays after the confirm: 07-CONTEXT D-08), else null. Shown as its own line, never joined to the Status. The due is a
 // planned dataset time and no demo minute is recorded for the answer, so Phase 5 compares sandbox days, the one
 // comparison on one clock it holds; Phase 7 D-05's real 60-minute deadline replaces this.
-export function responseNote(r: Pick<Request, "due_day" | "answer">): string | null {
-  return r.answer !== null && r.answer.day > r.due_day ? "Answered after deadline" : null;
+// From Phase 7 a request with a real deadline (`due_at`) reads the server's `late` (07-CONTEXT D-05, D-08).
+export function responseNote(r: Pick<Request, "due_day" | "answer"> & Partial<Pick<Request, "due_at" | "late">>): string | null {
+  if (r.answer === null) return null;
+  if (r.due_at != null) return r.late === true ? "Answered after deadline" : null;
+  return r.answer.day > r.due_day ? "Answered after deadline" : null;
 }
 
 // The read-only response summary of an answered request, as label/value rows: one row per lot ("Lot {id}" with
@@ -638,4 +703,69 @@ export function totalsScope(branches: string[]): string {
   if (branches.length <= 1) return `Sold and wasted figures are totals for ${branches[0] ?? ""}.`; // (proposed) 261018-h9t
   const list = `${branches.slice(0, -1).join(", ")} and ${branches[branches.length - 1]}`;
   return `Sold and wasted figures are totals for ${list} together.`; // (proposed) 261018-h9t
+}
+
+// --- 07-21: the stock decision page's verification words (07-UI-SPEC surface 1, "Fact checks and the commitment
+// rule", "Request actions", "Consequential actions"; 07-CONTEXT D-10, D-12, D-36). Own block, additive. The locked
+// strings are word for word; "(proposed)" marks Claude's wording, one constant each. The numbers come from the server
+// (requests_left, the session's `requests`), never a constant here.
+import type { Blocker } from "./derive.ts";
+
+export const REQUIRED_CHIP = "Required for commitment";
+export const ADVISORY_CHIP = "Advisory · acknowledge at approval";
+export const COUNT_STOCK = "Count stock"; // locked (D-36)
+export const CHECK_PRINTED_EXPIRY = "Check printed expiry date"; // locked (D-36)
+export const SEND_REQUEST = "Send request"; // D-36
+export const DONT_SEND_REQUEST = "Don't send request";
+export const ASK_AGAIN = "Ask again";
+export const SUPERSEDE_NOTE = "The earlier request becomes Superseded. A late answer to it is kept but can't be confirmed.";
+export const REQUEST_PANEL_NAME = "Request a check"; // (proposed) the panel's accessible name
+export const requestsLeftLine = (left: number, max: number) => `${units(left)} of ${units(max)} requests left on this version`;
+export const requestsUsedLine = (max: number) => `${units(max)} of ${units(max)} requests used on this version.`;
+export const responseMinutesLine = (min: number) => `The branch has ${units(min)} minutes to respond.`;
+export const oneRequestLine = (max: number) => `One request · counts once toward the ${units(max)} per version`;
+export const responsibleLine = (store: string) => `Responsible: ${store} manager`;
+export const COMMITMENT = "Commitment"; // the facts grid tile's label
+export const BLOCKS_COMMITMENT = "Blocks commitment";
+export const NO_BLOCKING_CHECKS = "No blocking checks"; // never "safe", "verified" or "clear" (VER-06)
+export const advisoryToAcknowledge = (n: number) => `${units(n)} advisory to acknowledge at approval`;
+export const moreBlockers = (n: number) => `+${units(n)} more`;
+// One blocker line: "Required: {fact title} · owner {store} manager" (with the server's Blocked label when it has
+// one) or "Lot hold: lot {lot} · owner {store} manager".
+export function blockerText(b: Blocker): string {
+  if (b.kind === "lot_hold") return `Lot hold: lot ${b.lot} · owner ${b.owner} manager`;
+  const line = `Required: ${b.title} · owner ${b.owner} manager`;
+  return b.blocked === null ? line : `${line} · ${b.blocked}`;
+}
+export const cantApproveYet = (blocker: string) => `Can't approve yet: ${blocker}`;
+export const commitmentWaits = (blocker: string) => `Your approval is recorded. Commitment waits for: ${blocker}`;
+export const cantPrepareYet = (blocker: string) => `Can't prepare yet: ${blocker}`; // (proposed; Prepare's reason)
+// The compact deadline's minutes, from the server's minutes_left (D-06: display only; the state is the server's).
+export const minutesLeftText = (n: number, overdue: boolean) =>
+  (overdue ? "Overdue" : n >= 1 ? `${units(n)} min left` : "Less than 1 min left");
+// The requester's view of a complete answer not yet confirmed (07-UI-SPEC "Request and answer states").
+export const awaitingConfirmText = (part: "count" | "expiry", store: string) =>
+  `${part === "count" ? "Count" : "Printed date"} awaiting ${store} manager`;
+// The ways forward from a blocked Required check (07-UI-SPEC "Exits from a blocked Required row", "Consequential
+// actions"; D-23, D-36; "case" reads "stock decision" on screen, 06.1 D-61).
+export const SELECT_ANOTHER_PLAN = "Select another plan";
+export const ALSO_NEEDS_THIS_FACT = "Also needs this fact verified";
+export const SELECT_OPTION = "Select"; // each option's button; its accessible name adds the option
+export const selectOptionName = (label: string) => `Select ${label}`;
+export const selectConfirmLine = (label: string) => `Switch this stock decision to ${label}? It goes through the normal `
+  + "feasibility checks again, any pending approvals are cancelled, and approvals start over.";
+export const SELECT_THIS_PLAN = "Select this plan";
+export const KEEP_CURRENT_PLAN = "Keep current plan";
+export const OPTION_NET = (amount: string) => `Net revenue, base ${amount}`; // the option's outcome (the engine's)
+// "Selected plan · Keep · by S017 · 18 Oct 2026, 14:05 Bangkok time" (D-23; a recorded time, 06.1 D-58).
+export function selectedPlanLine(label: string, by: string | null, at: string | null, timeZone: string): string {
+  const when = at === null ? "" : recordedTime(at, timeZone);
+  return ["Selected plan", label, by === null ? "" : `by ${by}`, when === "" ? "" : `${when} ${cityOf(timeZone)} time`]
+    .filter((x) => x !== "").join(" · ");
+}
+// "Cancelled by S017 · 18 Oct 2026, 14:05 Bangkok time · {reason}" (D-23, D-25: the UI label is Cancelled).
+export function cancelledLine(by: string | null, at: string, reason: string | null, timeZone: string): string {
+  const when = recordedTime(at, timeZone);
+  return [by === null ? "Cancelled" : `Cancelled by ${by}`, when === "" ? "" : `${when} ${cityOf(timeZone)} time`, reason ?? ""]
+    .filter((x) => x !== "").join(" · ");
 }

@@ -19,7 +19,7 @@ import pytest
 from playwright.sync_api import Page, expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
-from tests.web.conftest import cards_json, case_id_by_tag, case_json, switch_seat, take_ownership
+from tests.web.conftest import cards_json, case_id_by_tag, case_json, decision_body, switch_seat, take_ownership
 
 pytestmark = pytest.mark.web
 
@@ -57,9 +57,9 @@ def prepare_story(page: Page) -> dict:
     take_ownership(page, case_id)
     post(page, case_path(case_id, "send"), {"rec_version": version})
     switch_seat(page, dest)
-    post(page, case_path(case_id, "decision"), {"rec_version": version, "decision": "accept"})
+    post(page, case_path(case_id, "decision"), decision_body(page, case_id, "accept", version))
     switch_seat(page, source)
-    post(page, case_path(case_id, "decision"), {"rec_version": version, "decision": "approve"})
+    post(page, case_path(case_id, "decision"), decision_body(page, case_id, "approve", version))
     post(page, case_path(case_id, "prepare"), {})
     return {"case_id": case_id, "key": d["key"], "sku": sku, "source": source, "dest": dest}
 

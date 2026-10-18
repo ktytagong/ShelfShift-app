@@ -317,3 +317,28 @@ def test_a_refused_product_code_shows_the_error_alone_and_a_good_code_brings_the
     product.press("Enter")
     expect(rows.first).to_be_visible()
     expect(page.get_by_text(r.json()["message"], exact=True)).to_have_count(0)
+
+
+# --- Phase 7: a held lot's chip and a confirmed fact's label (07-UI-SPEC surface 6; 07-22) ------------------------------
+
+def test_a_held_lot_shows_its_chip_and_a_confirmed_fact_its_label(visitor):
+    """The story lot under a hold shows "Lot hold" in its row; with a confirmed count it carries that fact's label as
+    the row's title and as a focusable note."""
+    from tests.api.conftest import fresh
+    from tests.api.test_reassess import confirm_count
+    from tests.web.conftest import case_id_by_tag, case_json, run_id, switch_seat
+    from tests.web.test_banners import post
+    from tests.web.test_transfers import STORY_TAG
+    page = visitor.page
+    d = case_json(page, case_id_by_tag(page, STORY_TAG))
+    switch_seat(page, d["source"])
+    lot = d["lot"]["lot_id"]
+    post(page, f"/api/lots/{lot}/holds", {"reason": "Crushed crates in the chiller"})
+    confirm_count(fresh(run_id(page)), lot)
+    label = next(r for r in lots_json(page)["items"] if r["lot_id"] == lot)["fact_label"]
+    assert label
+    page.goto("/#/stock")
+    row = lot_row(page, lot)
+    expect(row.get_by_test_id("lot-hold-chip")).to_have_text("Lot hold")
+    expect(row).to_have_attribute("title", label)
+    expect(row.get_by_test_id("fact-label")).to_have_attribute("aria-label", label)

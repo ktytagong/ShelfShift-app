@@ -22,8 +22,12 @@ import zoneinfo
 import pytest
 from playwright.sync_api import Page, expect
 
-from tests.web.conftest import case_id_by_tag, case_json, db_tx, expire_holds, run_id, session_json, switch_seat, take_ownership
+from tests.web.conftest import (
+    CHECKED_NOW, case_id_by_tag, case_json, db_tx, decision_body, expire_holds, run_id, session_json, switch_seat,
+    take_ownership,
+)
 from tests.web.test_case import STORY, decision_href, panel, step_button
+from tests.web.test_case_actions import ACK_TICK
 from tests.web.test_tasks import count_fact, key, quote
 
 pytestmark = pytest.mark.web
@@ -200,7 +204,7 @@ def new_version(page: Page, d: dict) -> dict:
     switch_seat(page, q["to_branch"])
     counts = {lot: {"shelf_units": 0, "backroom_units": 0} for lot in q["lot_ids"]}
     r = page.request.post(f"/api/requests/{q['request_id']}/answer", headers=key(),
-                          multipart={"text": "", "counts": json.dumps(counts)})
+                          multipart={"text": "", "counts": json.dumps(counts), **CHECKED_NOW})
     assert r.status == 200, r.text()
     sig = r.json()
     r = page.request.post(f"/api/signals/{sig['signal_id']}/confirm", headers=key(),
@@ -262,7 +266,7 @@ def test_a_stale_approve_after_a_new_version_reloads_and_is_sent_once(visitor):
     # The destination accepts through the API, so the source's next action is Approve plan.
     switch_seat(a, sent["dest"])
     r = a.request.post(f"/api/cases/{quote(cid)}/decision", headers=key(),
-                       data={"rec_version": sent["rec_version"], "decision": "accept"})
+                       data=decision_body(a, cid, "accept", sent["rec_version"]))
     assert r.status == 200, r.text()
     switch_seat(a, sent["source"])
     b = visitor.context.new_page()
@@ -273,6 +277,7 @@ def test_a_stale_approve_after_a_new_version_reloads_and_is_sent_once(visitor):
     assert newer["state"] == "OPEN" and newer["hold"] is None, (newer["state"], newer["hold"])
 
     decisions = case_requests(b, cid, "POST", "decision")
+    slot(b).get_by_role("checkbox", name=ACK_TICK).check()  # the story's Advisory fact (07 D-12, D-26; sanctioned)
     slot(b).get_by_role("button", name="Approve plan", exact=True).click()
     alert = slot(b).get_by_role("alert")
     reload_btn = alert.get_by_role("button", name="Reload the stock decision", exact=True)

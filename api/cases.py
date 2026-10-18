@@ -2,18 +2,22 @@
 
 A case opens only for a lot the screen qualifies (03-CONTEXT D-22): a shelfshift lot with stock on the record that
 never had a case of any state, was not created by a delivered transfer, and whose screen window contains today.
-Only a qualifying lot gets a full engine search; every other lot follows the markdown schedule with no case. A
-REJECTED, CLOSED or EXECUTED case's lot is never screened again (the manager's call stands; an executed lot goes
-through the second look instead). A lot has at most one open case (the unique index), and SUS-19's key comes from
-the milk-story tag, every other key from the run's counter starting at the calendar's `case_no_start` and skipping
-SUS-19, so natural cases can never shift the story key (D-23).
+Only a qualifying lot gets a full engine search; every other lot follows the markdown schedule with no case. A lot a
+person closed (REJECTED, or CLOSED as CANCELLED) comes back only as a linked successor under the D-24/D-28 rule
+(api/closing.py `reopen_allowed`: its decision inputs changed or, on the synthetic Next day, a materially different
+decision appeared; 07-12, superseding ESL-02's "never screened again" for lots still at risk). A CLOSED case whose
+lot is gone never comes back, and an EXECUTED case's lot goes through the second look instead. A lot has at most one
+open case (the unique index), and SUS-19's key comes from the milk-story tag's first case, every other key (a
+successor's included) from the run's counter starting at the calendar's `case_no_start` and skipping SUS-19, so
+natural cases can never shift the story key (D-23).
 
 Qualifying lots open in the order expiry day, seed branch order, sku, lot_id, so case keys are reproducible. Every
 opened case logs the screen's branches, usable runs and step day in the same transaction (T-04-19).
 
 The board and case-page views (04-API-CONTRACT "Shapes"; 04-CONTEXT D-16) read every engine figure as stored and
 compute none: `decide_by`, `markdown_step` and `act_before` are returned as the engine gives them, and the deadline
-`due` is `decide_by` itself, never recomputed (contract-diff row 43). The engine's `wait.text` never leaves the
+`due` is `decide_by` itself, never recomputed (contract-diff row 43); with a selected plan in force, `decide_by` and
+`due` are that plan's own, as the engine computes them and the selection stores them (api/selection.py; 07 review G). The engine's `wait.text` never leaves the
 server in a card or a case detail (03-CONTEXT D-24): the `wait` object carries the run code, day and minute plus the
 run's `departs_min` for Phase 5's sentence. Every label the server writes names the weekday from the run's own dataset
 calendar (`Ref.date`: the synthetic seed's, or a public set's shifted calendar, 05.2 D-13), never "day N" (Carried
@@ -36,8 +40,8 @@ from engine.model import KEEP, TRANSFER, Plan
 from engine.simulate import HorizonError
 from engine.timing import fmt_min
 
-from . import (bookings, config, db, eligibility, evaluate, inputs, overlay, refdata, screen, signals, simplerule,
-               stepkeys)
+from . import (bookings, config, db, eligibility, evaluate, inputs, overlay, realtime, refdata, reviewflags, screen,
+               signals, simplerule, stepkeys)
 from .simplerule import parse_plan  # noqa: F401  (cases.parse_plan: the worker-safe home is api/simplerule.py)
 from .errors import ApiError
 
@@ -80,13 +84,14 @@ def active_rec(conn, case: dict) -> dict | None:
                   r=case["run_id"], c=case["case_id"], v=case["active_rec_version"])
 
 
-def current_input(conn, run: dict, case: dict):
+def current_input(conn, run: dict, case: dict, unconfirmed: inputs.Unconfirmed | None = None):
     """The case's raw input today: this case's own bookings left out, the adopted assumptions still in effect.
 
     Which adopted items are in effect is judged on the input's own runs (`inputs.case_runs`: today's runs, for a public
     set those that pass stage 1 for this lot), so the input is built first and the kept overrides set on it, exactly
-    as `build_input` sets the overrides it is given."""
-    inp = inputs.build_input(conn, run, case["lot_id"], exclude_case=case["case_id"])
+    as `build_input` sets the overrides it is given. `unconfirmed` (the impact preview only, api/impact.py): the input
+    this case's re-plan would read once that report is confirmed (07-15 review P1, P2)."""
+    inp = inputs.build_input(conn, run, case["lot_id"], exclude_case=case["case_id"], unconfirmed=unconfirmed)
     kept, _ = inputs.adopted_in_effect(case["adopted"], inp.runs, {case["source_branch"], *(r.dest for r in inp.runs)})
     return replace(inp, overrides=tuple(inputs.plain(o) for o in kept))
 
@@ -97,7 +102,10 @@ def evaluate_case(conn, run: dict, case: dict, note: str | None = None) -> str |
     A missing forecast or capacity day leaves the case without a version and with missing_data "missing data: ...",
     a column of its own: the manager's wait or reject reason in `reason` is never written here (WR-05). A version
     change on a PENDING_APPROVAL case cancels its approval: its holds and bookings are released, the change is
-    logged as approval_cancelled, and the case returns to OPEN (spec §8; 04-CONTEXT D-09)."""
+    logged as approval_cancelled, and the case returns to OPEN (spec §8; 04-CONTEXT D-09). A new version clears the
+    case's selection (api/selection.py; 07-CONTEXT D-23, research Pitfall 11); on the same version a selection stays
+    the plan in force, and the board's `plan_dest` follows it."""
+    from . import selection  # it reads this module at import
     try:
         inp = current_input(conn, run, case)
         version, result, _ = evaluate.store(conn, run["run_id"], case["case_id"], run["day"], inp, note=note)
@@ -105,6 +113,9 @@ def evaluate_case(conn, run: dict, case: dict, note: str | None = None) -> str |
     except HorizonError as exc:
         version, result, missing = None, None, f"missing data: {exc}"
     plan = parse_plan(result["recommended"]) if result else None
+    kept = selection.bound(case) if version == case["active_rec_version"] else None
+    if kept is not None:  # the same version: the selection stays in force (D-23)
+        plan = parse_plan(kept["plan_key"])
     dest = plan.dest if plan is not None and plan.kind == TRANSFER else None  # the board's scope (05.2 D-26)
     if version == case["active_rec_version"] and missing == case["missing_data"]:
         if dest != case.get("plan_dest"):
@@ -120,13 +131,15 @@ def evaluate_case(conn, run: dict, case: dict, note: str | None = None) -> str |
                  "state = CASE WHEN :cancel THEN 'OPEN' ELSE state END WHERE run_id = :r AND case_id = :c",
            v=version, miss=missing, p=dest, cancel=cancelled, r=run["run_id"], c=case["case_id"])
     if version != case["active_rec_version"]:
+        selection.clear(conn, run["run_id"], case["case_id"])  # a selection belongs to its version (Pitfall 11)
         db.log(conn, run["run_id"], run["day"], "new_version", case["case_id"], rec_version=version, reason=missing)
     return version
 
 
-def next_key(conn, run: dict, lot: dict) -> str:
-    """SUS-19 for the milk-story lot; every other case the run's counter, skipping SUS-19 (D-23)."""
-    if lot["tag"] == STORY_TAG:
+def next_key(conn, run: dict, lot: dict, successor: bool = False) -> str:
+    """SUS-19 for the milk-story lot's first case; every other case the run's counter, skipping SUS-19 (D-23). A
+    successor always takes the counter (07-12, research F-19: the story lot's successor would collide on SUS-19)."""
+    if lot["tag"] == STORY_TAG and not successor:
         return STORY_KEY
     while True:
         n = db.one(conn, "UPDATE demo_runs SET next_case_no = next_case_no + 1 WHERE run_id = :r "
@@ -157,19 +170,47 @@ def next_keys(conn, run: dict, lots: list[dict]) -> list[str]:
 
 
 def screen_candidates(conn, run: dict) -> list[dict]:
-    """Shelfshift lots with stock on the record, never moved, that never had a case, whose window contains today;
-    in the order expiry day, seed branch order, sku, lot_id."""
+    """Shelfshift lots with stock on the record, never moved, whose window contains today, that never had a case or
+    whose latest case a person closed (REJECTED, or CLOSED as CANCELLED) and may come back; in the order expiry day,
+    seed branch order, sku, lot_id.
+
+    A closed lot is a candidate only when `closing.reopen_allowed` gives reasons (07-CONTEXT D-24, D-28): on the
+    synthetic set with `next_day` (the Next-day morning is the only caller that counts the D-28 thresholds), and the
+    call merges the morning's state into the closed case's considered record when the lot qualifies; on a public set
+    through `flags.reopens` (no thresholds: product mode reassesses on new data, confirmed evidence or Reassess). Such
+    a lot carries `_prev` (the closed case), `_why` (the reasons), `_state` and `_screen` (the screen it already ran).
+    A closed lot the check judged and let stay closed has its stored lot_status refreshed (`closing.keep_status`, as
+    `closing.reassess_lots` does), so "Needs decision" and Reassess clear once it no longer qualifies (07-12 review
+    R1). A lot with any other case (open, committed, executed, or closed because its lot was gone) is never a candidate:
+    an executed lot goes through the second look."""
+    from . import closing, flags  # they read this module at import
     ref = refdata.get(run["dataset_version"])
     before = config.CASE_OPENING["days_before_first_step"]
     lots = db.rows(conn, "SELECT l.* FROM lots l WHERE l.run_id = :r AND l.world = 'shelfshift' AND l.qty > 0 "
                          "AND l.moved_from IS NULL AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.run_id = l.run_id "
                          "AND c.lot_id = l.lot_id)", r=run["run_id"])
+    closed = db.rows(conn, f"SELECT l.*, c.case_id AS prev_case FROM lots l JOIN cases c ON c.run_id = l.run_id AND "
+                           f"c.lot_id = l.lot_id WHERE l.run_id = :r AND l.world = 'shelfshift' AND l.qty > 0 AND "
+                           f"l.moved_from IS NULL AND {closing.CLOSED_BY_PERSON} AND NOT EXISTS (SELECT 1 FROM cases s "
+                           f"WHERE s.run_id = c.run_id AND s.predecessor = c.case_id) AND NOT EXISTS (SELECT 1 FROM "
+                           f"cases o WHERE o.run_id = c.run_id AND o.lot_id = c.lot_id AND o.case_id <> c.case_id "
+                           f"AND o.state NOT IN ('CLOSED', 'REJECTED'))", r=run["run_id"])
     order = {b: i for i, b in enumerate(ref.branches)}
     inside = []
-    for lot in lots:
+    for lot in [*lots, *closed]:
         first, last = screen.window(lot["expiry_day"], ref.schedules[lot["sku"]], before)
-        if first <= run["day"] <= last:
-            inside.append(lot)
+        if not first <= run["day"] <= last:
+            continue
+        prev_case = lot.pop("prev_case", None)
+        if prev_case is not None:
+            prev, seen = case_row(conn, run["run_id"], prev_case), {}
+            why = (flags.reopens(conn, run, prev, lot, seen) if ref.kind == "public" else
+                   closing.reopen_allowed(conn, run, prev, lot, next_day=True, seen=seen))
+            if not why:  # its stored status follows what the screen judged (07-12 review R1)
+                closing.keep_status(conn, run, prev, seen)
+                continue
+            lot.update(_prev=prev, _why=why, _state=seen["state"], _screen=seen["screen"])
+        inside.append(lot)
     return sorted(inside, key=lambda l: (l["expiry_day"], order[l["branch"]], l["sku"], l["lot_id"]))
 
 
@@ -178,13 +219,24 @@ def open_cases(conn, run: dict) -> list[str]:
 
     On a public set whose reference settings say `evaluation.on_demand`, each qualifying lot is flagged instead
     (api/flags.py: the screen's figures, no search; 05.2 D-23..D-25); the engine runs when someone opens it. A lot the
-    screen cannot judge for lack of data is flagged with its reason, never skipped (D-28). Returns the opened case
-    ids (none when the set flags)."""
+    screen cannot judge for lack of data is flagged with its reason, never skipped (D-28). A lot a person closed that
+    `screen_candidates` lets back (07-CONTEXT D-24, D-28) opens through `closing.open_successor` on either set: a
+    counter key, its predecessor, the reasons, the morning's state and the trigger ("next_day" on the synthetic set)
+    logged. Returns the opened case ids (no new lot's when the set flags)."""
     from . import flags  # flags reads this module's views
-    deferred = flags.on_demand(refdata.get(run["dataset_version"]))
+    ref = refdata.get(run["dataset_version"])
+    deferred = flags.on_demand(ref)
+    from . import closing  # it reads this module at import
     opened, flagged = [], []
     reads = inputs.ScreenReads(conn, run)  # safe: this loop writes nothing build_input reads (inputs.ScreenReads)
     for lot in screen_candidates(conn, run):
+        if lot.get("_prev") is not None:  # a lot a person closed comes back as a linked successor (D-24, D-28)
+            key = closing.open_successor(conn, run, lot["_prev"], lot, why=lot["_why"], state=lot["_state"],
+                                         trigger="screen" if ref.kind == "public" else "next_day",
+                                         found=lot["_screen"])  # its opened entry logs the screen (07-12 review R2)
+            if key is not None:
+                opened.append(key)
+            continue
         try:
             found = screen.screen(inputs.build_input(conn, run, lot["lot_id"], reads=reads), config.CASE_OPENING)
         except HorizonError as exc:  # never a silent skip: the case opens with a "missing data" badge
@@ -245,8 +297,8 @@ def second_looks(conn, run: dict) -> list[str]:
             continue  # nothing to weigh without the data
         if result["recommended"] == "keep":
             continue  # at risk, but keeping is still the best plan: nobody needs to look again
-        db.run(conn, "UPDATE cases SET state = 'OPEN', adopted = '[]' WHERE run_id = :r AND case_id = :c",
-               r=run["run_id"], c=case["case_id"])
+        db.run(conn, "UPDATE cases SET state = 'OPEN', adopted = '[]', selected = NULL WHERE run_id = :r "
+                     "AND case_id = :c", r=run["run_id"], c=case["case_id"])  # the plan that ran is no choice now
         db.log(conn, run["run_id"], run["day"], "second_look", case["case_id"], lot_id=case["lot_id"],
                units_left=round(float(case["qty"]), 2), look_round=case["round"])
         evaluate_case(conn, run, case_row(conn, run["run_id"], case["case_id"]))
@@ -289,6 +341,28 @@ def date_label(day: int, ref: refdata.Ref) -> str:
     """The day as "Thu 15 Oct", from the run's dataset calendar (`ref.date`, 05.2 D-13)."""
     d = ref.date(day)
     return f"{WEEKDAYS[d.weekday()]} {d.day} {MONTHS[d.month - 1]}"
+
+
+ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+BAD_DATE = "Give the date as YYYY-MM-DD"
+
+
+def day_of(run: dict, iso_date) -> int:
+    """A business date "YYYY-MM-DD" in the run's dataset calendar as its day index (07-CONTEXT D-21: printed expiry
+    dates and report validity dates are business dates): the one conversion in, with `iso_of` the one out. Anything
+    but a real calendar date in that exact form is 400 bad_request "Give the date as YYYY-MM-DD"."""
+    if not isinstance(iso_date, str) or not ISO_DATE.fullmatch(iso_date):
+        raise ApiError(400, "bad_request", BAD_DATE)
+    try:
+        d = date.fromisoformat(iso_date)
+    except ValueError:
+        raise ApiError(400, "bad_request", BAD_DATE) from None
+    return (d - refdata.get(run["dataset_version"]).date(0)).days
+
+
+def iso_of(run: dict, day: int) -> str:
+    """A day index as its business date "YYYY-MM-DD" in the run's dataset calendar (`Ref.date`, 05.2 D-13)."""
+    return refdata.get(run["dataset_version"]).date(day).isoformat()
 
 
 def due(result: dict | None, ref: refdata.Ref) -> dict | None:
@@ -336,7 +410,7 @@ def money(ref: refdata.Ref, amount: float) -> str:
 
 
 def summary(result: dict | None, checks: list[dict], ref: refdata.Ref, *, waste_price: float,
-            state: str | None = None) -> str:
+            state: str | None = None, selected: dict | None = None) -> str:
     """The deterministic template summary (spec §7), the fallback whenever Gemini is not available.
 
     It starts "The engine recommends", gives amounts in the reference currency, never quotes the engine's wait
@@ -346,7 +420,9 @@ def summary(result: dict | None, checks: list[dict], ref: refdata.Ref, *, waste_
     and waste-policy parts kept separate, never as cash at stake. At a waste price of 0 (the price of the input the
     result ran on) the waste-policy part is left out (PROJECT.md: at $0 the second line is absent); above 0 the two
     parts stay separate. A REJECTED or CLOSED case (`state`) gets no "Unverified: ..." sentence: the decision is
-    behind us, so no fact can change it any more (06.1 D-36)."""
+    behind us, so no fact can change it any more (06.1 D-36). With a selection in force (`selected`, 07-CONTEXT D-23)
+    a sentence "Selected plan · {option}: ..." follows the engine's own, `checks` are the selected plan's, and a
+    not-allowed fact reads "the selected plan is not allowed"."""
     if not result:
         return "No recommendation: data is missing for this case."
     rows = {r["key"]: r for r in result["options"]}
@@ -359,11 +435,18 @@ def summary(result: dict | None, checks: list[dict], ref: refdata.Ref, *, waste_
     if result["rejected"]:
         reasons = sorted({r for x in result["rejected"] for r in x["reasons"]})
         parts.append(f"{len(result['rejected'])} option(s) rejected by a limit: {', '.join(reasons)}.")
+    which = "recommended"
+    if selected is not None:  # the source manager's choice among the engine's options (D-23)
+        row = rows[selected["plan_key"]]
+        more = "" if row["kind"] == KEEP else f", {money(ref, row['delta_vs_keep'])} more than keeping"
+        parts.append(f"Selected plan · {row['label']}: expected net {money(ref, row['net']['base'])} in the base "
+                     f"scenario{more}, with {row['wasted_units']:,.0f} units wasted.")
+        which = "selected"
     for c in ([] if state in TERMINAL else checks):
         if c["changes_plan"]:
             fact = f"Unverified: {c['branch']} {', '.join(c['lot_ids'])} ({c['kind'].replace('_', ' ').lower()})"
             if not c["pick_feasible_if_alt"]:
-                parts.append(f"{fact}. If this fact is true, the recommended plan is not allowed.")
+                parts.append(f"{fact}. If this fact is true, the {which} plan is not allowed.")
             else:
                 diff = f"net revenue difference {money(ref, c['net_revenue_difference'])}"
                 if waste_price > 0:
@@ -387,14 +470,49 @@ def next_owner(case: dict, plan: Plan | None, decided) -> list[dict]:
     return []
 
 
-def badges(case: dict, rec: dict | None, holds: dict | None, requests: list[dict]) -> list[dict]:
-    """The card's badges (04-API-CONTRACT Badges). The unverified badge counts the active version's fact checks that
-    change the plan, have no open request, and either are not allowed (pick_feasible_if_alt false, whatever their
+def _asked(r: dict, now) -> bool:
+    """True while a request hides its fact from the unverified badge (07-CONTEXT D-06; research Pitfall 7): ANSWERED,
+    or OPEN before its deadline (AWAITING, or a partial reply not yet overdue). Unanswered, an overdue partial reply,
+    Can't check, Superseded, Held and a legacy EXPIRED row never hide it. A request view carries `overdue`; a stored
+    row is read against `now` (the database's now() of the same read); a legacy row (no due_at) is not overdue."""
+    if r["state"] == "ANSWERED":
+        return True
+    if r["state"] != "OPEN":
+        return False
+    if "overdue" in r:
+        return not r["overdue"]
+    due_at = r.get("due_at")
+    return due_at is None or now is None or due_at > now
+
+
+def _once(values) -> list[str]:
+    """The values in their first-seen order, each once, Nones left out (a badge's `owner_branches`, 07-22)."""
+    out: list[str] = []
+    for v in values:
+        if v is not None and v not in out:
+            out.append(v)
+    return out
+
+
+def badges(case: dict, rec: dict | None, holds: dict | None, requests: list[dict], now=None,
+           flags: list[dict] | None = None, lot_holds: list[dict] | None = None,
+           required: list[str] | None = None, new_reports: list[dict] | None = None) -> list[dict]:
+    """The card's badges (04-API-CONTRACT Badges). The unverified badge counts the plan in force's fact checks on the
+    active version (a selected plan's own, else the stored ones: api/commitment.py `checks_in_force`; 07 review J) that
+    change the plan, have no request that still hides them (`_asked`: ANSWERED, or OPEN before its deadline; an
+    Unanswered one counts again, D-06), and either are not allowed (pick_feasible_if_alt false, whatever their
     regret; 02-CONTEXT D-29) or reach the stored input's policy.min_regret. It sums, to the cent, the decision regret
     and its net-revenue and waste-policy parts over the counted facts whose plan stays allowed only, and gives None
     for all three when there is none (a not-allowed fact has no regret figure, spec §6); not_allowed_fact_ids lists
     the others. Its text names no amount. "Hold expired" shows only on an OPEN case and "Re-review" only while the
-    case is OPEN, WAITING, PENDING_APPROVAL or APPROVED: neither outlives the state it describes (WR-08)."""
+    case is OPEN, WAITING, PENDING_APPROVAL or APPROVED: neither outlives the state it describes (WR-08).
+    "New confirmed information · review required" (`review_flag`, with `flag_ids`) shows while `flags`, the case's
+    uncleared review flags, has one and the case is APPROVED, PREPARED, EXECUTED or OBSERVED (07-CONTEXT D-17).
+    "Lot hold" (`lot_hold`, with `hold_ids` and the held lots' stores `owner_branches`) shows while `lot_holds`, the
+    ACTIVE holds on the lots the case involves, has one, on any state but CLOSED and REJECTED; "Required check"
+    (`required_check`, with `fact_ids` and the facts' stores `owner_branches`) while `required`, the Required checks
+    of the plan in force, has one (only while a commit or Prepare is ahead; D-12, D-13). "New report" (`new_report`, with `signal_ids`) while `new_reports`, the unconfirmed field reports whose
+    scope holds the live case, has one (07-CONTEXT D-16; api/reports.py)."""
     out = []
     if case["missing_data"]:  # the engine's state, never the manager's words (WR-05)
         out.append({"kind": "missing_data", "text": "Missing data"})
@@ -407,13 +525,25 @@ def badges(case: dict, rec: dict | None, holds: dict | None, requests: list[dict
         out.append({"kind": "re_review", "text": "Re-review"})
     if case["look_round"] and case["state"] in ("OPEN", "WAITING", "PENDING_APPROVAL", "APPROVED", "PREPARED"):
         out.append({"kind": "second_look", "text": "Second look"})
+    if flags and case["state"] in reviewflags.STATES:  # new confirmed information on a committed plan (D-17)
+        out.append({"kind": "review_flag", "text": reviewflags.REASON, "flag_ids": [f["flag_id"] for f in flags]})
+    if lot_holds and case["state"] not in TERMINAL:  # a hold on a lot the case involves (07-CONTEXT D-13)
+        out.append({"kind": "lot_hold", "text": "Lot hold", "hold_ids": [h["hold_id"] for h in lot_holds],
+                    "owner_branches": _once(h["branch"] for h in lot_holds)})  # who resolves it (07-22)
+    if required:  # a Required check of the plan in force (07-CONTEXT D-12)
+        from . import commitment  # it reads this module at import
+        branch_of = {c["fact_id"]: c["branch"] for c in commitment.checks_in_force(case, rec)}
+        out.append({"kind": "required_check", "text": "Required check", "fact_ids": list(required),
+                    "owner_branches": _once(branch_of.get(f) for f in required)})  # who resolves it (07-22)
+    if new_reports and case["state"] in LIVE_STATES:  # a filed report that may change this case (07-CONTEXT D-16)
+        out.append({"kind": "new_report", "text": "New report", "signal_ids": [r["signal_id"] for r in new_reports]})
     if rec:
-        asked = {r["fact_id"] for r in requests
-                 if r["state"] in ("OPEN", "ANSWERED") and r["rec_version"] == rec["rec_version"]}
+        asked = {r["fact_id"] for r in requests if _asked(r, now) and r["rec_version"] == rec["rec_version"]}
         if asked:
             out.append({"kind": "evidence_requested", "text": "Evidence requested"})
         floor = rec["engine_input"]["policy"]["min_regret"]
-        facts = [c for c in rec["fact_checks"] if c["changes_plan"] and c["fact_id"] not in asked
+        from . import commitment  # it reads this module at import
+        facts = [c for c in commitment.checks_in_force(case, rec) if c["changes_plan"] and c["fact_id"] not in asked
                  and (not c["pick_feasible_if_alt"] or c["regret"] >= floor)]
         if facts and case["state"] not in DONE_STATES:
             priced = [c for c in facts if c["pick_feasible_if_alt"]]
@@ -491,10 +621,14 @@ def execution_state(conn, case: dict) -> dict:
     return {"actions": actions, "open_discrepancy": open_one is not None}
 
 
-def card(conn, run: dict, case: dict, requests: list[dict]) -> dict:
+def card(conn, run: dict, case: dict, requests: list[dict], now=None) -> dict:
     """One board card, every contract key present (04-API-CONTRACT Card), with the step, stage, owner, next action
-    and blocked keys computed once by api/stepkeys.py (06.1 D-23, D-24, D-54). `requests` may hold other cases'."""
-    return cards(conn, run, [case], requests)[0]
+    and blocked keys computed once by api/stepkeys.py (06.1 D-23, D-24, D-54), and `lot_status`, `predecessor` and
+    `successor` (07-11: a rejected or cancelled plan's lot stays visible while at risk, api/closing.py; D-24).
+    `requests` may hold other cases' (stored rows or request views). `now` is the database's now() of the read (the
+    board reads it once); a card given stored rows with a deadline and no `now` reads it itself, so the badge's request
+    rule (D-06) uses one clock. `cards` for this one case."""
+    return cards(conn, run, [case], requests, now)[0]
 
 
 def _active_recs(conn, run_id: str, rows: list[dict]) -> dict[str, dict | None]:
@@ -533,50 +667,91 @@ def _holds_many(conn, run_id: str, rows: list[dict]) -> dict[str, dict | None]:
     return out
 
 
-def cards(conn, run: dict, rows: list[dict], requests: list[dict]) -> list[dict]:
-    """The board cards of these cases, in `rows`' order: `card`'s body unchanged, on records read with one statement
-    per table for every case (recommendations, decisions, holds, lots, work orders and discrepancies) instead of
-    reads per case. The step keys still come from stepkeys.keys with the connection (its dispatch check reads what
-    it needs). `requests` may hold other cases'."""
+def cards(conn, run: dict, rows: list[dict], requests: list[dict], now=None) -> list[dict]:
+    """The board cards of these cases, in `rows`' order: `card`'s body, on records read with one statement per table
+    for every case (recommendations, decisions, holds, lots, work orders and discrepancies; and Phase 7's review flags,
+    lot holds, filed reports and successors) instead of reads per case. The step keys still come from stepkeys.keys
+    with the connection (its dispatch check reads what it needs). `requests` may hold other cases' (stored rows or
+    request views). `now`: as `card`; without it, the database's now() is read once, and only when one of these
+    cases' stored request rows has a deadline (now() is fixed inside the transaction, so every card reads the same
+    clock it would read alone).
+
+    The Phase 7 keys follow the per-case rules word for word, on the same records read for every case at once:
+    the plan in force (api/selection.py `plan_in_force`, `decide_by`, `card_view`), the open review flags while the
+    state is a committed one (reviewflags.open_for_many), the ACTIVE holds on the lots each case involves while it is
+    not CLOSED or REJECTED (commitment.holds_on_many), the Required checks while a commit or Prepare is ahead
+    (commitment.required_ids), the unconfirmed reports whose scope holds a live case (reports.unconfirmed_many, read
+    for the badge's signal ids), the closed lot's label (closing.label_of, `closing.label`'s rule on these records)
+    and the successor's key (closing.successors)."""
+    from . import closing, commitment, reports, selection  # they read this module: imported here
     ref = refdata.get(run["dataset_version"])
+    ids = [c["case_id"] for c in rows]
     recs = _active_recs(conn, run["run_id"], rows)
     decisions = decided_many(conn, run["run_id"], rows)
     held = _holds_many(conn, run["run_id"], rows)
     lots = overlay.lot_rows(conn, run, "shelfshift", [c["lot_id"] for c in rows])
     executions = execution_many(conn, run["run_id"], rows)
+    wanted = set(ids)
+    if now is None and any(r["case_id"] in wanted and r.get("due_at") is not None and "overdue" not in r
+                           for r in requests):
+        now = realtime.db_now(conn)
+    flagged = reviewflags.open_for_many(conn, run["run_id"],
+                                        [c["case_id"] for c in rows if c["state"] in reviewflags.STATES])
+    # the closed cases `closing.label` may read the holds of, beside every case that is not CLOSED or REJECTED
+    labelled = [c for c in rows if closing.is_closed_by_person(c) and c.get("lot_status") == closing.AT_RISK]
+    on_lots = commitment.holds_on_many(conn, run, [c for c in rows if c["state"] not in TERMINAL] + labelled, lots)
+    reported = reports.unconfirmed_many(conn, run, [c["case_id"] for c in rows if c["state"] in LIVE_STATES])
+    following = closing.successors(conn, run["run_id"], ids)
     out = []
     for case in rows:
-        rec = recs[case["case_id"]]
+        cid = case["case_id"]
+        rec = recs[cid]
         result = rec["result"] if rec else None
-        plan = parse_plan(result["recommended"]) if result else None
-        best = next(r for r in result["options"] if r["key"] == result["recommended"]) if result else None
+        key, _, chosen = selection.plan_in_force(case, rec)  # the selection bound to the version, else the recommended
+        plan = parse_plan(key) if key else None
+        by = selection.decide_by(case, rec)  # the plan in force's own deadline (07 review G, D-32)
+        best = next(r for r in result["options"] if r["key"] == key) if result else None
         risk = screen.lot_keep_waste(rec["engine_input"]) if rec else None  # the lot's own Keep waste (261018-h9t)
-        decided = decisions[case["case_id"]]
-        holds = held[case["case_id"]]
+        decided = decisions[cid]
+        holds = held[cid]
         meta = _lot_view(run, case, lots[case["lot_id"]])
         product = ref.products[case["sku"]]
-        mine = [r for r in requests if r["case_id"] == case["case_id"]]
-        steps = stepkeys.keys(conn, run, case, plan, decided, mine, executions[case["case_id"]])
+        mine = [r for r in requests if r["case_id"] == cid]
+        steps = stepkeys.keys(conn, run, case, plan, decided, mine, executions[cid])
+        flags = flagged[cid] if case["state"] in reviewflags.STATES else []
+        lot_holds = on_lots[cid] if case["state"] not in TERMINAL else []
+        required = commitment.required_ids(case, rec)
+        filed = reported[cid] if case["state"] in LIVE_STATES else []  # D-16
+        if case["state"] in commitment.COMMIT_AHEAD:  # the commitment rule's blocks (07-CONTEXT D-12, D-13)
+            extra = [k for k, on in (("required_check", required), ("lot_hold", lot_holds)) if on]
+            steps = {**steps, "blocked": steps["blocked"] or bool(extra),
+                     "blocked_reasons": steps["blocked_reasons"] + extra}
         out.append({
-            "case_id": case["case_id"], "key": case["key"], "tag": case["tag"], "origin": meta["origin"],
+            "case_id": cid, "key": case["key"], "tag": case["tag"], "origin": meta["origin"],
             "state": case["state"], "column": COLUMNS[case["state"]],
             "sku": case["sku"], "product": ref.names[case["sku"]], "zone": product.zone,
             "source": case["source_branch"], "dest": plan.dest if plan else None, "lot_id": case["lot_id"],
-            "suggested": result["recommended_label"] if result else None,
-            "suggested_key": result["recommended"] if result else None,
+            "suggested": (best["label"] if chosen else result["recommended_label"]) if result else None,  # in force
+            "suggested_key": key,
+            "selected_plan": selection.card_view(chosen),  # "Selected plan · {option}" (07-CONTEXT D-23)
             "at_risk_units": None if risk is None else round(risk, 2),  # kg and value from the unrounded figure
             "at_risk_kg": None if risk is None else round(risk * product.kg_per_unit, 2),
             "at_risk_value": None if risk is None or product.price is None else round(risk * product.price, 2),
             "est_benefit": best["delta_vs_keep"] if best else None,
-            "due": due(result, ref) if case["state"] in DUE_STATES else None,
-            "decide_by": (result or {}).get("decide_by"), "markdown_step": (result or {}).get("markdown_step"),
+            "due": due({"decide_by": by}, ref) if case["state"] in DUE_STATES else None,
+            "decide_by": by, "markdown_step": (result or {}).get("markdown_step"),
             "act_before": (result or {}).get("act_before"),
             "wait": wait_view(result, rec["engine_input"] if rec else None),
             "rec_version": case["active_rec_version"],
             "next_owner": next_owner(case, plan, decided),
             "decisions": decided, "hold": holds,
-            "badges": badges(case, rec, holds, mine),
+            "badges": badges(case, rec, holds, mine, now, flags, lot_holds, required, filed),
             "reason": case["reason"] or case["missing_data"], "waiting_until_day": case["waiting_until_day"],
+            # closing never hides at-risk stock (07-CONTEXT D-24; api/closing.py label): "Needs decision", "Awaiting
+            # verification" or None on a plan a person closed; the case it follows and the case that follows it (07-12)
+            "lot_status": closing.label_of(case, following[cid], lots[case["lot_id"]], on_lots.get(cid, []), rec)
+            if closing.is_closed_by_person(case) else None,
+            "predecessor": case.get("predecessor"), "successor": following[cid],  # the links (07-12)
             **steps,
         })
     return out
@@ -590,7 +765,7 @@ def board(conn, run: dict) -> list[dict]:
     rows = db.rows(conn, "SELECT * FROM cases WHERE run_id = :r ORDER BY case_id", r=run["run_id"])
     requests = db.rows(conn, "SELECT * FROM evidence_requests WHERE run_id = :r ORDER BY created_at, request_id",
                        r=run["run_id"])
-    listed = cards(conn, run, rows, requests)
+    listed = cards(conn, run, rows, requests)  # one clock for every card's request rule (07-CONTEXT D-06)
     listed.sort(key=board_order)
     return listed
 
@@ -812,7 +987,7 @@ def board_page(conn, run: dict, actor: dict | None = None, branch: str | None = 
     rows = db.rows(conn, f"SELECT c.* FROM cases c WHERE {where} ORDER BY c.case_id", **p)
     requests = db.rows(conn, "SELECT * FROM evidence_requests WHERE run_id = :r ORDER BY created_at, request_id",
                        r=run["run_id"])
-    listed = cards(conn, run, rows, requests)
+    listed = cards(conn, run, rows, requests)  # one clock for every card's request rule (07-CONTEXT D-06)
     if risk == "waste":
         listed = [c for c in listed if (c["at_risk_units"] or 0.0) > 0]
     listed = _filtered(listed, run, actor, owner, product, deadline, blocked)
@@ -880,8 +1055,12 @@ def comparison(case: dict, rec: dict | None) -> dict:
 
 def detail(conn, run: dict, case_id: str) -> dict:
     """The card plus the lot, the adopted assumptions in effect and ended, the requests, the stored result without
-    the wait text, every fact check in the engine's order, the summary, the stored raw input, versions and approvals
-    (04-API-CONTRACT Case detail). Expired holds are applied first. A key no case has yet but a flag of this morning
+    the wait text, every fact check in the engine's order, the summary, the stored raw input, versions, approvals,
+    review flags and the ACTIVE lot holds on the lots the case involves (04-API-CONTRACT Case detail, "Hold"; on a
+    PREPARED case each with the informational `info` "Review before dispatch"), and the commitment rule's view
+    (`commitment`; each fact check with its class, owner, requests left, adoptable, blocked label and Required reasons;
+    07-CONTEXT D-12, D-13). Everything reads the plan in force (api/selection.py), and `options` lists the version's
+    engine options for Select another plan (D-23). Expired holds are applied first. A key no case has yet but a flag of this morning
     has answers the flag's detail (api/flags.py: needs_evaluation, no result; 05.2 D-24)."""
     bookings.expire_holds(conn, run, case_id)
     case = db.one(conn, "SELECT * FROM cases WHERE run_id = :r AND case_id = :c", r=run["run_id"], c=case_id)
@@ -891,6 +1070,7 @@ def detail(conn, run: dict, case_id: str) -> dict:
         if flag is None:
             raise ApiError(404, "not_found", f"No case {case_id}")
         return flags.flag_detail(conn, run, flag)
+    from . import closing, commitment, lotholds, reports, selection  # they read cases at import: imported here
     ref = refdata.get(run["dataset_version"])
     requests = signals.requests_for_case(conn, run, case)  # oldest first, each with its answer (04-09)
     out = card(conn, run, case, requests)
@@ -900,8 +1080,15 @@ def detail(conn, run: dict, case_id: str) -> dict:
                             policy=inputs.sandbox_policy(conn, run, ref))
     _, ended = inputs.adopted_in_effect(case["adopted"], runs, {case["source_branch"], *(r.dest for r in runs)})
     result = rec["result"] if rec else None
-    plan = parse_plan(result["recommended"]) if result else None
+    key, _, chosen = selection.plan_in_force(case, rec)  # the plan in force (07-CONTEXT D-23)
+    plan = parse_plan(key) if key else None
     versions = base_versions(run, ref)
+    checks = commitment.checks_in_force(case, rec)
+    required, _ = commitment.classes(checks)
+    reasons = commitment.reasons_of(rec, plan, required) if required and plan is not None else {}
+    held = commitment.holds_on(conn, run, case)
+    left = commitment.requests_left(rec, requests)
+    opts = selection.options(conn, run, case, rec)  # every engine option, annotated for Select another plan (D-23)
     if rec:
         fr = ref.forecast_runs[rec["day"]]
         versions.update(rec_version=rec["rec_version"], effective_version=result["effective_version"],
@@ -918,13 +1105,21 @@ def detail(conn, run: dict, case_id: str) -> dict:
         adopted=[i for i in case["adopted"] if i not in ended], adopted_ended=ended,
         requests=requests,
         result=without_wait_text(result),
-        fact_checks=[in_engine_order(c) for c in rec["fact_checks"]] if rec else [],  # the list in the engine's order
-        summary=summary(result, rec["fact_checks"] if rec else [], ref,
+        fact_checks=[{**in_engine_order(c), **commitment.check_keys(c, rec, requests, left, reasons)}
+                     for c in checks],  # the list in the engine's order, with the Phase 7 keys
+        commitment=commitment.summary(conn, run, case, rec, plan, checks, requests, reasons, held, opts),
+        options=opts,
+        summary=summary(result, checks, ref,  # the plan in force's checks (D-23)
                         waste_price=rec["engine_input"]["policy"]["waste_price"] if rec else 0.0,
-                        state=case["state"]),  # no "Unverified" once rejected or closed (06.1 D-36)
+                        state=case["state"], selected=chosen),  # no "Unverified" once rejected or closed (06.1 D-36)
         engine_input=rec["engine_input"] if rec else None,
         comparison=comparison(case, rec),  # Recommended, Simple rule, Keep as stored (06.1 D-27)
         versions=versions,
+        predecessor_closed=closing.predecessor_closed(conn, run, case),  # "Follows {key} · Rejected {t}" (07-22)
+        review_flags=[reviewflags.view(f, case["state"]) for f in reviewflags.for_case(conn, run["run_id"], case_id)],
+        reports=reports.unconfirmed_for(conn, run, case_id) if case["state"] in LIVE_STATES else [],  # D-16
+        holds=[{**lotholds.view(conn, run, h),  # every ACTIVE hold on a lot the case involves (07-CONTEXT D-13)
+                "info": reviewflags.BEFORE_DISPATCH if case["state"] == "PREPARED" else None} for h in held],
         approvals={"round": case["round"],
                    "required": ["source", "destination"] if plan is not None and plan.kind == TRANSFER else ["source"],
                    "decisions": out["decisions"], "hold": out["hold"],

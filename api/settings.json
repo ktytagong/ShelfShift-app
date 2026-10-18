@@ -9,9 +9,12 @@
   "caps": {
     "session": {
       "ai": {"value": {"limit": 60, "window": "hour"}, "type": "Policy", "source": "spec §4 Caps; FLOW-11; 04-CONTEXT D-08"},
-      "signal": {"value": {"limit": 20, "window": "day"}, "type": "Policy", "source": "spec §4 Caps; FLOW-11; 04-CONTEXT D-08"},
-      "upload": {"value": {"limit": 10, "window": "day"}, "type": "Policy", "source": "spec §4 Caps (signals with a file); FLOW-11; 04-CONTEXT D-08"},
       "reset": {"value": {"limit": 20, "window": "day"}, "type": "Policy", "source": "spec §4 Caps; FLOW-11; 04-CONTEXT D-08"}
+    },
+    "workspace": {
+      "signal": {"value": {"limit": 20, "window": "day"}, "type": "Policy", "source": "07-CONTEXT D-20; FLOW-11; spec §4 Caps", "note": "field reports successfully filed, per workspace (scope run:<run_id>), shared by every account and store in it; moved from caps.session"},
+      "upload": {"value": {"limit": 10, "window": "day"}, "type": "Policy", "source": "07-CONTEXT D-20; FLOW-11; spec §4 Caps (reports with a file)", "note": "a report's first file, per workspace (scope run:<run_id>); a replacement or an answer photo spends only caps.global.upload; moved from caps.session"},
+      "preview": {"value": {"limit": 4, "window": "minute"}, "type": "Policy", "source": "07-20 review (2026-10-18): a preview runs the engine (up to reports.preview_cases what-ifs, within the 3 s case budget) on the one engine worker every workspace shares", "note": "impact previews (draft and filed), per workspace (scope run:<run_id>); spent once before the first engine run, never for a preview whose what-ifs are already stored (read back); filing keeps its own allowance"}
     },
     "client": {
       "passcode": {"value": {"limit": 10, "window": "minute"}, "type": "Policy", "source": "06-CONTEXT D-24 (replaces 04-REVIEW WR-03's 20 per hour): wrong passcode attempts, counted per address", "note": "only a wrong passcode counts; the address is stored as a hash; on Cloud Run it is the rightmost X-Forwarded-For entry (the one Google's front end appends), locally the TCP peer; after 10 wrong guesses within one clock minute a block lasts until that minute ends (at most 60 s) and is never permanent; visitors behind one shared NAT or VPN exit share a counter (accepted, D-24)"}
@@ -19,7 +22,8 @@
     "global": {
       "ai": {"value": 300, "unit": "requests per day", "type": "Policy", "source": "spec §4 Caps; 04-CONTEXT D-08; 06-CONTEXT D-12 (judging deployment)", "note": "requests, not dollars (06-CONTEXT D-13): live questions, live briefs and AI signal analysis share it; cached briefs and manual counts do not spend it (04-CONTEXT D-20); resets at midnight Asia/Bangkok; env GLOBAL_AI_CAP overrides it at deploy"},
       "sandbox": {"value": 300, "unit": "sandboxes per day", "type": "Policy", "source": "spec §4 Caps; 04-CONTEXT D-08"},
-      "upload": {"value": 500, "unit": "uploads per day", "type": "Policy", "source": "spec §4 Caps; 04-CONTEXT D-08"}
+      "upload": {"value": 500, "unit": "uploads per day", "type": "Policy", "source": "spec §4 Caps; 04-CONTEXT D-08"},
+      "preview": {"value": {"limit": 12, "window": "minute"}, "unit": "previews per minute across workspaces", "type": "Policy", "source": "07-20 review (2026-10-18): a preview runs the engine (up to reports.preview_cases what-ifs, within the 3 s case budget) on the one engine worker every workspace shares", "note": "so one workspace's previews never fill the engine for another's decisions: at most 12 previews of at most 3 s each in a minute, across every workspace"}
     },
     "time_zone": {"value": "Asia/Bangkok", "type": "Policy", "source": "spec §4: daily caps reset at midnight Bangkok time"}
   },
@@ -34,9 +38,31 @@
   "http": {
     "max_body_bytes": {"value": 65536, "unit": "bytes", "type": "Policy", "source": "04-REVIEW WR-02 (agy F-T5-01): the JSON or form body is read up to this bound, before the passcode check", "note": "the demo path's bodies are a few hundred bytes; a larger one is 400 bad_request"}
   },
+  "uploads": {
+    "max_bytes": {"value": 5242880, "unit": "bytes", "type": "Policy", "source": "spec §4, §7: PNG, JPEG or PDF up to 5 MB; 07-CONTEXT D-14", "note": "a larger file part is 413 too_large"},
+    "form_bytes": {"value": 65536, "unit": "bytes", "type": "Policy", "source": "the form fields beside one file (research F-5)", "note": "an upload route reads a body of up to max_bytes + form_bytes; every other route keeps http.max_body_bytes"}
+  },
   "requests": {
+    "max_message_chars": {"value": 4000, "unit": "characters", "type": "Policy", "source": "Phase 09 dated API contract: bounded evidence wording", "note": "initial application text policy, not a retailer value; shared by checked drafts and the later human Send extension"},
     "lead_min": {"value": 15, "unit": "minutes", "type": "Policy", "source": "plan REQUEST_LEAD_MIN; 04-RESEARCH A12; 04-API-CONTRACT Count path 5", "note": "a count request is due this long before decide_by"},
-    "max_per_version": {"value": 2, "unit": "requests per case version", "type": "Policy", "source": "spec §7; 04-CONTEXT D-20 (count requests share the limit)"}
+    "max_per_version": {"value": 2, "unit": "requests per case version", "type": "Policy", "source": "spec §7; 04-CONTEXT D-20 (count requests share the limit)"},
+    "response_min": {"value": 60, "unit": "minutes", "type": "Policy", "source": "07-CONTEXT D-05: a real deadline 60 minutes after a request is created", "note": "replaces the simulated due time for state; lead_min only fills the legacy due_day/due_min"}
+  },
+  "reports": {
+    "preview_cases": {"value": 5, "unit": "cases", "type": "Policy", "source": "spec §7 step 4; 07-CONTEXT D-16: up to 5 cases in the preview", "note": "the impact preview re-runs at most this many affected live cases as what-ifs (case_id order) and counts the rest; the display's limit only: confirmation acts on every affected case"}
+  },
+  "reassess": {
+    "urgency_bands": {"value": [3, 1, 0], "unit": "days left (expiry day minus today); each edge starts a more urgent band at or below it", "type": "Policy", "source": "07-CONTEXT D-28 (user, 2026-10-17, refined): urgency bands are provisional and configurable; a band crossing reopens a closed lot only when it changes the available action", "note": "edges: within 3 days, tomorrow, today; provisional defaults, pending retailer; recorded and logged, never a reopen reason on their own; distinct whole numbers of 0 or more, in descending order"},
+    "clearance_pct": {"value": 30, "unit": "percent off the full price", "type": "Policy", "source": "07-CONTEXT D-28 (user, 2026-10-17, refined): crossing a configured clearance or final-action threshold reopens a closed lot on the synthetic Next day", "note": "pending retailer: the seeded markdown schedules mark no clearance step and no policy holds a write-off point; 30 is the final step of schedules A, B and C, so a scheduled price at or above it is the clearance price; a routine step below it never reopens a closed lot; a whole number from 1 to 100"}
+  },
+  "assistant": {
+    "model_id": {"value": "gemini-3.5-flash", "type": "Policy", "source": "06-CONTEXT D-14 (user, 2026-10-16)", "note": "GEMINI_MODEL overrides this deployment default; no model ID is hardcoded in agent code"},
+    "location": {"value": "asia-southeast1", "type": "Policy", "source": "06-CONTEXT D-14; 09-CONTEXT D-21", "note": "VERTEX_LOCATION overrides this deployment default; global requires explicit configuration, never automatic 429 failover"},
+    "seconds": {"value": 40, "unit": "seconds per request", "type": "Policy", "source": "09-23 user decision, 2026-10-18 about 14:15 Bangkok, after observed paid checks: raise 25 to 40 seconds; fixed producer envelope includes retries and tools"},
+    "max_tool_calls": {"value": 8, "unit": "tool invocations per request", "type": "Policy", "source": "09-CONTEXT D-22: changing this limit requires the user's measured decision"},
+    "max_llm_calls": {"value": 10, "unit": "model calls per request", "type": "Policy", "source": "09-06; 09-RESEARCH Pattern 3: eight tools plus two model calls; explicit RunConfig resists ADK_MAX_LLM_CALLS"},
+    "max_output_tokens": {"value": 8192, "unit": "tokens per model response", "type": "Policy", "source": "09-23 observed user-run paid checks at b224c7f, 2026-10-18: accepted Ask output 1,372 plus thinking 1,754 = 3,126 tokens", "note": "Conservative per-response bound from the entire accepted request generation: twice 3,126, rounded up to the next power of two = 8,192; below documented model output ceiling 65,536. Small-sample safety margin, rerun pending."},
+    "max_request_tokens": {"value": 65536, "unit": "cumulative reported tokens per request", "type": "Policy", "source": "09-23 observed user-run paid checks at b224c7f, 2026-10-18: brief with 5 tools used 16,959 total tokens; the 6-tool question timed out before its second turn, so its full use is unobserved", "note": "supervisor margin: about 4x the observed maximum, so an 8-tool question is not cut by the token bound before the 40 s deadline; well inside the model context window"}
   },
   "execution": {
     "conditions": {"value": [{"key": "as_expected", "label": "As expected"}, {"key": "damaged", "label": "Damaged"}, {"key": "temperature_concern", "label": "Temperature concern"}], "type": "Policy", "source": "06.1-UI-SPEC open questions 2 and 5 (recommended defaults, pending the user)", "note": "the condition a dispatch or receipt records (06.1 D-48)"},

@@ -72,6 +72,15 @@ def write_flags(conn, run: dict, candidates: list[tuple[dict, dict]]) -> list[st
     return keys
 
 
+def reopens(conn, run: dict, prev: dict, lot_row: dict, seen: dict | None = None) -> list[str]:
+    """The public screen's rule for a lot whose latest case a person closed (07-CONTEXT D-24, D-28; 07-12): the same
+    `closing.reopen_allowed` as every path, without the Next-day thresholds (product mode reassesses on new data,
+    confirmed evidence or Reassess), so a closed lot that still qualifies is never excluded and never reopened on
+    unchanged inputs; when its inputs changed the screen opens its successor (never a flag of the closed case's key)."""
+    from . import closing  # it reads cases at import
+    return closing.reopen_allowed(conn, run, prev, lot_row, next_day=False, seen=seen)
+
+
 def find(conn, run: dict, key: str) -> dict | None:
     """The flag with this key that the run reads this morning (`overlay.flags_run`), or None."""
     return db.one(conn, "SELECT * FROM case_flags WHERE run_id = :f AND day = :d AND key = :k",
@@ -98,6 +107,8 @@ def flag_card(ref, row: dict) -> dict:
         "next_owner": [], "decisions": {}, "hold": None,
         "badges": [{"kind": "missing_data", "text": "Missing data"}] if row["missing_data"] else [],
         "reason": row["missing_data"], "waiting_until_day": None,
+        "selected_plan": None,  # no plan, so no selection (07-CONTEXT D-23)
+        "lot_status": None, "predecessor": None, "successor": None,  # no closed plan, no link (07-CONTEXT D-24)
         "needs_evaluation": True, "risk": risk(row),
         **stepkeys.flag_keys(row),  # Trigger, Needs evaluation, Evaluate (06.1 D-24, D-54)
     }

@@ -306,6 +306,12 @@ NOT_YET_PROVEN = (
     "Execution is simulated.",
     "The forecast does not learn from what happens in the app.",
     "Stock, lots and deliveries are simulated from the public sales.",
+    # Phase 7's stated limitations, word for word (07-UI-SPEC surface 7; 07-22)
+    "Fact checks test each unresolved fact on its own: a plan that survives each fact alone but fails when two are "
+    "true together is not detected, so ShelfShift claims no complete feasibility protection.",
+    "A lot with mixed expiry dates is held for people to separate; the app doesn't split it.",
+    "Staff must state when they checked a count or a date; that stops silent misdating but can't prove a typed time "
+    "accurate.",
 )
 DATA_SECTIONS = ("Simulated", "The dataset", "The data", "Modifications", "Limits")
 ATTRIBUTION = ("© Dingdong-Inc, licensed under CC BY 4.0", "ShelfShift is not affiliated with or endorsed by Dingdong-Inc.")

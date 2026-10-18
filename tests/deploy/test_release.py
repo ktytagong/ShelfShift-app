@@ -50,8 +50,25 @@ OLD_REV = "demo-svc-00001-old"
 FAILED_REV = "demo-svc-00002-failed"
 URL = "https://demo-svc-abc.a.run.example.invalid"
 REF_FILES = {"seed.json": b'{"seed": 1}\n', "forecast.json": b'{"forecast": 2}\n', "truth.json": b'{"truth": 3}\n'}
-BUILD_LINES = ["previous ACTIVE: tpl-old", f"template {NEW} ACTIVE for dv-1", "retired: tpl-old",
-               "pruned 0 sandbox runs"]
+# Phase 9: the build leaves the template READY (--no-activate); the briefs job and the activate execution follow
+BUILD_LINES = ["previous ACTIVE: tpl-old", f"template {NEW} READY for dv-1", "pruned 0 sandbox runs"]
+ACTIVATE_LINES = [f"template {NEW} ACTIVE for dv-1", "retired: tpl-old"]
+BRIEFS_EXEC = "demo-build-b2r9f"
+ACTIVATE_EXEC = "demo-build-v4n1k"
+SUMMARY = {"type": "summary", "run_id": NEW, "cases": 6, "eligible": 5, "ineligible": 1, "attempted": 5, "success": 5,
+           "failure": 0, "reused": 0, "model_id": "gemini-3.5-flash", "location": "asia-southeast1",
+           "assistant_version": "assistant-3", "usage": {"calls": 5, "input_tokens": 9000, "output_tokens": 1200},
+           "baseline_attempts": 5, "baseline_usage": {"calls": 5, "input_tokens": 9000, "output_tokens": 1200},
+           "cost": None, "cost_reason": "Billed cost is not recorded here; retain provider usage for the release record."}
+
+
+def summary_line(**changes) -> str:
+    """The briefs CLI's own summary format (agent/briefs.py: json.dumps(..., sort_keys=True))."""
+    return json.dumps({**SUMMARY, **changes}, ensure_ascii=False, sort_keys=True)
+
+
+def briefs_case_line(case_id: str = "C-1") -> str:
+    return json.dumps({"type": "case", "run_id": NEW, "case_id": case_id, "status": "success"}, sort_keys=True)
 RESTORED_LINES = [f"restored: tpl-old ACTIVE, {NEW} RETIRED", "ACTIVE: tpl-old"]
 GOOD_TPL = "tpl-aaaaaaaaaaaa-20261001000000"
 BENCH_LINES = ["config: ENGINE_WORKER=on engine_version=engine-3 git_commit=x cpu.max=100000/100000",
@@ -114,6 +131,8 @@ class Cloud(DryRunner):
         self.hq_value = HQ_PASSCODE  # what a read of the HQ secret returns (a test scripts a refusal with it)
         self.service_before: dict | None = None  # None: the describe says the service does not exist
         self.build_lines = list(BUILD_LINES)
+        self.activate_lines: list[str] | None = None  # None: derived from build_lines (`activate_view`)
+        self.briefs_lines: list[str] | None = None  # None: one case line and SUMMARY for the briefs execute's id
         self.restore_lines = list(RESTORED_LINES)
         self.active_lines = [f"ACTIVE: {GOOD_TPL}"]
         self.active_named = True  # False: the active execute answers no execution name
@@ -136,6 +155,39 @@ class Cloud(DryRunner):
 
     def did(self, *lead: str) -> bool:
         return any(c[1:1 + len(lead)] == list(lead) for c in self.calls)
+
+    def build_view(self) -> list[str]:
+        """The inactive build's log from build_lines. A script written in the one-execution shape (`template <id>
+        ACTIVE for <dv>` and `retired:`) reads as its Phase 9 split: the build prints READY and no retired: line,
+        and the same activation's lines come from the activate execution (`activate_view`)."""
+        out = []
+        for line in self.build_lines:
+            m = re.match(r"^template (\S+) ACTIVE for (\S+)$", line)
+            if m:
+                out.append(f"template {m.group(1)} READY for {m.group(2)}")
+            elif not line.startswith("retired: "):
+                out.append(line)
+        return out
+
+    def activate_view(self) -> list[str]:
+        """activate_lines when set; else the one-execution script's ACTIVE and retired: lines; else the READY template
+        made ACTIVE, retiring the build's `previous ACTIVE:` template."""
+        if self.activate_lines is not None:
+            return self.activate_lines
+        shaped = [line for line in self.build_lines
+                  if re.match(r"^template \S+ ACTIVE for \S+$", line) or line.startswith("retired: ")]
+        if shaped:
+            return shaped
+        ready = [m for line in self.build_lines for m in [re.match(r"^template (\S+) READY for (\S+)$", line)] if m]
+        before = [line.split(": ", 1)[1] for line in self.build_lines if line.startswith("previous ACTIVE: ")]
+        return ([f"template {ready[0].group(1)} ACTIVE for {ready[0].group(2)}"] if ready else []) + \
+            ([f"retired: {before[0]}"] if before else [])
+
+    def briefs_view(self) -> list[str]:
+        if self.briefs_lines is not None:
+            return self.briefs_lines
+        runs = [x.rsplit(",", 1)[1] for c in self.calls for x in c if x.startswith("--args=-m,agent.briefs,")]
+        return [briefs_case_line(), summary_line(run_id=runs[-1] if runs else NEW)]
 
     def _answer(self, argv, stdin, default):
         self._echo(argv, stdin)
@@ -208,6 +260,10 @@ class Cloud(DryRunner):
             job_name = w[3].removesuffix("-drill")  # a drill configuration's jobs answer like the live ones
             if job_name == "demo-build" and any(x.startswith("--args=-m,api.sandbox,build") for x in w):
                 return {"metadata": {"name": BUILD_EXEC}}
+            if job_name == "demo-build" and any(x.startswith("--args=-m,agent.briefs,") for x in w):
+                return {"metadata": {"name": BRIEFS_EXEC}}
+            if job_name == "demo-build" and any(x.startswith("--args=-m,api.sandbox,activate,") for x in w):
+                return {"metadata": {"name": ACTIVATE_EXEC}}
             if job_name == "demo-bench":
                 return {"metadata": {"name": BENCH_EXEC}}
             if job_name == "demo-early":
@@ -219,7 +275,11 @@ class Cloud(DryRunner):
             return ""
         if w[:2] == ["logging", "read"]:
             if BUILD_EXEC in w[2]:
-                return [{"textPayload": line} for line in self.build_lines]
+                return [{"textPayload": line} for line in self.build_view()]
+            if BRIEFS_EXEC in w[2]:
+                return [{"textPayload": line} for line in self.briefs_view()]
+            if ACTIVATE_EXEC in w[2]:
+                return [{"textPayload": line} for line in self.activate_view()]
             if BENCH_EXEC in w[2]:
                 return [{"textPayload": line} for line in self.bench_lines]
             if EARLY_EXEC in w[2]:
@@ -432,12 +492,32 @@ def test_compat_is_first_compatible_or_breaking(tmp_path):
     assert release.compat(tmp_path) == (ENGINE_VERSION, "breaking")  # a manifest without the field
 
 
-def test_the_build_log_parse_reads_the_three_lines_or_says_not_read_back():
+def test_the_build_log_parse_reads_the_inactive_build_lines_or_says_not_read_back():
     got = release.parse_build(BUILD_LINES)
-    assert got == {"active_before_build": "tpl-old", "activated_template": NEW, "previous_template": "tpl-old"}
-    first = release.parse_build(["previous ACTIVE: none", f"template {NEW} ACTIVE for dv-1", "retired: none"])
-    assert first == {"active_before_build": None, "activated_template": NEW, "previous_template": None}
+    assert got == {"active_before_build": "tpl-old", "ready_template": NEW}
+    first = release.parse_build(["previous ACTIVE: none", f"template {NEW} READY for dv-1"])
+    assert first == {"active_before_build": None, "ready_template": NEW}
     assert set(release.parse_build([]).values()) == {manifest.NOT_READ_BACK}
+    # an activating build's ACTIVE line is not a READY line
+    assert release.parse_build([f"template {NEW} ACTIVE for dv-1"])["ready_template"] == manifest.NOT_READ_BACK
+
+
+def test_the_activate_log_parse_reads_the_active_and_retired_lines():
+    assert release.parse_activate(ACTIVATE_LINES) == {"activated_template": NEW, "previous_template": "tpl-old"}
+    assert release.parse_activate([f"template {NEW} ACTIVE for dv-1", "retired: none"]) == {
+        "activated_template": NEW, "previous_template": None}
+    assert set(release.parse_activate([]).values()) == {manifest.NOT_READ_BACK}
+
+
+def test_the_briefs_summary_is_the_last_summary_line_for_the_template():
+    lines = [briefs_case_line(), summary_line(success=1), "not json", summary_line(run_id="tpl-other"),
+             summary_line()]
+    assert release.briefs_summary(lines, NEW) == SUMMARY
+    assert release.briefs_summary([briefs_case_line(), summary_line(run_id="tpl-other")], NEW) is None
+    # a JSON log entry's numbers come back as floats (jsonPayload); the counts are ints again
+    floats = json.dumps({**SUMMARY, "success": 5.0, "eligible": 5.0})
+    assert release.briefs_summary([floats], NEW)["success"] == 5
+    assert isinstance(release.briefs_summary([floats], NEW)["eligible"], int)
 
 
 # --- the happy path ---------------------------------------------------------------------------------------------------
@@ -447,17 +527,27 @@ def test_the_happy_path_issues_the_commands_in_order_and_records_a_known_good_ma
     assert run_release(cfg, cloud, out_dir, fakes) == 0
     order = [verb(c) for c in cloud.calls]
     # the secret step is first (06.1 D-64): both pins, then both reads for the HQ preflight, before the image
-    assert order[:18] == [
+    assert order[:22] == [
         "secrets versions list", "secrets versions list", "secrets versions access", "secrets versions access",
         "artifacts docker images describe", "builds submit", "artifacts docker images describe",
         "run services describe", "run jobs deploy demo-build", "run jobs execute demo-build",
-        "logging read", "run jobs deploy demo-bench", "run jobs execute demo-bench", "logging read",
+        "logging read", "run jobs execute demo-build", "logging read", "run jobs execute demo-build", "logging read",
+        "run jobs deploy demo-bench", "run jobs execute demo-bench", "logging read",
         "run deploy demo-svc", "run services update-traffic demo-svc", "run services describe",
         "run revisions describe"]
     assert [c[4] for c in cloud.calls[:2]] == ["demo-pass", "demo-hq-pass"]
     assert [flag(c, "--secret") for c in cloud.calls[2:4]] == ["demo-pass", "demo-hq-pass"]
-    assert order[18] == "run services get-iam-policy demo-svc"
-    assert order[19:] == ["secrets versions access", "secrets versions access"]
+    assert order[22] == "run services get-iam-policy demo-svc"
+    assert order[23:] == ["secrets versions access", "secrets versions access"]
+    # Phase 9: inactive build, then the briefs job, then activate, then the bench (args unchanged), then the service
+    executes = [c for c in cloud.calls if verb(c).startswith("run jobs execute")]
+    assert [flag(c, "--args") if any(x.startswith("--args=") for x in c) else None for c in executes] == [
+        f"-m,api.sandbox,build,--no-activate,--run-id,{NEW}", f"-m,agent.briefs,{NEW}",
+        f"-m,api.sandbox,activate,{NEW}", None]
+    [briefs_read] = [c for c in cloud.calls if c[1:3] == ["logging", "read"] and BRIEFS_EXEC in c[3]]
+    assert briefs_read[3].endswith(' AND (textPayload:"summary" OR jsonPayload.type="summary")')
+    for other in (c for c in cloud.calls if c[1:3] == ["logging", "read"] and BRIEFS_EXEC not in c[3]):
+        assert "summary" not in other[3]  # every other log read is unchanged
     [route] = to_latest(cloud)
     assert "--to-revisions" not in route
     deployed, routed = cloud.calls.index(call(cloud, "run", "deploy")), cloud.calls.index(route)
@@ -468,7 +558,7 @@ def test_the_happy_path_issues_the_commands_in_order_and_records_a_known_good_ma
     assert flag(submit, "--tag") == f"{IMAGE}:{SHA}" and flag(submit, "--region") == REGION
     assert pathlib.Path(submit[3]).name.startswith("shelfshift-src-")  # the archive directory, not the tree
     build_exec = call(cloud, "run", "jobs", "execute", name="demo-build")
-    assert f"--args=-m,api.sandbox,build,--run-id,{NEW}" in build_exec and "--wait" in build_exec
+    assert f"--args=-m,api.sandbox,build,--no-activate,--run-id,{NEW}" in build_exec and "--wait" in build_exec
     deploy = call(cloud, "run", "deploy")
     assert "--allow-unauthenticated" in deploy
 
@@ -478,8 +568,10 @@ def test_the_happy_path_issues_the_commands_in_order_and_records_a_known_good_ma
     assert rec["kind"] == "release" and rec["id"] == RID and rec["status"] == "known_good"
     assert rec["source_commit"] == SHA and rec["image_digest"] == DIGEST and rec["image"] == REF
     assert rec["project"] == PROJECT and rec["region"] == REGION and rec["time"] == NOW.isoformat()
-    assert rec["new_template"] == NEW and rec["activated_template"] == NEW
+    assert rec["new_template"] == NEW and rec["activated_template"] == NEW and rec["ready_template"] == NEW
     assert rec["previous_template"] == "tpl-old" and rec["active_before_build"] == "tpl-old"
+    assert rec["activation"] == "separate" and rec["activate_execution"] == ACTIVATE_EXEC
+    assert rec["briefs"] == {"execution": BRIEFS_EXEC, "summary": SUMMARY, "result": "pass"}
     assert rec["min_instances"] == "0" and rec["max_instances"] == "1"
     assert rec["revision"] == NEW_REV and rec["url"] == URL and rec["previous_revision"] is None
     assert rec["access"] == "public" and rec["secret_version"] == "3" and rec["hq_secret_version"] == "5"
@@ -488,19 +580,215 @@ def test_the_happy_path_issues_the_commands_in_order_and_records_a_known_good_ma
     assert rec["reference_files"] == {f"data/reference/{n}": hashlib.sha256(b).hexdigest()
                                       for n, b in REF_FILES.items()}
     assert rec["smoke"] == [list(s) for s in SMOKE_OK] and rec["journey"] == {"passed": True, "exit": 0}
-    assert rec["model"] == {"configured": cfg["GEMINI_MODEL"], "endpoint": cfg["VERTEX_LOCATION"],
-                            "used": "not until Phase 9"}
+    assert rec["model"]["configured"] == cfg["GEMINI_MODEL"] and rec["model"]["endpoint"] == cfg["VERTEX_LOCATION"]
+    assert "briefs job" in rec["model"]["used"] and "service" in rec["model"]["used"]
+    assert "not until Phase 9" not in json.dumps(rec)
     assert rec["engine_version"] == ENGINE_VERSION and rec["template_compat"] == "first"
     assert rec["previous_known_good"] is None
     assert rec["bench"]["result"] == "pass" and rec["bench"]["gate"] == BENCH_LINES[-1]
     assert rec["bench"]["execution"] == BENCH_EXEC and rec["build_execution"] == BUILD_EXEC
     assert rec["resources"]["service"] == "demo-svc" and rec["resources"]["build_job"] == "demo-build"
     steps = [p["step"] for p in rec["progress"]]
-    assert steps == ["secret", "image", "previous_revision", "build_deploy", "build_execute", "build_log", "bench",
-                     "service_deploy", "read_back", "access", "smoke", "journey"]
+    assert steps == ["secret", "image", "previous_revision", "build_deploy", "build_execute", "build_log", "briefs",
+                     "activate", "bench", "service_deploy", "read_back", "access", "smoke", "journey"]
     assert {p["state"] for p in rec["progress"]} == {"ok"}
     assert rec["progress"][0] == {"step": "secret", "state": "ok", "version": "3", "hq_version": "5",
                                   "preflight": "ok"}
+
+
+def test_the_build_job_and_the_service_get_exactly_the_model_keys_and_the_bench_none(cfg, out_dir, fakes):
+    """Phase 9 (09-24 checklist item 2; 06-CONTEXT D-04 updated): GCP=on, GEMINI_MODEL, VERTEX_LOCATION and PROJECT
+    reach the build job (its executions include the briefs job) and the service; never a GOOGLE_GENAI_USE_* flag; the
+    bench job's variables are unchanged; no passcode value is in any argv."""
+    cloud = Cloud()
+    assert run_release(cfg, cloud, out_dir, fakes) == 0
+    model = {"GCP": "on", "GEMINI_MODEL": cfg["GEMINI_MODEL"], "VERTEX_LOCATION": cfg["VERTEX_LOCATION"],
+             "PROJECT": PROJECT}
+    build = env_of(call(cloud, "run", "jobs", "deploy", name="demo-build"))
+    service = env_of(call(cloud, "run", "deploy"))
+    for env in (build, service):
+        assert {k: env[k] for k in model} == model
+        assert not [k for k in env if k.startswith("GOOGLE_GENAI")]
+    assert list(build)[-4:] == list(model) and list(service)[-4:] == list(model)
+    assert service["GLOBAL_AI_CAP"] == cfg["GLOBAL_AI_CAP"]
+    bench = env_of(call(cloud, "run", "jobs", "deploy", name="demo-bench"))
+    assert bench == {"CLOUD_SQL_INSTANCE": f"{PROJECT}:{REGION}:demo-sql", "DB_USER": "run-sa@x-demo-12.iam",
+                     "DB_NAME": "demo_db", "ENGINE_WORKER": "on", "GIT_COMMIT": SHA}
+    for argv in cloud.calls:
+        assert PASSCODE not in " ".join(argv) and HQ_PASSCODE not in " ".join(argv)
+
+
+def test_provider_failures_are_recorded_and_do_not_fail_the_release(cfg, out_dir, fakes, capsys):
+    cloud = Cloud()
+    cloud.briefs_lines = [briefs_case_line("C-1"), briefs_case_line("C-2"), summary_line(success=3, failure=2)]
+    assert run_release(cfg, cloud, out_dir, fakes) == 0
+    rec = only_record(out_dir)
+    assert rec["status"] == "known_good"
+    assert rec["briefs"]["summary"]["failure"] == 2 and rec["briefs"]["summary"]["success"] == 3
+    assert rec["briefs"]["summary"]["usage"] == SUMMARY["usage"]
+    assert rec["briefs"]["result"] == "pass with 2 provider failures (Fallback)"
+    out = capsys.readouterr().out
+    [line] = [x for x in out.splitlines() if x.startswith("briefs:")]
+    assert line == ("briefs: 3 success, 2 failure, 0 reused of 5 eligible; model gemini-3.5-flash at "
+                    "asia-southeast1, assistant-3")
+
+
+def test_a_json_payload_summary_is_read_as_cloud_run_stores_it(cfg, out_dir, fakes):
+    """Cloud Run turns a JSON line on stdout into jsonPayload (its numbers become floats): the summary still reads."""
+    cloud = Cloud()
+    original = cloud.respond
+
+    def respond(a):
+        if a[1:3] == ["logging", "read"] and BRIEFS_EXEC in a[3]:
+            return [{"jsonPayload": {**SUMMARY, **{k: float(SUMMARY[k]) for k in release.SUMMARY_COUNTS}}}]
+        return original(a)
+
+    cloud.respond = respond
+    assert run_release(cfg, cloud, out_dir, fakes) == 0
+    assert only_record(out_dir)["briefs"]["summary"] == SUMMARY
+
+
+def _briefs_refused(cloud):
+    cloud.raise_on.append((is_call("run", "jobs", "execute", having=f"--args=-m,agent.briefs,{NEW}"),
+                           boom("gcloud run jobs execute", 1, "baseline job refused: not READY")))
+
+
+def _briefs_lines(*lines):
+    def apply(cloud):
+        cloud.briefs_lines = list(lines)
+    return apply
+
+
+BRIEFS_STOPS = [
+    ("refused", _briefs_refused, "(exit 1)"),
+    ("no summary line", _briefs_lines(briefs_case_line()), "summary\"' line"),
+    ("another template's summary", _briefs_lines(summary_line(run_id="tpl-other")), "summary\"' line"),
+    ("zero briefs", _briefs_lines(summary_line(success=0, failure=5)), "a model, location or IAM problem"),
+    ("another model", _briefs_lines(summary_line(model_id="gemini-2.5-flash")), "not GEMINI_MODEL"),
+    ("another location", _briefs_lines(summary_line(location="global")), "not VERTEX_LOCATION"),
+]
+
+
+@pytest.mark.parametrize("case, setup, message", BRIEFS_STOPS, ids=[c[0] for c in BRIEFS_STOPS])
+def test_a_briefs_stop_fails_before_activation(case, setup, message, cfg, out_dir, fakes, capsys):
+    cloud = Cloud()
+    setup(cloud)
+    assert run_release(cfg, cloud, out_dir, fakes) == 1
+    rec = only_record(out_dir)
+    assert rec["status"] == "failed_briefs" and rec["progress"][-1]["step"] == "briefs"
+    assert rec["progress"][-1]["state"] == "failed" and message in rec["error"]
+    assert not indexes(cloud, is_call("run", "jobs", "execute", having=f"--args=-m,api.sandbox,activate,{NEW}"))
+    assert not indexes(cloud, lambda c: "demo-bench" in c) and not cloud.did("run", "deploy")
+    assert "briefs:" not in capsys.readouterr().out
+    # nothing activated <new>: the build is settled, nothing is restored, the READY template stays inactive
+    assert not restores(cloud) and rec["recovery"]["restore"] == NOT_ACTIVATED and rec["reconcile"] is None
+    assert rec["recovery"]["settle"] == {"execution": BUILD_EXEC, "state": "finished"}
+
+
+def test_zero_eligible_cases_pass_the_briefs_step(cfg, out_dir, fakes):
+    cloud = Cloud()
+    cloud.briefs_lines = [summary_line(cases=2, eligible=0, ineligible=2, attempted=0, success=0, failure=0)]
+    assert run_release(cfg, cloud, out_dir, fakes) == 0
+    assert only_record(out_dir)["briefs"]["result"] == "pass"
+
+
+def test_a_failed_activate_execute_is_settled_then_restored(cfg, out_dir, fakes):
+    """The activate execute exits non-zero, so no execution name was recorded: the activate execution is found among
+    the build job's executions by `activate,<new>`, settled, then `restore <new>` is verified against tpl-old."""
+    cloud = Cloud()
+    cloud.raise_on.append((is_call("run", "jobs", "execute", having=f"--args=-m,api.sandbox,activate,{NEW}"),
+                           boom("gcloud run jobs execute")))
+    cloud.executions = [activation_listed(state=RUNNING)]
+    cloud.exec_states = [FINISHED]
+    assert run_release(cfg, cloud, out_dir, fakes) == 1
+    rec = only_record(out_dir)
+    assert rec["status"] == "failed_activate"
+    assert rec["recovery"]["settle_activate"] == {"execution": ACTIVATE_EXEC, "state": "finished"}
+    assert rec["activate_execution"] == ACTIVATE_EXEC  # found and recorded by the settle
+    [restore] = restores(cloud)
+    assert max(settles(cloud)) < restore and RESTORE_ARGS in cloud.calls[restore]
+    assert FIRST_RESTORE_ARGS not in cloud.calls[restore]
+    assert rec["recovery"]["restore"] == "restored: tpl-old ACTIVE" and rec["reconcile"] is None
+    assert not indexes(cloud, lambda c: "demo-bench" in c) and not cloud.did("run", "deploy")
+
+
+def test_an_unreadable_activate_execution_runs_no_restore_and_stays_pending(cfg, out_dir, fakes):
+    cloud = Cloud()
+    cloud.raise_on.append((is_call("run", "jobs", "execute", having=f"--args=-m,api.sandbox,activate,{NEW}"),
+                           boom("gcloud run jobs execute")))
+    cloud.executions = [activation_listed(), activation_listed(name="demo-build-twin")]
+    assert run_release(cfg, cloud, out_dir, fakes) == 1
+    rec = only_record(out_dir)
+    assert rec["recovery"]["settle_activate"].startswith("unknown: 2 executions of the build job hold activate")
+    assert rec["recovery"]["restore"].startswith("not run: ") and not restores(cloud)
+    assert rec["reconcile"] == "pending"
+
+
+def interrupted(out_dir, steps: list[str], **fields) -> dict:
+    """An in_progress Phase 9 record killed while its last step was requested."""
+    rec = {"kind": "release", "id": "20261016T120000Z-0123456789ab", "status": "in_progress", "source_commit": SHA,
+           "new_template": NEW, "activation": "separate", "build_execution": BUILD_EXEC,
+           "active_before_build": "tpl-old", "previous_revision": None, "previous_known_good": None,
+           "progress": [{"step": x, "state": "ok"} for x in steps[:-1]] + [{"step": steps[-1], "state": "requested"}],
+           "reconcile": None, "recovery": None, **fields}
+    manifest.write(rec, out_dir)
+    return rec
+
+
+PRE_BRIEFS = ["secret", "image", "previous_revision", "build_deploy", "build_execute", "build_log"]
+
+
+def test_a_release_killed_in_briefs_is_interrupted_without_a_restore(cfg, out_dir, fakes):
+    interrupted(out_dir, [*PRE_BRIEFS, "briefs"])
+    cloud = Cloud()
+    assert run_release(cfg, cloud, out_dir, fakes) == 1
+    rec = only_record(out_dir)
+    assert rec["status"] == "interrupted" and rec["reconcile"] is None
+    assert rec["recovery"]["restore"] == NOT_ACTIVATED and not restores(cloud)
+    assert not indexes(cloud, is_call("run", "jobs", "execute", having=BUILD_ARGS))
+
+
+def test_a_release_killed_in_activate_finds_settles_and_restores_the_activation(cfg, out_dir, fakes):
+    interrupted(out_dir, [*PRE_BRIEFS, "briefs", "activate"])
+    cloud = Cloud()
+    cloud.executions = [listed(), activation_listed()]
+    assert run_release(cfg, cloud, out_dir, fakes) == 1
+    rec = only_record(out_dir)
+    assert rec["status"] == "interrupted" and rec["reconcile"] is None
+    assert rec["recovery"]["settle_activate"] == {"execution": ACTIVATE_EXEC, "state": "finished"}
+    [restore] = restores(cloud)
+    assert max(settles(cloud)) < restore
+    assert rec["recovery"]["restore"] == "restored: tpl-old ACTIVE"
+    assert not indexes(cloud, is_call("run", "jobs", "execute", having=BUILD_ARGS)) and not cloud.did("run", "deploy")
+
+
+def test_an_old_record_without_activation_recovers_as_before(cfg, out_dir, fakes):
+    """A record from before Phase 9 (no `activation` field: its build activated) killed after build_log still
+    settles and restores <new> against active_before_build, exactly as before."""
+    rec = interrupted(out_dir, [*PRE_BRIEFS[:-1], "build_log"])
+    del rec["activation"]
+    pathlib.Path(out_dir, f"{rec['id']}.json").write_text(json.dumps(rec))
+    cloud = Cloud()
+    assert run_release(cfg, cloud, out_dir, fakes) == 1
+    got = only_record(out_dir)
+    assert "activation" not in got and got["status"] == "interrupted"
+    [restore] = restores(cloud)
+    assert got["recovery"]["restore"] == "restored: tpl-old ACTIVE" and "settle_activate" not in got["recovery"]
+
+
+@pytest.mark.parametrize("lines, message", [
+    ([f"template tpl-other ACTIVE for dv-1", "retired: tpl-old"], "names tpl-other ACTIVE"),
+    ([f"template {NEW} ACTIVE for dv-1", "retired: tpl-else"], "retired tpl-else, not tpl-old"),
+    ([f"template {NEW} ACTIVE for dv-1"], "retired: line was not read"),
+], ids=["another template", "another predecessor", "no retired line"])
+def test_the_activate_log_must_name_the_new_template_and_its_predecessor(lines, message, cfg, out_dir, fakes):
+    cloud = Cloud()
+    cloud.activate_lines = lines
+    assert run_release(cfg, cloud, out_dir, fakes) == 1
+    rec = only_record(out_dir)
+    assert rec["status"] == "failed_activate" and message in rec["error"]
+    assert rec["activate_execution"] == ACTIVATE_EXEC
+    assert not indexes(cloud, lambda c: "demo-bench" in c) and not cloud.did("run", "deploy")
 
 
 def test_every_image_is_by_digest_and_each_job_runs_as_its_account(cfg, out_dir, fakes):
@@ -684,6 +972,12 @@ def test_the_cli_dry_run_needs_no_gcloud_prints_the_order_and_writes_nothing(tmp
     assert p.returncode == 0, p.stderr
     lines = [line for line in p.stdout.splitlines() if line.startswith("+ gcloud ")]
     order = [verb(shlex.split(line[2:])) for line in lines]
+    executes = [line for line in lines if line.startswith("+ gcloud run jobs execute ")]
+    kinds = ["build" if "api.sandbox,build," in x else "briefs" if "agent.briefs," in x
+             else "activate" if "api.sandbox,activate," in x else "bench" if " demo-bench " in x else x
+             for x in executes]
+    assert kinds == ["build", "briefs", "activate", "bench"]  # Phase 9: briefs and activate before the bench
+    assert "--no-activate" in executes[0] and "briefs:" not in p.stdout  # no briefs result printed as observed
     for later, earlier in (("run jobs execute demo-bench", "run jobs execute demo-build"),
                            ("run deploy demo-svc", "run jobs execute demo-bench"),
                            ("run services get-iam-policy demo-svc", "run deploy demo-svc")):
@@ -722,9 +1016,10 @@ def test_release_sh_is_an_executable_wrapper():
 
 # --- Task 2: recovery, the lock, resume, access, compatibility, rollback ---------------------------------------------
 
-BUILD_ARGS = f"--args=-m,api.sandbox,build,--run-id,{NEW}"
+BUILD_ARGS = f"--args=-m,api.sandbox,build,--no-activate,--run-id,{NEW}"
 RESTORE_ARGS = f"--args=-m,api.sandbox,restore,{NEW}"
 FIRST_RESTORE_ARGS = RESTORE_ARGS + ",--first"  # a first release's restore (06-REVIEW WR-06)
+NOT_ACTIVATED = f"not needed: {NEW} was built inactive (--no-activate) and never activated; it is left READY, inactive"  # Phase 9: nothing to restore before activate
 OLD_SERVICE = {"status": {"latestReadyRevisionName": OLD_REV, "url": URL,
                           "traffic": [{"revisionName": OLD_REV, "percent": 100}]}}
 RUNNING = {"status": {"startTime": "t0"}}
@@ -771,6 +1066,12 @@ def listed(run_id: str = NEW, state: dict | None = None, name: str = BUILD_EXEC)
     return {"metadata": {"name": name},
             "spec": {"template": {"spec": {"containers": [{"args": ["-m", "api.sandbox", "build", "--run-id",
                                                                     run_id]}]}}},
+            **(state or FINISHED)}
+
+
+def activation_listed(state: dict | None = None, name: str = ACTIVATE_EXEC) -> dict:
+    return {"metadata": {"name": name},
+            "spec": {"template": {"spec": {"containers": [{"args": ["-m", "api.sandbox", "activate", NEW]}]}}},
             **(state or FINISHED)}
 
 
@@ -999,6 +1300,12 @@ def _build_lines(*lines):
     return apply
 
 
+def _activate_lines(*lines):
+    def apply(cloud):
+        cloud.activate_lines = list(lines)
+    return apply
+
+
 def _fail_bench(cloud):
     cloud.raise_on.append((is_call("run", "jobs", "execute", having="demo-bench"), boom("gcloud run jobs execute")))
 
@@ -1035,8 +1342,7 @@ AFTER_EXECUTE = [
     ("failed_build", "build log read-back", _fail_build_log, None, False),
     ("failed_build", "build log lacks previous ACTIVE",
      _build_lines(f"template {NEW} ACTIVE for dv-1", "retired: tpl-old"), None, False),
-    ("failed_build", "build log lacks retired",
-     _build_lines("previous ACTIVE: tpl-old", f"template {NEW} ACTIVE for dv-1"), None, False),
+    ("failed_activate", "activate log lacks retired", _activate_lines(f"template {NEW} ACTIVE for dv-1"), None, False),
     ("failed_bench", "bench", _fail_bench, None, False),
     ("failed_deploy", "deploy", _fail_deploy, None, True),
     ("failed_readback", "max 2", _readback(max_scale="2"), None, True),
@@ -1064,12 +1370,19 @@ def test_a_failure_from_the_build_execute_on_settles_then_restores(status, case,
     assert run_release(cfg, cloud, out_dir, fakes) == 1
     rec = only_record(out_dir)
     assert rec["status"] == status
+    assert rec["recovery"]["settle"]["execution"] == BUILD_EXEC
+    if status == "failed_build":  # Phase 9: the build left <new> READY and nothing activated it: settle, no restore
+        assert settles(cloud) and not restores(cloud)
+        assert rec["recovery"]["restore"] == NOT_ACTIVATED and "settle_activate" not in rec["recovery"]
+        assert not indexes(cloud, is_call("run", "jobs", "execute", having=f"--args=-m,api.sandbox,activate,{NEW}"))
+        assert not traffic(cloud) and rec["reconcile"] is None
+        return
     assert settles(cloud) and restores(cloud), "settle, then restore"
     assert max(settles(cloud)) < min(restores(cloud))
     assert len(restores(cloud)) == 1
     assert rec["recovery"]["restore"] == "restored: tpl-old ACTIVE"
-    assert rec["recovery"]["settle"]["execution"] == BUILD_EXEC
-    if case.startswith("build log lacks"):  # the build_log gate: never on to the bench or the deploy
+    assert rec["recovery"]["settle_activate"] == {"execution": ACTIVATE_EXEC, "state": "finished"}
+    if case.startswith(("build log lacks", "activate log lacks")):  # a log gate: never on to the bench or deploy
         assert not indexes(cloud, lambda c: "demo-bench" in c) and not cloud.did("run", "deploy")
     if deployed:
         [move] = traffic(cloud)
@@ -1088,10 +1401,12 @@ def test_an_ambiguous_build_execute_is_settled_before_restore(cfg, out_dir, fake
     cloud.executions = [listed(state=RUNNING)]
     cloud.exec_states = [RUNNING, RUNNING, FINISHED]
     assert run_release(cfg, cloud, out_dir, fakes) == 1
-    assert only_record(out_dir)["status"] == "failed_build"
+    rec = only_record(out_dir)
+    assert rec["status"] == "failed_build"
     lists = indexes(cloud, is_call("run", "jobs", "executions", "list"))
     describes = indexes(cloud, is_call("run", "jobs", "executions", "describe"))
-    assert len(lists) == 1 and len(describes) == 3 and lists[0] < describes[0] < describes[-1] < restores(cloud)[0]
+    assert len(lists) == 1 and len(describes) == 3 and lists[0] < describes[0] < describes[-1]
+    assert not restores(cloud) and rec["recovery"]["restore"] == NOT_ACTIVATED and rec["reconcile"] is None
     assert flag(cloud.calls[lists[0]], "--job") == "demo-build"
     assert fakes.sleeps.count(10) == 3 and not indexes(cloud, is_call("run", "jobs", "executions", "cancel"))
 
@@ -1184,9 +1499,8 @@ def test_a_build_execute_that_never_started_is_settled_as_never_started(cfg, out
     assert not indexes(cloud, is_call("run", "jobs", "executions", "describe"))
     rec = only_record(out_dir)
     assert rec["recovery"]["settle"] == {"execution": None, "state": "never started"}
-    [restore] = restores(cloud)
-    assert max(lists) < restore
-    assert rec["recovery"]["restore"] == "nothing to do: tpl-old ACTIVE" and rec["reconcile"] is None
+    assert not restores(cloud)  # Phase 9: an inactive build never needs one
+    assert rec["recovery"]["restore"] == NOT_ACTIVATED and rec["reconcile"] is None
 
 
 def test_an_unmatched_running_build_execution_keeps_the_record_pending_until_it_ends(cfg, out_dir, fakes, capsys):
@@ -1211,7 +1525,8 @@ def test_an_unmatched_running_build_execution_keeps_the_record_pending_until_it_
     assert run_release(cfg, nxt, out_dir, Fakes()) == 1
     rec = only_record(out_dir)
     assert rec["recovery"]["settle"] == {"execution": None, "state": "never started"}
-    assert restores(nxt) and rec["reconcile"] is None and rec["status"] == "interrupted"
+    assert not restores(nxt) and rec["recovery"]["restore"] == NOT_ACTIVATED
+    assert rec["reconcile"] is None and rec["status"] == "interrupted"
     assert not indexes(nxt, is_call("run", "jobs", "execute", having=BUILD_ARGS))
 
 
@@ -1246,27 +1561,39 @@ FIRST_NOTHING = [f"restore: {NEW} is not ACTIVE; nothing to do", "ACTIVE: none"]
 FIRST_UNDONE = [f"first release undone: {NEW} RETIRED", "ACTIVE: none"]
 
 
-@pytest.mark.parametrize("path", ["build never activated", "build log not read"])
-def test_a_first_release_whose_build_fails_goes_back_to_no_template(path, cfg, out_dir, fakes, capsys):
-    """06-REVIEW WR-06: a first release (no known-good release, no earlier activation, nothing serving) whose build
-    fails before its log is read goes back to no template ACTIVE and is not left reconcile: pending."""
+@pytest.mark.parametrize("path", ["build execute failed", "build log not read"])
+def test_a_first_release_whose_build_fails_restores_nothing(path, cfg, out_dir, fakes, capsys):
+    """Phase 9: a first release whose inactive build fails activated nothing, so it settles, restores nothing and is
+    not left reconcile: pending (the WR-06 `--first` path now follows an activation that retired none)."""
     cloud = Cloud()
-    if path == "build never activated":
+    if path == "build execute failed":
         cloud.raise_on.append((is_call("run", "jobs", "execute", having=BUILD_ARGS), boom("gcloud run jobs execute")))
         cloud.executions = [listed()]
-        cloud.restore_lines = list(FIRST_NOTHING)
     else:
         cloud.build_lines = []
-        cloud.restore_lines = list(FIRST_UNDONE)
     assert run_release(cfg, cloud, out_dir, fakes) == 1
     rec = only_record(out_dir)
     assert rec["status"] == "failed_build"
     assert rec["recovery"]["settle"] == {"execution": BUILD_EXEC, "state": "finished"}
+    assert not restores(cloud) and rec["recovery"]["restore"] == NOT_ACTIVATED and rec["reconcile"] is None
+    assert "recovery is not finished" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("outcome", ["undone", "nothing to do"])
+def test_an_activation_that_retired_none_is_undone_with_first(outcome, cfg, out_dir, fakes, capsys):
+    """09-24 checklist item 7, Recovery: the activation retired none (`retired: none`), then the bench failed: the
+    activate execution is settled, then `restore <new> --first`, and no template ACTIVE afterwards is verified."""
+    cloud = Cloud()
+    cloud.build_lines = ["previous ACTIVE: none", f"template {NEW} READY for dv-1"]
+    cloud.restore_lines = list(FIRST_UNDONE if outcome == "undone" else FIRST_NOTHING)
+    _fail_bench(cloud)
+    assert run_release(cfg, cloud, out_dir, fakes) == 1
+    rec = only_record(out_dir)
+    assert rec["status"] == "failed_bench" and rec["previous_template"] is None
+    assert rec["recovery"]["settle_activate"] == {"execution": ACTIVATE_EXEC, "state": "finished"}
     [restore] = restores(cloud)
     assert FIRST_RESTORE_ARGS in cloud.calls[restore]
-    want = "nothing to do: none ACTIVE" if path == "build never activated" else "undone: none ACTIVE"
-    assert rec["recovery"]["restore"] == want and rec["reconcile"] is None
-    assert "recovery is not finished" not in capsys.readouterr().err
+    assert rec["recovery"]["restore"] == f"{outcome}: none ACTIVE" and rec["reconcile"] is None
 
 
 @pytest.mark.parametrize("not_first", ["a known-good release", "a serving revision", "an earlier activation"])
@@ -1280,8 +1607,7 @@ def test_none_active_is_a_mismatch_unless_this_is_the_first_release(not_first, c
     else:
         manifest.write({"kind": "release", "id": "20261015T000000Z-bbbbbbbbbbbb", "status": "failed_bench",
                         "previous_known_good": None, "activated_template": "tpl-x", "reconcile": None}, out_dir)
-    cloud.raise_on.append((is_call("run", "jobs", "execute", having=BUILD_ARGS), boom("gcloud run jobs execute")))
-    cloud.executions = [listed()]
+    _fail_bench(cloud)  # after an activation that retired tpl-old
     cloud.restore_lines = list(FIRST_NOTHING)
     assert run_release(cfg, cloud, out_dir, fakes) == 1
     rec = records(out_dir)[-1]
@@ -1455,7 +1781,8 @@ def test_a_non_zero_deploy_whose_revision_is_ready_goes_on_to_the_access_check(c
     cloud.raise_on.append((is_call("run", "deploy"), boom("gcloud run deploy", 1, "allUsers binding refused")))
     assert run_release(cfg, cloud, out_dir, fakes) == 0
     rec = only_record(out_dir)
-    assert rec["status"] == "known_good" and "non-zero" in rec["progress"][7]["note"]
+    [deployed] = [e for e in rec["progress"] if e["step"] == "service_deploy"]
+    assert rec["status"] == "known_good" and "non-zero" in deployed["note"]
     assert indexes(cloud, is_call("run", "services", "get-iam-policy"))
     deployed = cloud.calls.index(call(cloud, "run", "deploy"))
     described = [i for i in indexes(cloud, is_call("run", "services", "describe")) if i > deployed]
@@ -1834,11 +2161,15 @@ def test_every_release_argv_keeps_the_flag_and_environment_rules(cfg, out_dir, t
         assert deploy.count("--max") == 1 and flag(deploy, "--max") == "1"
         assert deploy.count("--allow-unauthenticated") == 1
         assert list(env_of(deploy)) == ["CLOUD_SQL_INSTANCE", "DB_USER", "DB_NAME", "DEMO_MODE", "ENGINE_WORKER",
-                                        "GIT_COMMIT", "GLOBAL_AI_CAP", "CONTACT_EMAIL", "GCP", "GEMINI_MODEL",
-                                        "VERTEX_LOCATION", "DATA_BUCKET", "UPLOADS_BUCKET"]
+                                        "GIT_COMMIT", "GLOBAL_AI_CAP", "CONTACT_EMAIL", "DATA_BUCKET",
+                                        "UPLOADS_BUCKET", "GCP", "GEMINI_MODEL", "VERTEX_LOCATION", "PROJECT"]
         assert env_of(deploy)["CONTACT_EMAIL"] == SYNTHETIC["CONTACT_EMAIL"] and env_of(deploy)["GCP"] == "on"
         assert env_of(deploy)["UPLOADS_BUCKET"] == SYNTHETIC["UPLOADS_BUCKET"]
-        for absent in ("PROJECT", "BILLING_ACCOUNT"):
+        # Phase 9 (09-24 checklist item 2): the model's keys reach the service; billing never does
+        assert {k: env_of(deploy)[k] for k in ("GCP", "GEMINI_MODEL", "VERTEX_LOCATION", "PROJECT")} == {
+            "GCP": "on", "GEMINI_MODEL": cfg["GEMINI_MODEL"], "VERTEX_LOCATION": cfg["VERTEX_LOCATION"],
+            "PROJECT": PROJECT}
+        for absent in ("BILLING_ACCOUNT", "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_GENAI_USE_ENTERPRISE"):
             assert absent not in env_of(deploy)
     assert not [c for c in happy.calls if "--no-invoker-iam-check" in c]
 
@@ -2377,6 +2708,7 @@ def test_the_new_drill_switches_need_a_drill_configuration(flags, argv, cfg, tmp
 
 
 DRILL_CASES = [("build_execute", "failed_build", False), ("build_log", "failed_build", False),
+               ("briefs", "failed_briefs", False), ("activate", "failed_activate", False),
                ("bench", "failed_bench", False),
                ("service_deploy", "failed_deploy", True), ("read_back", "failed_readback", True),
                ("access", "failed_readback", True), ("smoke", "failed_smoke", True),
@@ -2397,8 +2729,13 @@ def test_a_forced_failure_after_each_step_runs_the_real_recovery(step, status, d
     assert {p["state"] for p in rec["progress"]} == {"ok"}  # no later step started
     assert rec["drill"] == {"fail_after": step, "fail_restore_once": False, "fail_settle_once": False,
                             "unready_deploy": False}
+    if step in ("build_execute", "build_log", "briefs"):  # Phase 9: before activate, nothing to restore
+        assert settles(cloud) and not restores(cloud) and rec["recovery"]["restore"] == NOT_ACTIVATED
+        assert not traffic(cloud) and not cloud.did("run", "deploy") and rec["reconcile"] is None
+        return
     assert len(restores(cloud)) == 1 and settles(cloud) and max(settles(cloud)) < min(restores(cloud))
     assert rec["recovery"]["restore"] == "restored: tpl-old ACTIVE"
+    assert rec["recovery"]["settle_activate"] == {"execution": ACTIVATE_EXEC, "state": "finished"}
     if deployed:
         [move] = traffic(cloud)
         assert flag(move, "--to-revisions") == f"{OLD_REV}=100" and min(restores(cloud)) < cloud.calls.index(move)
@@ -2412,34 +2749,43 @@ def test_a_forced_failure_after_each_step_runs_the_real_recovery(step, status, d
     assert f"release failed at {step} ({status}): drill: forced failure after {step}" in err
 
 
-def test_a_drill_first_release_failed_after_its_build_execute_goes_back_to_no_template(drill_cfg, out_dir, fakes,
-                                                                                      capsys):
-    """06-REVIEW WR-06 path 2 on the drill (DL): a first release whose build activated but whose log was never read
-    (the forced failure comes right after build_execute ends ok) settles by the recorded execution name, is undone by
-    `restore <new> --first` (`undone: none ACTIVE`), moves no traffic and is not left pending. The earlier D0-like
-    record (a failed build that activated nothing) does not stop it from being a first release."""
+def test_a_drill_first_release_failed_after_its_activation_goes_back_to_no_template(drill_cfg, out_dir, fakes,
+                                                                                   capsys):
+    """WR-06 on the drill, Phase 9 shape: a first release whose activation retired none (`retired: none`) and then
+    fails right after activate ends ok settles the build and activate executions by their recorded names, is undone
+    by `restore <new> --first` (`undone: none ACTIVE`), moves no traffic and is not left pending."""
     manifest.write({"kind": "release", "id": "20261016T120000Z-0123456789ab", "status": "failed_build",
                     "previous_known_good": None, "previous_revision": None, "reconcile": None}, out_dir)
     cloud = Cloud()
+    cloud.build_lines = ["previous ACTIVE: none", f"template {NEW} READY for dv-1"]
     cloud.restore_lines = list(FIRST_UNDONE)
-    assert run_release(drill_cfg, cloud, out_dir, fakes, drill_fail_after="build_execute") == 1
+    assert run_release(drill_cfg, cloud, out_dir, fakes, drill_fail_after="activate") == 1
     rec = records(out_dir)[-1]
-    assert rec["id"] == RID and rec["status"] == "failed_build"
-    assert rec["error"] == "drill: forced failure after build_execute" and rec["reason"] == "drill"
+    assert rec["id"] == RID and rec["status"] == "failed_activate"
+    assert rec["error"] == "drill: forced failure after activate" and rec["reason"] == "drill"
     last = rec["progress"][-1]
-    assert (last["step"], last["state"], last["execution"]) == ("build_execute", "ok", BUILD_EXEC)
-    assert "activated_template" not in rec
-    assert not [c for c in cloud.calls if c[1:3] == ["logging", "read"] and BUILD_EXEC in c[3]]  # log never read
+    assert (last["step"], last["state"], last["execution"]) == ("activate", "ok", ACTIVATE_EXEC)
     assert rec["recovery"]["settle"] == {"execution": BUILD_EXEC, "state": "finished"}
+    assert rec["recovery"]["settle_activate"] == {"execution": ACTIVATE_EXEC, "state": "finished"}
     assert not indexes(cloud, is_call("run", "jobs", "executions", "list"))
     [restore] = restores(cloud)
     assert FIRST_RESTORE_ARGS in cloud.calls[restore]
     assert rec["recovery"]["restore"] == "undone: none ACTIVE"
     assert "traffic" not in rec["recovery"] and rec["reconcile"] is None and not updates_traffic(cloud)
     err = capsys.readouterr().err
-    assert "release failed at build_execute (failed_build): drill: forced failure after build_execute" in err
-    assert "recovery: restore: undone: none ACTIVE" in err
-    assert "recovery: traffic" not in err and "recovery is not finished" not in err
+    assert "recovery: restore: undone: none ACTIVE" in err and "recovery is not finished" not in err
+
+
+def test_the_build_execute_drill_on_an_inactive_build_restores_nothing(drill_cfg, out_dir, fakes):
+    """The build_execute drill on a Phase 9 release: the build left <new> READY and its log was never read, so the
+    recovery settles by the recorded name and restores nothing."""
+    cloud = Cloud()
+    assert run_release(drill_cfg, cloud, out_dir, fakes, drill_fail_after="build_execute") == 1
+    rec = only_record(out_dir)
+    assert rec["status"] == "failed_build" and "activated_template" not in rec
+    assert not [c for c in cloud.calls if c[1:3] == ["logging", "read"] and BUILD_EXEC in c[3]]
+    assert rec["recovery"]["settle"] == {"execution": BUILD_EXEC, "state": "finished"}
+    assert not restores(cloud) and rec["recovery"]["restore"] == NOT_ACTIVATED and rec["reconcile"] is None
 
 
 def test_the_build_execute_drill_dry_run_prints_where_it_would_fail(tmp_path, out_dir, capsys):
@@ -2504,7 +2850,7 @@ def test_a_drill_dry_run_prints_where_it_would_fail_and_runs_no_recovery(tmp_pat
 # --- 261017-lel: the drill switches for the rare recovery paths (WR-07, WR-09, WR-10, WR-11) ------------------------
 
 LIVE_KEYS = ["CLOUD_SQL_INSTANCE", "DB_USER", "DB_NAME", "DEMO_MODE", "ENGINE_WORKER", "GIT_COMMIT", "GLOBAL_AI_CAP",
-             "CONTACT_EMAIL", "GCP", "GEMINI_MODEL", "VERTEX_LOCATION", "DATA_BUCKET", "UPLOADS_BUCKET"]
+             "CONTACT_EMAIL", "DATA_BUCKET", "UPLOADS_BUCKET", "GCP", "GEMINI_MODEL", "VERTEX_LOCATION", "PROJECT"]
 UNREADY_REV = "demo-svc-drill-00001-unready"
 
 
@@ -2549,16 +2895,19 @@ def test_an_unready_first_deploy_is_recovered_and_the_next_release_is_first(dril
     pending. The next plain release sees a service with no ready revision, so it is a first release and known good."""
     cloud = Cloud()
     cloud.build_lines = ["previous ACTIVE: none", f"template {NEW} ACTIVE for dv-1", "retired: none"]
+    cloud.restore_lines = list(FIRST_UNDONE)
     cloud.created_revision = UNREADY_REV
     assert run_release(drill_cfg, cloud, out_dir, fakes, drill_unready=True) == 1
     [deploy] = [c for c in cloud.calls if c[1:3] == ["run", "deploy"]]
     assert list(env_of(deploy)) == LIVE_KEYS and env_of(deploy)["GLOBAL_AI_CAP"] == release.DRILL_UNREADY_CAP
     rec = only_record(out_dir)
     assert rec["status"] == "failed_deploy" and rec["drill"]["unready_deploy"] is True
-    assert rec["recovery"]["restore"] == ("not run: no template was ACTIVE before this build, so there is none to go "
-                                          "back to")
+    # Phase 9: the activation retired none, so its undo is `restore <new> --first` (09-24 checklist item 7)
+    [restore] = restores(cloud)
+    assert FIRST_RESTORE_ARGS in cloud.calls[restore]
+    assert rec["recovery"]["restore"] == "undone: none ACTIVE"
     assert rec["recovery"]["traffic"] == "not moved: no previous revision (the first release)"
-    assert rec["reconcile"] is None and not restores(cloud) and not updates_traffic(cloud)
+    assert rec["reconcile"] is None and not updates_traffic(cloud)
     assert release.known_good(out_dir) is None
     err = capsys.readouterr().err
     assert "release failed at service_deploy (failed_deploy): gcloud run deploy failed (exit 1)" in err
@@ -2793,9 +3142,9 @@ def test_a_public_set_is_uploaded_mounted_and_built_and_its_version_recorded(tmp
     build = call(cloud, "run", "jobs", "deploy", name="demo-build")
     i = build.index("--set-env-vars")
     assert build[i + 2:i + 9] == ["--add-volume", DATA_VOLUME, "--add-volume-mount", DATA_MOUNT, "--command", "python",
-                                  f"--args=-m,api.sandbox,build,/mnt/release-data/{dv}"]
+                                  f"--args=-m,api.sandbox,build,/mnt/release-data/{dv},--no-activate"]
     build_exec = call(cloud, "run", "jobs", "execute", name="demo-build")
-    assert f"--args=-m,api.sandbox,build,/mnt/release-data/{dv},--run-id,{NEW}" in build_exec
+    assert f"--args=-m,api.sandbox,build,/mnt/release-data/{dv},--no-activate,--run-id,{NEW}" in build_exec
     bench = call(cloud, "run", "jobs", "deploy", name="demo-bench")
     assert "--add-volume" not in bench and "--add-volume-mount" not in bench
     assert bench[bench.index("--command"):] == ["--command", "python", PUBLIC_BENCH_ARGS, "--project", PROJECT]
@@ -2811,7 +3160,7 @@ def test_a_public_set_is_uploaded_mounted_and_built_and_its_version_recorded(tmp
     assert set(rec["bench"]) == {"execution", "result", "gate", "resets", "lines"}
     steps = [p["step"] for p in rec["progress"]]
     assert steps == ["secret", "data", "image", "previous_revision", "build_deploy", "build_execute", "build_log",
-                     "bench", "service_deploy", "read_back", "access", "smoke", "journey"]
+                     "briefs", "activate", "bench", "service_deploy", "read_back", "access", "smoke", "journey"]
     assert rec["progress"][1] == {"step": "data", "state": "ok", "dataset_version": dv, "parts": 2}
     assert str(folder) not in json.dumps(rec)
     out = capsys.readouterr()
@@ -2830,9 +3179,11 @@ def test_with_release_data_dir_empty_the_release_is_unchanged(cfg, out_dir, fake
         "gcloud", "run", "jobs", "deploy", "demo-build", "--image", REF, "--region", REGION, "--service-account",
         DEPLOY_SA, "--cpu", "1", "--memory", "1Gi", "--max-retries", "0", "--task-timeout", "180m", "--set-env-vars",
         f"CLOUD_SQL_INSTANCE={PROJECT}:{REGION}:demo-sql,DB_USER=deploy-sa@x-demo-12.iam,"
-        f"RUN_DB_USER=run-sa@x-demo-12.iam,DB_NAME=demo_db,GIT_COMMIT={SHA}",
-        "--command", "python", "--args=-m,api.sandbox,build", "--project", PROJECT]
-    assert f"--args=-m,api.sandbox,build,--run-id,{NEW}" in call(cloud, "run", "jobs", "execute", name="demo-build")
+        f"RUN_DB_USER=run-sa@x-demo-12.iam,DB_NAME=demo_db,GIT_COMMIT={SHA},"
+        f"GCP=on,GEMINI_MODEL=gemini-3.5-flash,VERTEX_LOCATION=asia-southeast1,PROJECT={PROJECT}",
+        "--command", "python", "--args=-m,api.sandbox,build,--no-activate", "--project", PROJECT]
+    assert f"--args=-m,api.sandbox,build,--no-activate,--run-id,{NEW}" in call(cloud, "run", "jobs", "execute",
+                                                                              name="demo-build")
     assert call(cloud, "run", "jobs", "deploy", name="demo-bench") == [
         "gcloud", "run", "jobs", "deploy", "demo-bench", "--image", REF, "--region", REGION, "--service-account",
         RUN_SA, "--cpu", "1", "--memory", "1Gi", "--max-retries", "0", "--task-timeout", "15m", "--set-env-vars",
@@ -2845,8 +3196,8 @@ def test_with_release_data_dir_empty_the_release_is_unchanged(cfg, out_dir, fake
     assert not [c for c in cloud.calls if "--top" in " ".join(c) or "--resets" in " ".join(c)]
     rec = only_record(out_dir)
     assert [p["step"] for p in rec["progress"]] == [
-        "secret", "image", "previous_revision", "build_deploy", "build_execute", "build_log", "bench",
-        "service_deploy", "read_back", "access", "smoke", "journey"]
+        "secret", "image", "previous_revision", "build_deploy", "build_execute", "build_log", "briefs", "activate",
+        "bench", "service_deploy", "read_back", "access", "smoke", "journey"]
     assert rec["dataset_version"] == "dv-1" and rec["bench"]["gate"] == BENCH_LINES[-1]
     assert set(rec["bench"]) == {"execution", "result", "gate", "lines"}
 
@@ -2966,10 +3317,12 @@ def test_the_build_must_activate_the_uploaded_dataset_version(lines, tmp_path, o
     assert run_release(public_cfg(tmp_path, folder), cloud, out_dir, fakes) == 1
     rec = only_record(out_dir)
     assert rec["status"] == "failed_build" and rec["progress"][-1] == {"step": "build_log", "state": "failed"}
-    assert dv in rec["error"] and ("ds-000000000000" in rec["error"] or "nothing read" in rec["error"])
-    assert settles(cloud) and restores(cloud) and settles(cloud)[0] < restores(cloud)[0]
-    assert indexes(cloud, is_call("run", "jobs", "execute", having=RESTORE_ARGS))
-    assert rec["recovery"]["restore"] == "restored: tpl-old ACTIVE" and rec["reconcile"] is None
+    if "ds-000000000000" in json.dumps(lines):  # another version: the dataset check names both
+        assert dv in rec["error"] and "ds-000000000000" in rec["error"]
+    else:  # no READY line at all: the template check fails first, naming the template it wanted
+        assert "READY line" in rec["error"] and NEW in rec["error"]
+    assert settles(cloud) and not restores(cloud)  # Phase 9: the build left <new> READY; nothing to restore
+    assert rec["recovery"]["restore"] == NOT_ACTIVATED and rec["reconcile"] is None
     assert not cloud.did("run", "deploy")
 
 
@@ -2995,8 +3348,9 @@ def test_the_cli_dry_run_of_a_public_set_uploads_mounts_and_names_the_dataset_ch
                                                    f"gs://demo-data/{dv}/parts/"]
     [build] = [line for line in lines if line.startswith("+ gcloud run jobs deploy demo-build ")]
     assert "--add-volume" in build and "mount-path=/mnt/release-data" in build
-    [execute] = [line for line in lines if line.startswith("+ gcloud run jobs execute demo-build ")]
-    assert f"/mnt/release-data/{dv},--run-id" in execute
+    [execute] = [line for line in lines if line.startswith("+ gcloud run jobs execute demo-build ")
+                 and "api.sandbox,build" in line]
+    assert f"/mnt/release-data/{dv},--no-activate,--run-id" in execute
     [bench] = [line for line in lines if line.startswith("+ gcloud run jobs deploy demo-bench ")]
     assert f" {PUBLIC_BENCH_ARGS} " in bench
     assert [line for line in p.stdout.splitlines() if line.startswith("dry run: ") and "ACTIVE for" in line]

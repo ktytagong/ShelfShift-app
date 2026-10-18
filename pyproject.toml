@@ -6,7 +6,7 @@ requires-python = ">=3.12,<3.13"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "live: needs Vertex AI or BigQuery; run before recording the video and before rehearsals",
+    "live: user-run paid Vertex AI/BigQuery checks; requires GCP=on and is excluded by default",
     "web: browser tests in tests/web against a real API child and vite preview; run with make test-web",
     "deployed: the judge's path against a running URL (the deployed service, or the local Compose app with SS_JOURNEY_LOCAL=1); never touches a database; run with make journey-deployed or make compose-check",
 ]

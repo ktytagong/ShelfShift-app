@@ -73,6 +73,13 @@ CREATE TABLE IF NOT EXISTS demo_runs (
   created_at timestamptz NOT NULL DEFAULT now(),
   retired_at timestamptz);                                   -- when a reset retired it (IN-01 pruning)
 
+-- READY means the template passed every build check but has not been published (09 D-25).
+ALTER TABLE demo_runs DROP CONSTRAINT IF EXISTS demo_runs_status_check;
+ALTER TABLE demo_runs ADD CONSTRAINT demo_runs_status_check
+  CHECK (status IN ('INITIALIZING', 'READY', 'ACTIVE', 'RETIRED', 'FAILED'));
+ALTER TABLE demo_runs ADD COLUMN IF NOT EXISTS activated_at timestamptz;
+ALTER TABLE demo_runs ADD COLUMN IF NOT EXISTS predecessor_run_id text;
+
 -- Policy settings written in one sandbox (04-CONTEXT D-09, D-23), as field and JSON value. The seeded Policy is
 -- in ref_data, and a clone copies these rows like any per-run table.
 CREATE TABLE IF NOT EXISTS run_policy (
@@ -166,6 +173,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS one_open_case_per_lot ON cases (run_id, lot_id
 -- The recommended plan's destination (null unless a transfer), so the board can scope a case to either store
 -- (05.2 D-26). A database made before this column existed gets it here.
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS plan_dest text;
+-- Select another plan (07-CONTEXT D-23): {rec_version, plan_key, label, fact_checks, by, at}, the source manager's
+-- choice among the active version's engine options with that option's own fact checks; in force only while its
+-- rec_version is the active one, cleared by a new version (research F-21, Pitfall 11). Null: the recommended plan.
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS selected jsonb;
 -- A lot the morning screen flagged on a public set whose engine search waits until someone opens it (05.2 D-23..D-25,
 -- D-28, api/flags.py): the screen's own figures, never a plan. A workspace reads its template's flags (it is never
 -- cloned, api/overlay.py OVERLAID) and its own once its day differs. missing_data names a lot the screen could not
@@ -189,6 +200,14 @@ CREATE TABLE IF NOT EXISTS decisions (
   run_id text, case_id text, rec_version text, round int, role text, decision text NOT NULL, session_id text,
   reason text, decided_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (run_id, case_id, rec_version, round, role));
+-- The acknowledgement an approve or accept gave (07-CONTEXT D-12, D-26, research F-27): {rec_version, plan_key,
+-- fact_ids} of the plan in force's Advisory facts, null when it had none (and on reject, decline, or a row stored
+-- before Phase 7)
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS acknowledged jsonb;
+-- The key of the plan the decision was given for (07-CONTEXT D-23): the plan in force's, on every decision
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS plan_key text;
+-- When the approved plan this decision belongs to was cancelled (07-CONTEXT D-23): the row stays in history, marked
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
 CREATE TABLE IF NOT EXISTS activity_log (
   run_id text, seq int, at timestamptz NOT NULL DEFAULT now(), day int NOT NULL, type text NOT NULL, case_id text,
   payload jsonb NOT NULL DEFAULT '{}', PRIMARY KEY (run_id, seq));
@@ -215,6 +234,88 @@ ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS replaced_by text;
 -- A replaced request's engine fact id: its fact_id becomes fact_id#request_id, so the UNIQUE above keeps holding the
 -- one live request per fact (additive only, Phase 6 D-17).
 ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS replaced_fact_id text;
+-- A request's real deadline (07-CONTEXT D-05), stored UTC
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS due_at timestamptz;
+-- When the branch says it checked (07-CONTEXT D-22), stored UTC
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS observed_at timestamptz;
+-- When the addressed branch closed the request with Can't check (07-CONTEXT D-07), stored UTC
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS closed_at timestamptz;
+-- Who closed it: the addressed branch's manager as "manager:<branch>" (07-CONTEXT D-07)
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS closed_by text;
+-- The combined request a part belongs to (07-CONTEXT D-11, D-22): the first part's request_id, shared by a count part
+-- and an expiry part asked together; null on a single request, whose own request_id stands in. The per-version limit
+-- counts distinct groups, and Can't check closes every open part of one
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS request_group text;
+-- What the part asks (07-CONTEXT D-11): "count" (Count stock) or "expiry" (Check printed expiry date); null on a row
+-- stored before 07-08, which is a count
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS part text;
+-- Phase 09 human Send. Original checked Gemini wording stays on evidence_drafts.
+-- Nullable additions preserve older requests without inventing a sender or send time.
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS draft_id text;
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS message text;
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS sent_by text;
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS sent_at timestamptz;
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS asked_at timestamptz;
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS plan_key text;
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS request_context jsonb;
+-- A confirmed fact's check time (07-CONTEXT D-22): compared with the fact in force at confirm; null before Phase 7,
+-- when confirmed_at stands in for it
+ALTER TABLE reported_facts ADD COLUMN IF NOT EXISTS observed_at timestamptz;
+-- The branch the fact is about (a count's addressed branch; a field report's branch), for its label and scope (D-15)
+ALTER TABLE reported_facts ADD COLUMN IF NOT EXISTS branch text;
+-- The storage zone a branch fact applies to (research F-9); null applies to every zone
+ALTER TABLE reported_facts ADD COLUMN IF NOT EXISTS zone text;
+-- The later fact that replaced this one (a D-15 correction, 07-13); a replaced fact is never in force
+ALTER TABLE reported_facts ADD COLUMN IF NOT EXISTS replaced_by text;
+-- Where the fact came from: "request" (an answered request), or a field report's source (07-13)
+ALTER TABLE reported_facts ADD COLUMN IF NOT EXISTS source text;
+-- An attached file's sha256 (07-CONTEXT D-20): its object name is <run_id>/<sha256>.<ext>, never the client's name
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS file_sha256 text;
+-- The attached file's size in bytes (at most uploads.max_bytes)
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS file_size int;
+-- Whether the file spent the workspace's file allowance (a report's first file, D-20); false for an answer photo or a
+-- replacement, which spend only the cross-workspace upload cap; null without a file
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS file_counted boolean;
+-- Field reports filed by hand (07-CONTEXT D-14, D-15, D-17, D-20; research F-26). A report is a signals row with
+-- report_id set (the first revision's signal_id, shared by every revision); an answer to a request has none. Its own
+-- states: READ (filed), CONFIRMED, DISMISSED (by the owner; dismissed_at and dismissed_by tell it apart from an
+-- answer's replaced revision, F-26), WITHDRAWN (by the reporter, before confirmation).
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS report_id text;
+-- The case it was filed from, and the lot, product and run it is about (scope and pre-filled fields)
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS case_id text;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS lot_id text;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS sku text;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS run_code text;
+-- Who confirmed it and when (the owner; self-confirmation allowed, D-15), stored UTC
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS confirmed_at timestamptz;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS confirmed_by text;
+-- Who dismissed it, when and why (the owner; never applied, D-15)
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS dismissed_at timestamptz;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS dismissed_by text;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS dismiss_reason text;
+-- When the reporter withdrew it, before confirmation (no operational effect, D-15)
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS withdrawn_at timestamptz;
+-- The CONFIRMED report this one corrects: its confirmed fact replaces that report's fact from then on (D-15)
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS corrects text;
+-- The live cases in the report's scope when it was filed (the New report badge, D-16), a JSON array of case ids
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS affects jsonb;
+-- The reported fact its confirmation wrote
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS fact_id text;
+-- Mark done on an advisory task (a confirmed DISPLAY condition report, 07-CONTEXT D-13): when and by whom its branch's
+-- manager closed it, stored UTC; the task leaves the open count, its history is kept, and no hold is touched
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS task_done_at timestamptz;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS task_done_by text;
+-- The impact preview of this revision (07-CONTEXT D-16): "Potential impact · unconfirmed", up to reports.preview_cases
+-- affected live cases re-run as what-ifs and the rest counted; stored per revision, so a repeat runs no engine and an
+-- edit (a new revision) previews afresh. It changes nothing and blocks nothing
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS preview jsonb;
+-- Where a request came from (07-CONTEXT D-18, 07-16): 'simulated' for one the template build preloaded ("Simulated
+-- request"); null for a person's or the agent's. A preloaded answer or report carries it in signals.provenance
+ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS provenance text;
+-- When the template build preloaded its simulated material (07-CONTEXT D-05, D-18; api/preload.py): a clone shifts
+-- every preloaded time by its own now() minus this, so each workspace's deadlines start when it is created. demo_runs
+-- is not cloned; null on a sandbox and on a template built before 07-16
+ALTER TABLE demo_runs ADD COLUMN IF NOT EXISTS preloaded_at timestamptz;
 
 -- Assistant (Phase 9). Chat history lives in our own tables, the spec's documented fallback to ADK's
 -- DatabaseSessionService. The agent gets the case's earlier turns passed in on each call.
@@ -232,6 +333,54 @@ CREATE UNIQUE INDEX IF NOT EXISTS one_generation_at_a_time ON ai_outputs (run_id
 CREATE TABLE IF NOT EXISTS chat_requests (
   run_id text, request_id text, session_id text NOT NULL, case_id text, kind text NOT NULL, status text NOT NULL,
   started_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (run_id, request_id));
+
+-- Phase 09 admission and checked publication. Extend the existing output store.
+ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS plan_key text;
+ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS assistant_version text;
+ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS snapshot_id text;
+ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS actor jsonb;
+ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS sources jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS cards jsonb NOT NULL DEFAULT '[]';
+-- Install the more precise guard before removing its older, overly broad index.
+CREATE UNIQUE INDEX IF NOT EXISTS one_scoped_generation_at_a_time ON ai_outputs
+  (run_id, kind, coalesce(case_id, ''), coalesce(rec_version, ''), coalesce(plan_key, ''),
+   coalesce(signal_id, ''), coalesce(signal_revision, 0), coalesce(session_id, ''), coalesce(request_id, ''))
+  WHERE status = 'GENERATING';
+DROP INDEX IF EXISTS one_generation_at_a_time;
+ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS rec_version text;
+ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS plan_key text;
+ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS actor jsonb;
+ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS question text;
+ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS body_hash text;
+ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS idempotency_key text;
+CREATE TABLE IF NOT EXISTS ai_usage (
+  run_id text, attempt_id text, output_id text NOT NULL, request_id text, session_id text,
+  case_id text NOT NULL, rec_version text NOT NULL, plan_key text NOT NULL, kind text NOT NULL,
+  model_id text NOT NULL, location text NOT NULL, status text NOT NULL, reason text,
+  model_calls int, provider_attempts int, tool_calls int, retries int,
+  input_tokens int, output_tokens int, thinking_tokens int, total_tokens int, tool_use_prompt_tokens int,
+  first_text_ms float8, total_ms float8, tool_durations jsonb NOT NULL DEFAULT '[]',
+  started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz,
+  PRIMARY KEY (run_id, attempt_id), UNIQUE (run_id, output_id));
+-- Retain admission mode even when final provenance becomes FALLBACK. Legacy
+-- attempts remain unknown; do not infer that a failed baseline spent a cap.
+ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS precomputed boolean;
+
+-- Phase 09 tools: exact plan/session/actor scope and an honest success/failure audit.
+ALTER TABLE tool_results ADD COLUMN IF NOT EXISTS plan_key text;
+ALTER TABLE tool_results ADD COLUMN IF NOT EXISTS actor jsonb;
+ALTER TABLE tool_results ADD COLUMN IF NOT EXISTS snapshot_id text;
+ALTER TABLE tool_results ADD COLUMN IF NOT EXISTS status text;
+ALTER TABLE tool_results ADD COLUMN IF NOT EXISTS purpose text;
+-- The model's only application write is an immutable checked draft. Human Send
+-- and its deadline/slot remain on evidence_requests; a draft has neither.
+CREATE TABLE IF NOT EXISTS evidence_drafts (
+  run_id text, draft_id text, case_id text NOT NULL, rec_version text NOT NULL, plan_key text NOT NULL,
+  fact_id text NOT NULL, class text NOT NULL, owner text NOT NULL, to_branch text NOT NULL, sku text NOT NULL,
+  lot_ids jsonb NOT NULL, original_text text NOT NULL, refs jsonb NOT NULL, checks jsonb NOT NULL,
+  model_id text NOT NULL, assistant_version text NOT NULL, request_context jsonb NOT NULL,
+  state text NOT NULL DEFAULT 'DRAFT', request_id text, created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (run_id, draft_id), UNIQUE (run_id, case_id, rec_version, plan_key, fact_id));
 
 -- 06.1 (D-25, D-47, D-48, D-49, D-65, D-67): every additive statement of the 06.1 contract, written once
 -- (04-API-CONTRACT "Product mode (06.1)", Tables and error codes), so the 06.1 API plans after 06.1-04 never share
@@ -251,6 +400,21 @@ ALTER TABLE cases ADD COLUMN IF NOT EXISTS owner_taken_at timestamptz;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS closed_as text;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS closed_at timestamptz;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS closed_by text;
+-- Cancel approved plan (07-CONTEXT D-23, D-25): a cancelled case is state CLOSED with closed_as CANCELLED, closed_at,
+-- closed_by and this required explanation; no new state, so the unchanged one-open-case index frees the lot.
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS cancel_reason text;
+-- Closing never hides at-risk stock (07-CONTEXT D-24, D-28; api/closing.py): every reject, decline and cancel stores
+-- the lot's decision-inputs fingerprint (sha256 of the date-invariant inputs) and its status then (AT_RISK, or null
+-- when the lot was gone or no longer at risk).
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS fingerprint text;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS lot_status text;
+-- Reassess and the linked successor (07-CONTEXT D-24): the closed case a successor follows (one active case per lot
+-- stays the index's rule; every case but a lot's first names the case it follows).
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS predecessor text;
+CREATE INDEX IF NOT EXISTS cases_by_predecessor ON cases (run_id, predecessor);
+-- What was already considered (07-CONTEXT D-28): {day, days_left, band, step_pct, clearance, transfer_open, actions}
+-- stored at the close and merged on each synthetic Next-day morning the lot qualifies, so one crossing opens one case.
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS considered jsonb;
 -- 06.1 D-48: recorded dispatch, receipt and price-change movements (quantities, lot, condition, who, when).
 -- Quantities are float8, as the header asks of every quantity (04-RESEARCH Pattern 5).
 CREATE TABLE IF NOT EXISTS movements (run_id text, movement_id text, case_id text NOT NULL, action_id text NOT NULL, kind text NOT NULL, lot_id text, qty float8 NOT NULL, damaged_qty float8 NOT NULL DEFAULT 0, condition text, reason text, recorded_by text NOT NULL, role text NOT NULL, branch text, recorded_at timestamptz NOT NULL DEFAULT now(), scenario_day int NOT NULL, PRIMARY KEY (run_id, movement_id));

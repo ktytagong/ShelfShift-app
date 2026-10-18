@@ -41,6 +41,8 @@ RECEIPT = "Record receipt"
 PRICE = "Record price change"
 PRICE_TICK = "I changed the shelf price for this lot"
 CLOSE = "Close stock decision"
+# The acknowledgement on Accept transfer and Approve plan when the plan has Advisory facts (07-CONTEXT D-12, D-26).
+ACK_TICK = re.compile(r"^I've seen (this unverified fact|these \d+ unverified facts) and approve with (it|them) unresolved$")
 
 AfterStep = Callable[[Page, str], None]
 
@@ -151,6 +153,13 @@ def press(page: Page, name: str):
     return button
 
 
+def acknowledge(page: Page, case_id: str) -> None:
+    """Tick the acknowledgement of the plan's unverified facts when it has Advisory facts (07-CONTEXT D-12, D-26; the
+    API read says whether it has any): Accept transfer and Approve plan stay disabled until it is ticked."""
+    if case_json(page, case_id)["commitment"]["ack"] is not None:
+        page.get_by_role("checkbox", name=ACK_TICK).check()
+
+
 def waiting_for(page: Page, branch: str) -> None:
     expect(page.get_by_test_id("waiting-line")).to_contain_text(branch)
 
@@ -189,6 +198,7 @@ def judges_journey(page: Page, web: Web, after_step: AfterStep) -> None:
     # The destination accepts the transfer.
     switch_to(page, web, dest, after_step)
     open_decision(page, key, after_step)
+    acknowledge(page, case_id)
     press(page, ACCEPT)
     waiting_for(page, src)
     after_step(page, ACCEPT)
@@ -196,6 +206,7 @@ def judges_journey(page: Page, web: Web, after_step: AfterStep) -> None:
     # The source approves, prepares the transfer work order and records the dispatch of the committed quantity.
     switch_to(page, web, src, after_step)
     open_decision(page, key, after_step)
+    acknowledge(page, case_id)
     press(page, APPROVE)
     expect(page.get_by_role("button", name=PREPARE, exact=True)).to_be_visible()
     after_step(page, APPROVE)

@@ -184,3 +184,49 @@ test("each series names its validated provider codes, including unknown and empt
   assert.equal(providerShort(["new_provider"]), "new_provider");
   assert.equal(providerShort([]), "");
 });
+
+test("Assistant draft history names only authorized provenance and stays read-only", () => {
+  const event = dispatched({ type: "evidence_drafted", actor: null, group: "Assistant", payload: {
+    draft_id: "D-long-id", class: "Required", owner: "S042", to_branch: "S017", sku: "P007",
+    lot_ids: ["L-0042"], model_id: "configured-model", assistant_version: "prior-instructions",
+    rec_version: "0123456789abcdef".repeat(4), plan_key: "keep",
+    question: "Private question sentinel", answer_text: "Private answer sentinel",
+    tool_results: [{ result: "Private source sentinel" }], original_text: "Unprojected draft sentinel",
+  } });
+  const line = historyLine(event, TZ);
+  assert.equal(line.title, "Stock check drafted by ShelfShift");
+  for (const text of ["Drafted by Gemini", "Read-only record", "Required", "S017", "P007", "L-0042", "D-long-id",
+    "configured-model", "prior-instructions", "0123456789ab", "keep"]) assert.ok(line.detail.includes(text), text);
+  assert.doesNotMatch(line.detail, /Private|Unprojected|0123456789abc/);
+  assert.equal(line.group, "Assistant");
+  assert.equal(historyLine({ ...event, group: "Data" }, TZ).group, "Data");
+});
+
+test("partial draft metadata is Missing and a person-sent request retains its server Data group", () => {
+  const missing = historyLine(dispatched({ type: "evidence_drafted", actor: null, at: "", scenario_date: null,
+    payload: {}, group: "Assistant" }), TZ);
+  assert.match(missing.detail, /Draft: Missing/);
+  assert.match(missing.detail, /Model: Missing/);
+  assert.match(missing.detail, /Lots: Missing/);
+  assert.match(missing.meta, /Recorded time: Missing/);
+  assert.match(missing.meta, /Scenario date: Missing/);
+  assert.doesNotMatch(missing.detail, /\b0\b/);
+  const sent = historyLine(dispatched({ type: "evidence_requested", group: "Data", payload: {
+    request_id: "REQ-001", to_branch: "S017", lot_ids: ["L-0042"], question: "Private sentinel",
+  } }), TZ);
+  assert.equal(sent.group, "Data");
+  assert.match(sent.detail, /Sent by S042 manager · Recorded 17 Oct 2026, 02:48 Bangkok time/);
+  assert.match(sent.detail, /REQ-001/);
+  assert.doesNotMatch(sent.detail, /Private/);
+});
+
+test("history empty/count/disclosure grammar handles zero, one, many and complete long text", () => {
+  assert.equal(vocab.ASSISTANT_HISTORY_EMPTY, "No assistant activity for this stock decision yet.");
+  assert.equal(vocab.historyCount(0), "0 events");
+  assert.equal(vocab.historyCount(1), "1 event");
+  assert.equal(vocab.historyCount(4), "4 events");
+  assert.equal(vocab.historySummary("Short detail"), "Short detail");
+  const long = "Long dataset/result identifier ".repeat(8);
+  assert.equal(vocab.historySummary(long), long.slice(0, 90) + "…");
+  assert.equal(vocab.historySummary("x".repeat(90)), "x".repeat(90));
+});

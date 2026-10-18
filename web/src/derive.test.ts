@@ -224,3 +224,75 @@ test("pageInRange: null while the page holds records or is the first; else the l
   assert.equal(pageInRange(5, 20, 0), 1); // nothing left: page 1
   assert.equal(pageInRange(4, 0, 10), null); // no page size: nothing to correct
 });
+
+// --- 07-21: the fact checks' actions, the blockers and the final-approval rule (07-CONTEXT D-07, D-11, D-12) ---------
+import * as d21 from "./derive.ts";
+
+const SRC = { role: "manager" as const, branch: "S1" };
+const fact21 = (over: Record<string, unknown> = {}) => ({
+  fact_id: "S1:phantom", kind: "PHANTOM_STOCK", branch: "S1", lot_ids: ["L-1"], class: "REQUIRED" as const,
+  changes_plan: true, requests_left: 2, blocked_label: null, ...over,
+});
+const holder21 = (requests: Partial<Request>[] = [], state: CaseState = "OPEN") => ({
+  rec_version: "v1", source: "S1", state, requests: requests.map((r) => ({ rec_version: "v1", fact_id: "S1:phantom", ...r }) as Request),
+});
+
+test("07-21: the row's action: ask, ask again (the server's askable_again), the limit, or nothing", () => {
+  assert.deepEqual(d21.factAction(fact21(), SRC, holder21()), { kind: "ask", part: "count", disabled: false });
+  assert.deepEqual(d21.factAction(fact21({ kind: "ESTIMATED_EXPIRY" }), SRC, holder21()), { kind: "ask", part: "expiry", disabled: false });
+  assert.deepEqual(d21.factAction(fact21({ requests_left: 0 }), SRC, holder21()), { kind: "ask", part: "count", disabled: true });
+  const cant = { request_id: "R1", state: "CANT_CHECK" as const, askable_again: true };
+  assert.equal(d21.factAction(fact21({ requests_left: 1 }), SRC, holder21([cant])).kind, "again");
+  const used = d21.factAction(fact21({ requests_left: 0 }), SRC, holder21([{ ...cant, askable_again: false }]));
+  assert.equal(used.kind === "again" && used.disabled, true);
+  assert.equal(d21.factAction(fact21(), SRC, holder21([{ request_id: "R1", state: "OPEN", overdue: false }])).kind, "none");
+  assert.equal(d21.factAction(fact21(), { role: "manager", branch: "S2" }, holder21()).kind, "none"); // not the source
+  assert.equal(d21.factAction(fact21(), SRC, holder21([], "APPROVED")).kind, "none"); // no longer re-planned
+  assert.equal(d21.factAction(fact21({ class: null }), SRC, holder21()).kind, "none"); // changes nothing
+  assert.equal(d21.factAction(fact21({ kind: "DEMAND_EVENT" }), SRC, holder21()).kind, "none"); // no check for the kind
+});
+
+test("07-21: the combined request offers the other check of the same lot, count first in the body (D-11)", () => {
+  const count = fact21();
+  const expiry = fact21({ fact_id: "S1:expiry", kind: "ESTIMATED_EXPIRY" });
+  const elsewhere = fact21({ fact_id: "S2:expiry", kind: "ESTIMATED_EXPIRY", branch: "S2" });
+  const d = { ...holder21(), fact_checks: [count, expiry, elsewhere] };
+  assert.equal(d21.companionFact(d, count)?.fact_id, "S1:expiry");
+  assert.equal(d21.companionFact(d, expiry)?.fact_id, "S1:phantom");
+  assert.equal(d21.companionFact({ ...d, fact_checks: [count, elsewhere] }, count), null);
+  const outside = fact21({ fact_id: "S1:expiry", kind: "ESTIMATED_EXPIRY", lot_ids: ["L-9"] });
+  assert.equal(d21.companionFact({ ...d, fact_checks: [count, outside] }, count), null); // lots outside the count's
+  assert.equal(d21.companionFact({ ...holder21([{ fact_id: "S1:expiry" }]), fact_checks: [count, expiry] }, count), null);
+  assert.deepEqual(d21.requestBody("v1", [expiry, count]), { rec_version: "v1", fact_ids: ["S1:phantom", "S1:expiry"] });
+  assert.deepEqual(d21.requestBody("v1", [count]), { rec_version: "v1", fact_id: "S1:phantom" });
+  assert.deepEqual(d21.requestBody("v1", [count], { request_id: "R1" }), { rec_version: "v1", fact_id: "S1:phantom", recount_of: "R1" });
+});
+
+test("07-21: blockers in the server's order, each with its owner and the server's Blocked label", () => {
+  const d = {
+    fact_checks: [fact21({ blocked_label: "Blocked · stock/expiry verification required" })],
+    commitment: {
+      blocks: [
+        { kind: "lot_hold", hold_id: "H1", lot_ids: ["L-1"], owner_branch: "S1" },
+        { kind: "required_check", fact_id: "S1:phantom", lot_ids: ["L-1"], owner_branch: "S1" },
+      ],
+      advisory: [], ack: null, next_actions: [],
+    },
+  };
+  assert.deepEqual(d21.blockersOf(d, (f) => `title of ${f.fact_id}`), [
+    { kind: "lot_hold", lot: "L-1", owner: "S1" },
+    { kind: "required_check", fact_id: "S1:phantom", title: "title of S1:phantom", owner: "S1",
+      blocked: "Blocked · stock/expiry verification required" },
+  ]);
+  assert.deepEqual(d21.blockersOf({ fact_checks: [] }, () => ""), []); // no commitment: nothing claimed
+});
+
+test("07-21: the final approval is the one after every other side the plan needs has decided (D-12)", () => {
+  const transfer = { approvals: { required: ["source", "destination"] as ("source" | "destination")[], decisions: {} } };
+  assert.equal(d21.isFinalDecision(transfer, "source"), false);
+  assert.equal(d21.isFinalDecision(transfer, "destination"), false);
+  const accepted = { approvals: { ...transfer.approvals, decisions: { destination: "accept" } } };
+  assert.equal(d21.isFinalDecision(accepted, "source"), true);
+  const keep = { approvals: { required: ["source"] as ("source" | "destination")[], decisions: {} } };
+  assert.equal(d21.isFinalDecision(keep, "source"), true);
+});

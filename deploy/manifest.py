@@ -14,21 +14,27 @@ configuration; a value that did not come back is NOT_READ_BACK, never guessed; D
     access ("public" or "invoker check disabled"), secret_version and hq_secret_version (the pinned version numbers of
     PASSCODE_SECRET and HQ_PASSCODE_SECRET, never a value), dataset_version,
     reference_files (sha256 of data/reference/seed.json, forecast.json and truth.json in the archived source),
-    new_template (the run id the release chose), activated_template, previous_template (the template this activation
-    actually retired: the build's `retired:` line), active_before_build (its `previous ACTIVE:` line), model
-    ({configured, endpoint, used}), resources (the job, service, instance, database, repository, account and secret
-    names), build_execution, bench, smoke, journey, engine_version, template_compat (first, compatible or breaking),
+    new_template (the run id the release chose), activation ("separate": the build leaves the template READY and a
+    later activate execution publishes it; a record without the field built and activated in one execution),
+    ready_template (the inactive build's `template <id> READY for <dv>` line), activated_template, previous_template
+    (the template this activation actually retired: the activate execution's `retired:` line, or the build's in a record
+    without `activation`), active_before_build (the build's `previous ACTIVE:` line), briefs ({execution, summary,
+    result}: the baseline briefs job's execution, its parsed `"type": "summary"` line and the pass result),
+    activate_execution, model ({configured, endpoint, used}), resources (the job, service, instance, database,
+    repository, account and secret names), build_execution, bench, smoke, journey, engine_version, template_compat
+    (first, compatible or breaking),
     previous_known_good, early_bench, progress, reconcile, recovery, error, reason, drill (drill records only:
     {fail_after, fail_restore_once}).
 
 `progress` is a list of {step, state, ...} in step order: secret (both pins and the HQ preflight), data
 (RELEASE_DATA_DIR releases only; {dataset_version, parts}), image, previous_revision, build_deploy, build_execute,
-build_log, bench, service_deploy, read_back, access, smoke, journey. A step's state is `started` (the
-build execute and the service deploy: `requested`, written before the call is issued), then `ok` or `failed`.
+build_log, briefs, activate, bench, service_deploy, read_back, access, smoke, journey. A step's state is `started` (the
+build execute, the briefs and activate executes and the service deploy: `requested`, written before the call is
+issued), then `ok` or `failed`.
 Recovery is decided from this list, never from which step raised (R2-1, R2-8).
 
 Statuses: in_progress, known_good, failed_data, failed_image, failed_secret, failed_service_lookup, failed_build_deploy,
-failed_build, failed_bench, failed_deploy, failed_readback, failed_smoke, failed_journey, interrupted, rolled_back,
+failed_build, failed_briefs, failed_activate, failed_bench, failed_deploy, failed_readback, failed_smoke, failed_journey, interrupted, rolled_back,
 failed_rollback; early bench evidence: pass, fail, error.
 
 The records hold the project and resource names. They stay in this private repository and are excluded from the
@@ -48,7 +54,7 @@ from typing import Callable, Iterable
 NOT_READ_BACK = "not read back"
 WITHHELD = "(withheld)"
 STATUSES = ("in_progress", "known_good", "failed_data", "failed_image", "failed_secret", "failed_service_lookup",
-            "failed_build_deploy", "failed_build", "failed_bench", "failed_deploy", "failed_readback",
+            "failed_build_deploy", "failed_build", "failed_briefs", "failed_activate", "failed_bench", "failed_deploy", "failed_readback",
             "failed_smoke", "failed_journey", "interrupted", "rolled_back", "failed_rollback")
 
 

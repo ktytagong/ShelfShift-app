@@ -14,7 +14,9 @@ import {
   markdownLine, neededText, optionsFootnote, pagerText, recordedTime, responseNote, responseRows, responseStatus,
   restrictedFootnote, retryable, settingsChanges, statePill, textLinks, transportLine,
   VALUE_AT_FULL_PRICE, planBranches, riskFact, totalsScope, triggerReason, wasteSummary,
+  CHECK_TIME, checkTimeLabel, checkTimeObserved, stateIcon,
 } from "./copy.ts";
+import { readFileSync } from "node:fs";
 import { money } from "./format.ts";
 
 test("NETWORK is the adapter's own sentence", () => {
@@ -773,4 +775,121 @@ test("the totals line names the branches the plan totals cover, the source first
   assert.deepEqual(planBranches({ lots: [{ branch: "S229" }], forecasts: [{ branch: "S229" }, { branch: "S017" }] }, "S229"),
     ["S229", "S017"]);
   assert.doesNotMatch(totalsScope(["S229", "S189"]), BANNED);
+});
+
+// --- Phase 7 request states, the check time and the exposure wording (07-17; 07-CONTEXT D-06, D-10, D-22) ------------
+
+test("statePill: an open request reads the server's sentence word for word, in its tone", () => {
+  const due = "Awaiting response · respond by 16 Oct 2026, 21:30";
+  assert.deepEqual(statePill(req({ state: "OPEN", status_kind: "AWAITING", status: due })), { tone: "info", text: due });
+  assert.deepEqual(statePill(req({ state: "OPEN", status_kind: "UNANSWERED", status: "Unanswered · Unverified" })),
+    { tone: "warn", text: "Unanswered · Unverified" });
+  assert.deepEqual(statePill(req({ state: "OPEN", status_kind: "PHOTO_PARTIAL", status: "Photo received · count missing · overdue" })),
+    { tone: "warn", text: "Photo received · count missing · overdue" });
+  assert.deepEqual(statePill(req({ state: "OPEN", status_kind: "TEXT_PARTIAL", status: "Reply received · count missing" })),
+    { tone: "warn", text: "Reply received · count missing" });
+});
+
+test("statePill: Can't check and Superseded gray, a mixed-dates hold bad, a legacy EXPIRED row still reads", () => {
+  assert.deepEqual(statePill(req({ state: "CANT_CHECK", status_kind: "CANT_CHECK", status: "Can't check" })),
+    { tone: "gray", text: "Can't check" });
+  assert.deepEqual(statePill(req({ state: "SUPERSEDED", status_kind: "SUPERSEDED", status: "Superseded" })),
+    { tone: "gray", text: "Replaced by a recount" });
+  assert.deepEqual(statePill(req({ state: "HELD", status_kind: "HELD", status: "Held" })),
+    { tone: "bad", text: "Mixed dates · lot held" });
+  assert.deepEqual(statePill(req({ state: "EXPIRED", status_kind: "EXPIRED", status: null })), { tone: "gray", text: "Expired" });
+});
+
+test("statePill: a state the page does not know is a gray pill with the server's text, never undefined", () => {
+  const odd = req({ state: "ESCALATED" as Request["state"], status_kind: "ESCALATED", status: "Escalated to HQ" });
+  assert.deepEqual(statePill(odd), { tone: "gray", text: "Escalated to HQ" });
+  assert.deepEqual(statePill(req({ state: "ESCALATED" as Request["state"], status: null })), { tone: "gray", text: "ESCALATED" });
+  assert.equal(typeof stateIcon(odd), "string");
+  for (const state of ["OPEN", "ANSWERED", "CONFIRMED", "EXPIRED", "SUPERSEDED", "CANT_CHECK", "HELD"] as const) {
+    assert.equal(typeof stateIcon(req({ state })), "string", state);
+  }
+});
+
+test("responseNote: Phase 7 reads the server's `late`; a row without a real deadline compares sandbox days", () => {
+  const a = answered({ day: 3 });
+  assert.equal(responseNote(req({ state: "ANSWERED", due_at: "2026-10-16T14:30:00Z", late: true, answer: a })), "Answered after deadline");
+  assert.equal(responseNote(req({ state: "CONFIRMED", due_at: "2026-10-16T14:30:00Z", late: true, answer: a })), "Answered after deadline");
+  assert.equal(responseNote(req({ state: "ANSWERED", due_at: "2026-10-16T14:30:00Z", late: false, due_day: 1, answer: a })), null);
+});
+
+test("checkTimeObserved: no choice, Checked just now, a typed Bangkok time and a future one", () => {
+  const now = Date.parse("2026-10-16T14:00:00Z"); // 21:00 in Bangkok
+  assert.deepEqual(checkTimeObserved({ mode: "", at: "" }, "Asia/Bangkok", now), { error: CHECK_TIME.missing });
+  assert.deepEqual(checkTimeObserved({ mode: "now", at: "2026-10-16T23:00" }, "Asia/Bangkok", now), { observed: "now" });
+  assert.deepEqual(checkTimeObserved({ mode: "at", at: "2026-10-16T20:40" }, "Asia/Bangkok", now),
+    { observed: "2026-10-16T13:40:00.000Z" });
+  assert.deepEqual(checkTimeObserved({ mode: "at", at: "2026-10-16T21:00" }, "Asia/Bangkok", now),
+    { observed: "2026-10-16T14:00:00.000Z" }); // equal to now is accepted, as the server accepts it
+  assert.deepEqual(checkTimeObserved({ mode: "at", at: "2026-10-16T21:01" }, "Asia/Bangkok", now), { error: CHECK_TIME.later });
+  assert.deepEqual(checkTimeObserved({ mode: "at", at: "" }, "Asia/Bangkok", now), { error: CHECK_TIME.missing });
+});
+
+test("the CheckTime words are the UI-SPEC's", () => {
+  assert.equal(CHECK_TIME.legend, "When did you check?");
+  assert.equal(CHECK_TIME.now, "Checked just now");
+  assert.equal(CHECK_TIME.at, "At a date and time");
+  assert.equal(CHECK_TIME.missing, "Choose when you checked: Checked just now, or a date and time.");
+  assert.equal(CHECK_TIME.later, "The check time can't be later than now.");
+  assert.equal(checkTimeLabel("Asia/Bangkok"), "Date and time checked (Bangkok time)");
+});
+
+test("no string in copy.ts calls the exposure 'at stake' (D-10)", () => {
+  assert.doesNotMatch(readFileSync(new URL("./copy.ts", import.meta.url), "utf8"), /at stake/);
+});
+
+// --- 07-21: the stock decision's verification words (07-UI-SPEC surface 1; 07-CONTEXT D-10, D-12, D-23, D-36) --------
+import * as v21 from "./copy.ts";
+
+test("07-21: the request panel and the fact checks state the server's numbers, never a constant", () => {
+  assert.equal(v21.requestsLeftLine(2, 2), "2 of 2 requests left on this version");
+  assert.equal(v21.requestsLeftLine(0, 3), "0 of 3 requests left on this version");
+  assert.equal(v21.requestsUsedLine(2), "2 of 2 requests used on this version.");
+  assert.equal(v21.responseMinutesLine(60), "The branch has 60 minutes to respond.");
+  assert.equal(v21.oneRequestLine(2), "One request · counts once toward the 2 per version");
+  assert.equal(v21.SUPERSEDE_NOTE, "The earlier request becomes Superseded. A late answer to it is kept but can't be confirmed.");
+  assert.deepEqual([v21.COUNT_STOCK, v21.CHECK_PRINTED_EXPIRY, v21.SEND_REQUEST, v21.DONT_SEND_REQUEST],
+    ["Count stock", "Check printed expiry date", "Send request", "Don't send request"]);
+});
+
+test("07-21: the deadline's minutes are display words only: minutes, under one minute, overdue", () => {
+  assert.equal(v21.minutesLeftText(42, false), "42 min left");
+  assert.equal(v21.minutesLeftText(0, false), "Less than 1 min left");
+  assert.equal(v21.minutesLeftText(5, true), "Overdue");
+});
+
+test("07-21: blocker lines name the fact or the lot and its owner; the Blocked label is the server's", () => {
+  assert.equal(v21.blockerText({ kind: "required_check", fact_id: "f", title: "S1 · lot L-1: recorded 9 units", owner: "S1", blocked: null }),
+    "Required: S1 · lot L-1: recorded 9 units · owner S1 manager");
+  assert.equal(v21.blockerText({ kind: "required_check", fact_id: "f", title: "T", owner: "S1",
+    blocked: "Blocked · stock/expiry verification required" }), "Required: T · owner S1 manager · Blocked · stock/expiry verification required");
+  assert.equal(v21.blockerText({ kind: "lot_hold", lot: "L-2", owner: "S2" }), "Lot hold: lot L-2 · owner S2 manager");
+  assert.equal(v21.cantApproveYet("X"), "Can't approve yet: X");
+  assert.equal(v21.commitmentWaits("X"), "Your approval is recorded. Commitment waits for: X");
+  assert.equal(v21.moreBlockers(1), "+1 more");
+  assert.equal(v21.advisoryToAcknowledge(2), "2 advisory to acknowledge at approval");
+});
+
+test("07-21: nothing calls a plan with unresolved facts safe, verified or clear (VER-06)", () => {
+  for (const s of [v21.NO_BLOCKING_CHECKS, v21.BLOCKS_COMMITMENT, v21.REQUIRED_CHIP, v21.ADVISORY_CHIP]) {
+    assert.doesNotMatch(s, /\b(safe|verified|clear|cash|savings)\b/i, s);
+  }
+});
+
+test("07-21: the ways forward: select's confirm sentence, the selected plan and the cancelled lines (D-23, D-25)", () => {
+  assert.equal(v21.selectConfirmLine("Keep"), "Switch this stock decision to Keep? It goes through the normal feasibility "
+    + "checks again, any pending approvals are cancelled, and approvals start over.");
+  assert.equal(v21.selectOptionName("Markdown 20%"), "Select Markdown 20%");
+  assert.equal(v21.ALSO_NEEDS_THIS_FACT, "Also needs this fact verified");
+  assert.equal(v21.selectedPlanLine("Keep", "S017", "2026-10-18T07:05:00Z", "Asia/Bangkok"),
+    "Selected plan · Keep · by S017 · 18 Oct 2026, 14:05 Bangkok time");
+  assert.equal(v21.selectedPlanLine("Keep", null, null, "Asia/Bangkok"), "Selected plan · Keep");
+  assert.equal(v21.cancelledLine("S017", "2026-10-18T07:05:00Z", "No stock", "Asia/Bangkok"),
+    "Cancelled by S017 · 18 Oct 2026, 14:05 Bangkok time · No stock");
+  assert.equal(v21.cancelledLine(null, "not a time", null, "Asia/Bangkok"), "Cancelled");
+  assert.doesNotMatch(v21.selectConfirmLine("Keep"), /\bcase\b/); // 06.1 D-61: "stock decision" on screen
 });

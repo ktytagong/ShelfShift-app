@@ -93,3 +93,46 @@ export function markDate(iso: string): string {
 export function shortDate(iso: string): string {
   return markDate(iso).replace(/ \d{4}$/, "");
 }
+
+// --- "When did you check?" (07-CONTEXT D-22; 07-UI-SPEC `CheckTime` and the time-zone backstop) ----------------------
+// A typed check time is wall-clock time in the session's zone (`caps.time_zone`, Asia/Bangkok: fixed +07:00, no daylight
+// saving), whatever the device's own zone, and it is sent as UTC. Both helpers read the zone through Intl, never Date's
+// local getters, so the browser's zone and its daylight saving never move the result. `realTime` is not added here:
+// copy.recordedTime already gives "16 Oct 2026, 20:30" (07-SCREENS-MAP section 1).
+
+const WALL = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+// The zone's offset from UTC at the instant `utcMs`, in milliseconds (positive east of Greenwich).
+function zoneOffsetMs(utcMs: number, timeZone: string): number {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(utcMs)).map((x) => [x.type, x.value])) as Record<string, string>;
+  const wall = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute), Number(p.second));
+  return wall - Math.floor(utcMs / 1000) * 1000;
+}
+
+// A `datetime-local` value ("2026-10-16T20:40") read as wall-clock time in `timeZone`, as an ISO UTC string
+// ("2026-10-16T13:40:00.000Z" for Asia/Bangkok); null for a value it cannot read or a zone Intl does not know.
+export function zonedToUtc(local: string, timeZone: string): string | null {
+  const m = WALL.exec(local.trim());
+  if (m === null) return null;
+  const wall = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] ?? 0));
+  if (Number.isNaN(wall)) return null;
+  try {
+    const first = wall - zoneOffsetMs(wall, timeZone);
+    return new Date(wall - zoneOffsetMs(first, timeZone)).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+// The wall-clock time in `timeZone` at the instant `nowMs`, as a `datetime-local` value ("2026-10-16T20:40"): the
+// input's `max`. "" for a zone Intl does not know (no max then; the server still refuses a future time).
+export function zonedNow(timeZone: string, nowMs: number): string {
+  try {
+    return new Date(Math.floor(nowMs / 60000) * 60000 + zoneOffsetMs(nowMs, timeZone)).toISOString().slice(0, 16);
+  } catch {
+    return "";
+  }
+}

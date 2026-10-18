@@ -65,11 +65,11 @@ export function scaled(values: number[], max: number = Math.max(0, ...values)): 
   return values.map((v) => (max > 0 ? Math.min(1, nonNegative(v) / max) : 0));
 }
 
-// --- History filter: All · Decisions · Data --------------------------------------------------------------------------
+// --- History filter: All · Decisions · Data · Assistant --------------------------------------------------------------
 
 // The filter names are the API's group names (GET /api/cases/{id}/activity sends "Decisions", "Data" and
-// "Assistant"), matched exactly: the client never re-maps a server group. "Assistant" entries show under All only.
-export type HistoryFilter = "All" | "Decisions" | "Data";
+// "Assistant"), matched exactly: the client never re-maps a server group.
+export type HistoryFilter = "All" | "Decisions" | "Data" | "Assistant";
 
 // Keeps the caller's order (the caller passes entries sorted by recorded time, D-58).
 export function historyFilter<T extends { group: string }>(entries: T[], filter: HistoryFilter): T[] {

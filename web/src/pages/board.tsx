@@ -20,6 +20,7 @@ import {
   type MoveTarget,
 } from "../boardmove.ts";
 import { BoardMoveDrawer, useBoardMoves, type BoardMovement } from "../boardmove.tsx";
+import { AWAITING_VERIFICATION, NEEDS_DECISION } from "../vocab.ts"; // a closed lot still at risk (07-22)
 import { NEEDS_EVALUATION, PRODUCT_CODE, REPORT_FIGURES, RISK_OPTIONS, STORE_PLACEHOLDER, factTitle, flagBody, retryable } from "../copy.ts";
 import { productLabel, type BoardRisk } from "../derive.ts";
 import { signed } from "../format.ts";
@@ -618,6 +619,14 @@ function closedLabel(card: Card61): string {
   if (card.closed_as === "CANCELLED") return CLOSED_LABEL.cancelled;
   return CLOSED_LABEL.closed;
 }
+// A closed plan whose lot is still at risk stays in sight (07-CONTEXT D-24; the server's `lot_status`, 07-22).
+function LotStatusChip({ card }: { card: Card61 }) {
+  const status = (card as Card61 & { lot_status?: string | null }).lot_status ?? null;
+  if (status === null) return null;
+  return status === AWAITING_VERIFICATION
+    ? <Pill tone="info" icon="clock">{AWAITING_VERIFICATION}</Pill>
+    : <Pill tone="warn" icon="alert">{status === NEEDS_DECISION ? NEEDS_DECISION : status}</Pill>;
+}
 function ClosedCard({ card, selected, onOpen }: CardProps & { card: Card61 }) {
   const label = productLabel(card.sku, card.product);
   return (
@@ -627,6 +636,7 @@ function ClosedCard({ card, selected, onOpen }: CardProps & { card: Card61 }) {
       <div className="flex flex-wrap items-center gap-1">
         <span className="font-mono text-label text-ink-2">{card.key}</span>
         <Pill tone="gray">{closedLabel(card)}</Pill>
+        <LotStatusChip card={card} />
       </div>
       <p className="m-0 text-label break-words text-ink-2">{label} · {card.source}</p>
       {card.reason !== null && <p className="m-0 line-clamp-2 text-label break-words text-ink-2">{card.reason}</p>}

@@ -159,6 +159,16 @@ def _rows(conn, run: dict, ref, lots: list[dict]) -> list[dict]:
         conn, "SELECT f.lot_id, f.key FROM case_flags f WHERE f.run_id = :f AND f.day = :d AND f.lot_id = ANY(:l) "
               "AND NOT EXISTS (SELECT 1 FROM cases c WHERE c.run_id = :r AND c.lot_id = f.lot_id)",
         f=overlay.flags_run(conn, run), d=run["day"], l=ids, r=r)}
+    on_hold: dict[str, dict] = {}  # the oldest ACTIVE hold on each lot: the row's "Lot hold" chip (07-UI-SPEC surface 6; 07-22)
+    for x in db.rows(conn, "SELECT lot_id, hold_id, kind, reason FROM lot_holds WHERE run_id = :r AND state = 'ACTIVE' "
+                           "AND lot_id = ANY(:l) ORDER BY placed_at, hold_id", r=r, l=ids):
+        on_hold.setdefault(x.pop("lot_id"), x)
+    labels: dict[str, str] = {}  # the label of the confirmed fact in force naming each lot, newest check first (facts.in_force's order)
+    for x in db.rows(conn, "SELECT a.adj->>'lot_id' AS lot_id, f.label FROM reported_facts f CROSS JOIN LATERAL "
+                           "jsonb_array_elements(f.adjustments) AS a(adj) WHERE f.run_id = :r AND f.replaced_by IS NULL "
+                           "AND a.adj->>'lot_id' = ANY(:l) ORDER BY coalesce(f.observed_at, f.confirmed_at) DESC, "
+                           "f.confirmed_at DESC, f.fact_id DESC", r=r, l=ids):
+        labels.setdefault(x["lot_id"], x["label"])
     open_discrepancies: dict[str, int] = {}
     for x in db.rows(conn, "SELECT a.lot_id, a.new_lot_id FROM discrepancies d JOIN world_actions a ON a.run_id = "
                            "d.run_id AND a.world = :w AND a.action_id = d.action_id WHERE d.run_id = :r AND d.state = "
@@ -191,6 +201,7 @@ def _rows(conn, run: dict, ref, lots: list[dict]) -> list[dict]:
             "incoming": incoming.get((l["branch"], l["sku"]), 0.0),
             "forecast_to_expiry": demand, "next_markdown": next_markdown(ref, run["day"], l),
             "discrepancies": open_discrepancies.get(l["lot_id"], 0),
+            "lot_hold": on_hold.get(l["lot_id"]), "fact_label": labels.get(l["lot_id"]),  # 07-22
             "case_key": case["key"] if case else None, "case_state": case["state"] if case else None,
             "flag_key": flag if case is None else None,
             "action": "view" if case else ("open" if flag else None),

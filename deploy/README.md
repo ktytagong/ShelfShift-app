@@ -188,6 +188,21 @@ access prevention on) and lets the deploy account read it, on that bucket only. 
 `bash deploy/setup.sh data` once more: what exists is left alone. A bucket name is global: if the create says the name
 is taken, choose another `DATA_BUCKET`.
 
+### 6a. Gemini access (once, before the first Phase 9 release)
+
+The assistant (Phase 9) runs on the service and in the baseline briefs job, an execution of the build job. Both
+accounts need `roles/aiplatform.user`, and the Vertex AI API must be on. In your own terminal, from the code
+repository root:
+
+```
+bash deploy/setup.sh ai --dry-run
+bash deploy/setup.sh ai
+```
+
+The dry run prints three commands: the API enable and one project binding of `roles/aiplatform.user` for each of
+the run and deploy accounts (`--condition None`). Nothing else is granted; `base` and `data` never grant this role.
+It is safe to run again.
+
 ### 7. The release
 
 ```
@@ -197,17 +212,53 @@ bash deploy/release.sh
 
 In order, it refuses an uncommitted tree, a failing reference check, a failing deploy gate or a browser that cannot
 start; opens its record in `deploy/releases/`; pins both secrets and runs the HQ preflight (below); builds the image with Cloud Build from the committed source (or reuses
-it) and deploys everything by digest; builds the template (the build job); benches it (the bench job, slowest of 3
+it) and deploys everything by digest; builds the template inactive, runs the baseline briefs job on it and activates
+it (all three on the build job, below); benches it (the bench job, slowest of 3
 under 3 s); deploys the service at the service level with min instances from `MIN_INSTANCES` and max 1; reads the
 deployment back; checks public access; and runs the smoke and the deployed journey. A release is known good only
 after all of that passed (D-09). Before anything changes, the release records the revision serving the service's
 traffic and, from the build's `previous ACTIVE:` line, the template ACTIVE before the build: the pair a failed release
 goes back to. From the moment the build job is executed, every failed or uncertain outcome settles that build
-execution, restores that template (the restore's own `ACTIVE:` line must name it) and moves traffic back to that
-revision (read back as the only one serving) (D-17).
+execution; once activation was requested it also restores that template (the restore's own `ACTIVE:` line must name
+it) and moves traffic back to that revision (read back as the only one serving) (D-17; Recovery around activation,
+below).
 
 - **The record.** Each run writes `deploy/releases/<UTC>-<sha12>.json`. Read what was deployed there; commit it
   before the next release.
+- **Phase 9: build inactive, write the baseline briefs, then activate.** From the Phase 9 merge on, the template step
+  has three parts, all executions of the build job (09-24 deploy checklist item 7):
+  1. **Build, inactive.** `python -m api.sandbox build --no-activate --run-id <new>`. The log must say
+     `previous ACTIVE: <id|none>` and `template <new> READY for <dv>`. Judges still see the template ACTIVE before.
+  2. **The baseline briefs job (paid).** `python -m agent.briefs <new>`: one brief per evaluated case, with the model
+     in `GEMINI_MODEL` at `VERTEX_LOCATION`. It passes when it exits 0 and prints its `"type": "summary"` line for
+     `<new>`. The release prints one line, for example
+     `briefs: 41 success, 2 failure, 0 reused of 43 eligible; model <GEMINI_MODEL> at <VERTEX_LOCATION>, assistant-3`,
+     and the record keeps the whole summary under `briefs` (the counts and the provider usage; billed cost is not
+     recorded). Provider failures do not fail the release: those cases show the Fallback label and write a live brief
+     when someone first opens them.
+     The release stops here, before activation, when the job refuses (exit 1: the template is not READY, or the model
+     configuration is bad), when no summary line comes back, when the summary names another model or location, or
+     when it wrote no brief at all (success + reused = 0 while eligible > 0). That last one is a model, location or
+     IAM problem: check step 6a and `deploy/.env.local`, then release again.
+  3. **Activate.** `python -m api.sandbox activate <new>`. The log must say `template <new> ACTIVE for <dv>` and
+     `retired: <id|none>`, naming the template ACTIVE before the build.
+
+  Then the bench (unchanged: 3 s per case, 2 s per reset) and the service deploy. The schema change is additive and
+  the build job applies it; there is no manual migration. Gemini is never called at startup, deploy, activation,
+  clone or reset: only by the briefs job and by a person opening a brief or asking.
+- **Model variables.** The build job and the service get `GCP=on`, `GEMINI_MODEL`, `VERTEX_LOCATION` and `PROJECT`
+  from `deploy/.env.local`, and nothing else for Gemini (never `GOOGLE_GENAI_USE_VERTEXAI` or
+  `GOOGLE_GENAI_USE_ENTERPRISE`). The bench job gets none of them.
+- **Recovery around activation.**
+  - A failure before activation (the build, the briefs job, or its stop rule): nothing was published. The recovery
+    settles the build execution and says `not needed: <new> was built inactive (--no-activate) and never activated;
+    it is left READY, inactive`. Nothing is restored, and judges keep the template they had.
+  - A failure once activation was requested (the activate step itself, the bench, the deploy or any later check): the
+    recovery settles the activate execution, then runs `restore <new>` against the template the activation retired.
+    When the activation retired none, it runs `restore <new> --first`, and `undone: none ACTIVE` is the verified
+    result. Traffic goes back as before when the service deploy had started.
+  - By hand, only if the record asks for it: the build job with `python -m api.sandbox restore <new>` (add `--first`
+    when no predecessor was retired).
 - **The secret step comes first (06.1 D-64).** Before any image, build, job or deploy command, the release pins the
   latest enabled version of `PASSCODE_SECRET` and of `HQ_PASSCODE_SECRET` (never `latest`; the record keeps both
   numbers, `secret_version` and `hq_secret_version`, never a value), then reads both pinned versions into memory and
@@ -248,10 +299,11 @@ revision (read back as the only one serving) (D-17).
     restore waits for the rerun (WR-11).
   - A traffic move whose command exits non-zero still counts when the read-back shows that revision alone at 100%;
     the run then prints one line naming the exit code. Otherwise it is failed as before (A5).
-- **A first release on a fresh database.** A first release that fails before its build log is read (for example,
-  the step-6 grants were not applied, so the build fails at migrate) goes back to no template ACTIVE:
-  `recovery: restore: nothing to do: none ACTIVE`, or `undone: none ACTIVE` when its template had become ACTIVE. It
-  is not left pending, so the next run builds. This holds only while there is no earlier activated template, no
+- **A first release on a fresh database.** A first release whose build fails (for example, the step-6 grants were
+  not applied, so the build fails at migrate) activated nothing: the recovery says `not needed` and the next run
+  builds. When its activation retired none and a later step fails, `restore <new> --first` runs and
+  `undone: none ACTIVE` is verified. A record from before Phase 9 (no `activation` field) still recovers as before:
+  `nothing to do: none ACTIVE` or `undone: none ACTIVE` only while there is no earlier activated template, no
   known-good release and no revision serving (WR-06); otherwise `none ACTIVE` is a mismatch and the record stays
   pending.
 - **Access (R1-1).** The release reads the service's IAM policy back. When an organisation policy refused the public
@@ -269,7 +321,7 @@ revision (read back as the only one serving) (D-17).
   Before any cloud command, the release checks the folder; a refusal names the part. It uploads the listed parts,
   then `manifest.json` last, under the dataset version. A rerun uploads the same files again, unchanged, and unlisted
   files such as the forecast input are never uploaded. The build job reads that version from the bucket, read-only,
-  and the release fails and recovers unless the build activated it. The bench then checks the 20 hardest cases,
+  and the release fails and recovers unless the build's READY line and the activation's ACTIVE line name it. The bench then checks the 20 hardest cases,
   picked before timing, each slowest of 3 under 3 s, and 10 resets, each under 2 s. Leave `RELEASE_DATA_DIR` empty
   to build `data/reference` as before. If the build job cannot start because it cannot read the bucket, run
   `bash deploy/setup.sh data` again, then `bash deploy/release.sh` (it finishes the recovery first). Never delete the
@@ -278,6 +330,36 @@ revision (read back as the only one serving) (D-17).
   breaking: another `ENGINE_VERSION` than the last known-good release) is released with `--breaking-template` only
   while no judge is using the app: visitors who open a sandbox during that release would get a loud 409 until it
   finishes.
+
+#### The streaming check (Phase 9, after a known-good release)
+
+You run this in your own terminal (Day-1 check 9). It shows the assistant's answer arriving piece by piece, and that
+a request you cut off is marked INTERRUPTED. Set `url` to the service URL from the release record (`url=https://...`), and
+`case_id` to a case id you can open in the app (it is in the address bar). The passcode is read without echo and goes
+to curl on stdin, so it never lands in a command line or your shell history.
+
+1. Sign in as a store and keep the cookie:
+
+   ```
+   read -rs "passcode?Store passcode: "; echo
+   read -r "store?Store code (as on the sign-in screen): "
+   printf '{"account":"%s","passcode":"%s"}' "${store}" "${passcode}" | curl -sS -c /tmp/ss-cookies -o /dev/null -w 'sign-in HTTP %{http_code}\n' -H 'Content-Type: application/json' -d @- "${url}/api/session"
+   unset passcode
+   ```
+
+   Expect `sign-in HTTP 200`.
+2. Ask, and watch the lines arrive one at a time:
+
+   ```
+   printf '{"question":"Why this plan?","request_id":"%s"}' "$(uuidgen)" | curl -N -sS -b /tmp/ss-cookies -H 'Content-Type: application/json' -H "Idempotency-Key: $(uuidgen)" -d @- "${url}/api/cases/${case_id}/chat"
+   ```
+
+   Tool lines should appear one by one, not all at the end.
+3. Run step 2 again and press Ctrl-C while lines are still arriving. Reload the case in the app: that request shows
+   INTERRUPTED.
+4. Remove the cookie file: `rm /tmp/ss-cookies`.
+
+Each ask is a paid Gemini call and counts against the daily AI cap.
 
 ### 8. Read-back checks
 

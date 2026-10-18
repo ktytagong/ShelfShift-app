@@ -16,6 +16,7 @@ from api.errors import ApiError
 from engine.model import MARKDOWN, TRANSFER, trip_cost
 from tests.api.conftest import fresh, own_series, own_world, owned_send, physical, world_lot, world_rows
 from tests.api.test_workflow import STORY, approve_transfer, call, case_with_pick, pick, source_of, version
+from tests.api.verify_helpers import shown  # approve names the plan the page shows (07 review C)
 
 
 def advance_once(run):
@@ -399,7 +400,7 @@ def test_an_unprepared_markdown_is_invalidated_at_end_of_day(run):
     case = case_with_pick(run, MARKDOWN)
     cid, src, v = case["case_id"], source_of(run, case["case_id"]), version(run, case["case_id"])
     owned_send(run, src, cid, v)
-    assert call(run, workflow.decide, src, cid, v, "approve")["state"] == "APPROVED"
+    assert call(run, workflow.decide, src, cid, v, "approve", None, None, shown(run, cid))["state"] == "APPROVED"
     with db.tx() as conn:
         price = db.rows(conn, "SELECT state FROM reservations WHERE run_id = :r AND case_id = :c AND kind = 'LOT_PRICE'",
                         r=run["run_id"], c=cid)
@@ -438,7 +439,7 @@ def test_prepare_refuses_a_markdown_the_schedule_now_covers(run, monkeypatch):
     cid, src, v = case["case_id"], source_of(run, case["case_id"]), version(run, case["case_id"])
     plan = pick(run, cid)
     owned_send(run, src, cid, v)
-    assert call(run, workflow.decide, src, cid, v, "approve")["state"] == "APPROVED"
+    assert call(run, workflow.decide, src, cid, v, "approve", None, None, shown(run, cid))["state"] == "APPROVED"
     ref = refdata.get(run["dataset_version"])
     expiry = lot_lot(run, case)["expiry_day"]
     # the product's schedule now has a step at the plan's percent that applies from today (a valid one-step schedule)

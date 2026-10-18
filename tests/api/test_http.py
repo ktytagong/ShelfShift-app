@@ -28,13 +28,15 @@ from engine import evaluate as engine_evaluate
 from engine import from_dict, rec_version
 from engine.model import ENGINE_VERSION
 from tests.api.conftest import PASSCODE, as_seat, first_store, key, own, sign_in, take_and_send
+from tests.api.verify_helpers import ack
 
 LABEL = "Synthetic data · hypothetical scenario"  # the contract's label (D-16)
 
 
 PUBLIC = {("GET", "/api/about"), ("GET", "/api/healthz"), ("GET", "/api/readyz"), ("POST", "/api/session")}
-LATER = ("samples", "inventory", "metrics", "fact-checks", "upload", "dismiss",
-         "/file", "chat", "brief")  # Phases 7, 8, 9 (06.1 serves transfers/forecasts; 11 serves public About)
+LATER = ("samples", "inventory", "metrics", "fact-checks", "upload")  # Phases 8, 10 (06.1 serves GET /api/transfers
+# and /api/forecasts; 07-07 the file read; 07-13 dismiss and withdraw a field report; 09-07 serves /brief and /chat;
+# 11 serves the public About)
 
 
 def story(client) -> dict:
@@ -72,9 +74,11 @@ def phantom(d: dict) -> dict:
     return fact
 
 
-def multipart(text: str, counts) -> dict:
-    """The answer's two form fields as multipart parts (no filename, so neither is a file)."""
-    return {"text": (None, text), "counts": (None, counts if isinstance(counts, str) else json.dumps(counts))}
+def multipart(text: str, counts, observed: str | None = "now") -> dict:
+    """The answer's form fields as multipart parts (no filename, so none is a file). `observed` is "When did you
+    check?" ("Checked just now" unless a test is about the check time; None leaves the field out; 07-CONTEXT D-22)."""
+    parts = {"text": (None, text), "counts": (None, counts if isinstance(counts, str) else json.dumps(counts))}
+    return parts if observed is None else {**parts, "observed": (None, observed)}
 
 
 def test_a_visitor_reaches_sus19_and_sends_it_over_http(template):
@@ -104,8 +108,11 @@ def test_every_private_route_needs_the_passcode_session(template):
     private = [(m, p) for m, p in routes if (m, p) not in PUBLIC]
     core = [(m, r.path) for r in app.routes if isinstance(r, APIRoute) and r.endpoint.__module__ == "api.app"
             for m in r.methods if (m, r.path) not in PUBLIC]
-    assert len(core) == 22  # app.py's demo-path routes, less session, healthz and readyz (06.1: sign-out in; seat
-    # switch and Wait retired, 06.1-06)
+    assert len(core) == 40  # app.py's demo-path routes, less session, healthz and readyz (06.1: sign-out in; seat
+    # switch and Wait retired, 06.1-06; Phase 7: Can't check and Tasks, 07-05; the file read, 07-07; place and
+    # release a lot hold, 07-08; Reviewed · keep plan, 07-09; Select another plan, 07-10; Cancel approved plan, 07-11;
+    # Reassess, 07-12; file, list, read, withdraw and dismiss a field report, 07-13; Mark done and edit a report,
+    # 07-14; the impact preview, 07-15; the preview before filing, 07-20)
     assert ("POST", "/api/cases/{case_id}/take-ownership") in private  # a route module's (06.1 D-25), checked too
     for method, path in private:
         r = c.request(method, re.sub(r"\{[^}]+\}", "x", path), json={}, headers=key())
@@ -113,7 +120,7 @@ def test_every_private_route_needs_the_passcode_session(template):
         assert r.json()["message"] == "Sign in to continue."  # (proposed) 06.1 contract
     paths = {p for _, p in routes}
     assert not [p for p in paths for word in LATER if word in p]
-    assert "/api/signals" not in paths and "/api/signals/{signal_id}" not in paths
+    assert "/api/signals" in paths and "/api/signals/{signal_id}" in paths  # field reports (07-13)
     assert c.get("/api/healthz").json() == {"ok": True}
     readiness = c.get("/api/readyz")
     assert readiness.status_code == 200
@@ -250,13 +257,16 @@ def test_the_judges_path_over_http(client):
     card = story(client)
     cid, src, dest, v = card["case_id"], card["source"], card["dest"], card["rec_version"]
     assert take_and_send(client, cid, v).json()["state"] == "PENDING_APPROVAL"
+    given = ack(client.get("/api/session").json()["run_id"], cid)  # the Advisory facts (07-CONTEXT D-26)
     as_seat(client, dest)
-    r = post(client, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "accept"})
+    page = card["suggested_key"]  # approve and accept name the plan the page shows (07 review C)
+    r = post(client, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "accept", "acknowledged": given,
+                                                    "plan_key": page})
     assert r.json() == {"state": "PENDING_APPROVAL"}
     assert story(client)["next_owner"] == [{"role": "manager", "branch": src}]
     as_seat(client, src)
-    assert post(client, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "approve"}).json() == \
-        {"state": "APPROVED"}
+    assert post(client, f"/api/cases/{cid}/decision", {"rec_version": v, "decision": "approve", "plan_key": page,
+                                                       "acknowledged": given}).json() == {"state": "APPROVED"}
     assert post(client, f"/api/cases/{cid}/prepare").json() == {"state": "PREPARED"}
     s = client.get("/api/session").json()
     assert advance(client) == {"advanced": True, "day": s["day"] + 1, "version": s["version"] + 1}
@@ -309,7 +319,7 @@ def test_the_count_path_over_http(client):
     photo = client.post(path, files={**multipart("", counts), "file": ("shelf.png", b"\x89PNG\r\n", "image/png")},
                         headers=key())
     assert error(photo) == (415, "bad_file")
-    assert photo.json()["message"] == "Photos can be attached from a later version; enter the counts"
+    assert photo.json()["message"] == "Only PNG, JPEG or PDF files can be attached"  # a cut PNG signature (07-07)
     assert error(client.post(path, files=multipart("", "{not json"), headers=key())) == (400, "bad_request")
     ans = client.post(path, files=multipart("counted both", counts), headers=key())
     assert ans.status_code == 200, ans.json()
@@ -355,7 +365,10 @@ def test_a_recount_replaces_an_answered_request_and_keeps_its_answer(client):
                  {"revision": ans.json()["revision"], "checked_both": True})
     assert error(stale) == (409, "wrong_state") and stale.json()["message"] == "Request is SUPERSEDED"
     late = client.post(f"/api/requests/{q['request_id']}/answer", files=multipart("", counts), headers=key())
-    assert error(late) == (409, "wrong_state") and late.json()["message"] == "Request is SUPERSEDED"
+    assert late.status_code == 200, late.json()  # stored for the record (07-CONTEXT D-07), never confirmable:
+    late_confirm = post(client, f"/api/signals/{late.json()['signal_id']}/confirm",
+                        {"revision": late.json()["revision"], "checked_both": True})
+    assert error(late_confirm) == (409, "wrong_state") and late_confirm.json()["message"] == "Request is SUPERSEDED"
     again = client.post(f"/api/requests/{new['request_id']}/answer", files=multipart("recounted", counts),
                         headers=key())
     assert again.status_code == 200, again.json()
@@ -364,7 +377,73 @@ def test_a_recount_replaces_an_answered_request_and_keeps_its_answer(client):
     assert done.status_code == 200, done.json()
     assert detail(client, cid)["rec_version"] != v
     kept = next(x for x in detail(client, cid)["requests"] if x["request_id"] == q["request_id"])
-    assert (kept["state"], kept["answer"]) == ("SUPERSEDED", before["answer"])
+    assert (kept["state"], kept["answer"]["signal_id"]) == ("SUPERSEDED", late.json()["signal_id"])
+    with db.tx() as conn:  # the original response is kept too, as the earlier revision (D-22)
+        first = db.one(conn, "SELECT * FROM signals WHERE signal_id = :s", s=before["answer"]["signal_id"])
+    assert (first["revision"], first["state"], first["fields"]) == (before["answer"]["revision"], "DISMISSED",
+                                                                    before["answer"]["fields"])
+
+
+def test_an_answer_states_when_the_branch_checked_over_http(client):
+    """07-CONTEXT D-22 (acceptance check 17, first half): the multipart field `observed` reaches the service; without
+    it the answer is the 400 envelope with code check_time and nothing is stored; the idempotency body hash covers it."""
+    card = story(client)
+    cid, v = card["case_id"], card["rec_version"]
+    fact = phantom(detail(client, cid))
+    q = post(client, f"/api/cases/{cid}/requests", {"rec_version": v, "fact_id": fact["fact_id"]}).json()
+    as_seat(client, q["to_branch"])
+    counts = {lot: {"shelf_units": 3, "backroom_units": 0} for lot in q["lot_ids"]}  # the test's own count
+    path = f"/api/requests/{q['request_id']}/answer"
+    for observed in (None, "", "2026-10-16T20:30:00"):  # missing, blank, naive (no offset)
+        r = client.post(path, files=multipart("counted", counts, observed), headers=key())
+        assert error(r) == (400, "check_time"), r.json()
+        assert r.json()["message"] == "Choose when you checked: Checked just now, or a date and time."
+    with db.tx() as conn:
+        assert db.rows(conn, "SELECT * FROM signals WHERE request_id = :q", q=q["request_id"]) == []
+    once = key()
+    first = client.post(path, files=multipart("counted", counts), headers=once)
+    assert first.status_code == 200, first.json()
+    with db.tx() as conn:
+        row = db.one(conn, "SELECT observed_at, created_at FROM signals WHERE signal_id = :s",
+                     s=first.json()["signal_id"])
+    assert row["observed_at"] == row["created_at"]  # "Checked just now" is the server's now() at submission
+    assert first.json()["observed_at"] == row["observed_at"].astimezone(ZoneInfo("UTC")).isoformat()
+    assert client.post(path, files=multipart("counted", counts), headers=once).json() == first.json()  # a repeat
+    other = client.post(path, files=multipart("counted", counts, row["observed_at"].isoformat()), headers=once)
+    assert error(other) == (409, "idempotency_conflict")  # the same key with another check time is another request
+
+
+def test_cant_check_and_tasks_over_http(client):
+    """07-CONTEXT D-04, D-07 over HTTP: Can't check needs an Idempotency-Key and answers the request with state
+    CANT_CHECK; GET /api/tasks answers the contract's keys; the session's tasks_waiting is the counts' sum."""
+    card = story(client)
+    cid, v = card["case_id"], card["rec_version"]
+    fact = phantom(detail(client, cid))
+    q = post(client, f"/api/cases/{cid}/requests", {"rec_version": v, "fact_id": fact["fact_id"]}).json()
+    as_seat(client, q["to_branch"])
+    t = client.get("/api/tasks")
+    assert t.status_code == 200, t.json()
+    assert set(t.json()) == {"requests", "holds", "advisory", "counts", "server_now", "tiles", "list"}  # 07-19 adds two
+    assert set(t.json()["counts"]) == {"to_answer", "to_confirm", "lot_holds", "advisory"}
+    assert q["request_id"] in [r["request_id"] for r in t.json()["requests"]]
+    assert t.json()["counts"]["to_answer"] >= 1
+    assert client.get("/api/session").json()["tasks_waiting"] == sum(t.json()["counts"].values())
+    path = f"/api/requests/{q['request_id']}/cant-check"
+    assert error(client.post(path, json={})) == (400, "idempotency_key")
+    once = key()
+    closed = client.post(path, json={}, headers=once)
+    assert closed.status_code == 200, closed.json()
+    assert (closed.json()["request_id"], closed.json()["state"]) == (q["request_id"], "CANT_CHECK")
+    assert client.post(path, json={}, headers=once).json() == closed.json()  # a repeat with the key
+    again = client.post(path, json={}, headers=key())
+    assert error(again) == (409, "wrong_state") and again.json()["message"] == "Request is CANT_CHECK"
+    after = client.get("/api/tasks").json()
+    assert after["counts"]["to_answer"] == t.json()["counts"]["to_answer"] - 1
+    assert client.get("/api/session").json()["tasks_waiting"] == sum(after["counts"].values())
+    as_seat(client, None)
+    hq = client.get("/api/tasks").json()
+    assert (hq["requests"], hq["counts"]) == ([], {"to_answer": 0, "to_confirm": 0, "lot_holds": 0, "advisory": 0})
+    assert client.get("/api/session").json()["tasks_waiting"] == 0
 
 
 def test_whatif_adopt_reject_over_http(client):
@@ -393,6 +472,58 @@ def test_whatif_adopt_reject_over_http(client):
     assert post(client, f"/api/cases/{cid}/reject", {"reason": "store will run a promotion"}).json() == \
         {"state": "REJECTED"}
     assert story(client)["column"] == "Resolved"
+
+
+@pytest.mark.parametrize("binding", ["stale_version", "stale_plan", "current", "absent"])
+def test_adopt_optional_reviewed_binding_is_atomic_and_backward_compatible(client, binding):
+    """09-19 prerequisite: a delayed human Apply cannot adopt against a different review binding.
+    Refusal preserves the pending round, capacity and lot holds; callers omitting the new fields still adopt.
+    """
+    from api import workflow
+
+    cid = story(client)["case_id"]
+    d = detail(client, cid)
+    plan = d["result"]["recommended"]
+    trip = next(r for r in d["engine_input"]["runs"]
+                if r["run_code"] == cases.parse_plan(plan).run_code)
+    quote = [{"kind": "transport_quote", "run_code": trip["run_code"], "fixed_cost": trip["fixed_cost"] * 2}]
+    hold = post(client, f"/api/lots/{d['lot']['lot_id']}/holds", {"reason": "Review this lot"})
+    assert hold.status_code == 200, hold.json()
+    sent = take_and_send(client, cid, d["rec_version"])
+    assert sent.status_code == 200, sent.json()
+    run = client.get("/api/session").json()["run_id"]
+
+    def snapshot():
+        with db.tx() as conn:
+            return {table: sorted(db.rows(conn, f"SELECT * FROM {table} WHERE run_id = :r", r=run), key=repr)
+                    for table in ("cases", "reservations", "lot_holds", "recommendations", "decisions", "activity_log")}
+
+    before = snapshot()
+    pending = next(row for row in before["cases"] if row["case_id"] == cid)
+    assert pending["state"] == "PENDING_APPROVAL" and pending["active_rec_version"] == d["rec_version"]
+    assert before["reservations"] and before["lot_holds"]
+    body = {"overrides": quote, "note": "Carrier quote reviewed by the manager"}
+    if binding != "absent":
+        body.update(rec_version=d["rec_version"], plan_key=plan)
+    if binding == "stale_version":
+        body["rec_version"] = "earlier-reviewed-version"
+    elif binding == "stale_plan":
+        body["plan_key"] = next(o["key"] for o in d["result"]["options"] if o["key"] != plan)
+    response = post(client, f"/api/cases/{cid}/adopt", body)
+    if binding.startswith("stale_"):
+        assert response.status_code == 409, response.json()
+        assert error(response) == (409, binding)
+        assert response.json() == ({"error": "stale_version", "message": workflow.STALE,
+                                    "active_rec_version": d["rec_version"]} if binding == "stale_version" else
+                                   {"error": "stale_plan", "message": workflow.PLAN_CHANGED, "plan_key": plan})
+        assert snapshot() == before
+    else:
+        assert response.status_code == 200, response.json()
+        after = detail(client, cid)
+        assert after["rec_version"] == response.json()["rec_version"] != d["rec_version"]
+        assert after["state"] == "OPEN" and after["adopted"][-1]["override"] == quote[0]
+        assert after["adopted"][-1]["note"] == body["note"]
+        assert snapshot()["lot_holds"] == before["lot_holds"]
 
 
 def test_wait_is_retired_for_every_review_day(client):
@@ -424,6 +555,16 @@ def test_the_session_names_the_display_time_zone(client):
     zone = client.get("/api/session").json()["time_zone"]
     assert zone == config.SETTINGS["caps"]["time_zone"]
     assert ZoneInfo(zone).key == zone  # an IANA name
+
+
+def test_the_session_names_the_request_deadline_and_limit(client):
+    """07-21 (07-CONTEXT D-05, D-07; 07-UI-SPEC "Request actions"): the request panel says "The branch has {N}
+    minutes to respond." and the fact checks "{N} of {M} requests left on this version" before any request exists,
+    so the session names both settings leaves; the client holds neither number (CLAUDE.md "Data, not hardcoding")."""
+    s = client.get("/api/session").json()
+    assert s["requests"] == {"response_min": config.REQUEST_RESPONSE_MIN,
+                             "max_per_version": config.MAX_REQUESTS_PER_VERSION}
+    assert (s["requests"]["response_min"], s["requests"]["max_per_version"]) == (60, 2)  # settings.json today
 
 
 def test_after_the_last_demo_day_the_session_shows_demo_complete(client):
@@ -666,7 +807,8 @@ def test_the_export_carries_the_engine_version_and_replays_offline(client):
     assert bundle["dataset_version"] == d["versions"]["dataset_version"]
     assert bundle["forecast_run_id"] == d["versions"]["forecast_run_id"]
     assert bundle["engine_input"] == d["engine_input"]  # the stored raw input, exactly
-    assert bundle["fact_checks"] == d["fact_checks"]
+    # the stored checks, as the engine wrote them (the detail adds the commitment rule's keys, 07-09)
+    assert bundle["fact_checks"] == [{k: v for k, v in c.items() if k in cases.FACT_KEYS} for c in d["fact_checks"]]
     # offline: the bundle alone replays to the same version and the same answer
     inp = from_dict(bundle["engine_input"])
     assert rec_version(inp) == bundle["rec_version"]
@@ -721,8 +863,23 @@ def test_every_write_route_needs_an_idempotency_key(client):
     routes = [r for r in app.routes if isinstance(r, APIRoute) and r.path != "/api/session"]
     writes = sorted((m, r.path) for r in routes for m in r.methods if m in ("POST", "PATCH"))
     core = [r for r in routes if r.endpoint.__module__ == "api.app" and r.methods & {"POST", "PATCH"}]
-    assert len(core) == 14, writes  # app.py's 15 POST/PATCH routes, less /api/session (06.1: sign-out in; seat
-    # switch and Wait retired, 06.1-06)
+    assert len(core) == 28, writes  # app.py's 29 POST/PATCH routes, less /api/session (06.1: sign-out in; seat
+    # switch and Wait retired, 06.1-06; Phase 7: Can't check, 07-05; place and release a lot hold, 07-08;
+    # Reviewed · keep plan, 07-09; Select another plan, 07-10; Cancel approved plan, 07-11; Reassess, 07-12;
+    # file, withdraw and dismiss a field report, 07-13; Mark done and edit a report, 07-14; the impact preview, 07-15)
+    assert ("POST", "/api/requests/{request_id}/cant-check") in writes
+    assert ("POST", "/api/lots/{lot_id}/holds") in writes and ("POST", "/api/holds/{hold_id}/release") in writes
+    assert ("POST", "/api/cases/{case_id}/review") in writes  # 07-09: Reviewed · keep plan
+    assert ("POST", "/api/cases/{case_id}/select") in writes  # 07-10: Select another plan
+    assert ("POST", "/api/cases/{case_id}/cancel") in writes  # 07-11: Cancel approved plan
+    assert ("POST", "/api/cases/{case_id}/reassess") in writes  # 07-12: Reassess
+    assert ("POST", "/api/signals") in writes  # 07-13: file a field report
+    assert ("POST", "/api/signals/{signal_id}/withdraw") in writes  # 07-13: the reporter withdraws it
+    assert ("POST", "/api/signals/{signal_id}/dismiss") in writes  # 07-13: the owner dismisses it
+    assert ("POST", "/api/signals/{signal_id}/done") in writes  # 07-14: Mark done on an advisory task
+    assert ("PATCH", "/api/signals/{signal_id}") in writes  # 07-14: edit a report (a new revision)
+    assert ("POST", "/api/signals/{signal_id}/preview") in writes  # 07-15: the impact preview
+    assert ("POST", "/api/signals/preview") in writes  # 07-20: the preview before filing
     assert ("POST", "/api/cases/{case_id}/take-ownership") in writes  # a route module's (06.1 D-25), checked too
     card = story(client)
     cid, v = card["case_id"], card["rec_version"]
@@ -737,12 +894,24 @@ def test_every_write_route_needs_an_idempotency_key(client):
     bodies = {  # valid bodies, so only the missing key can refuse them
         "/api/demo/advance-day": {"expected_version": before["version"]},
         "/api/cases/{case_id}/send": {"rec_version": v},
-        "/api/cases/{case_id}/decision": {"rec_version": v, "decision": "approve"},
+        "/api/cases/{case_id}/decision": {"rec_version": v, "decision": "approve", "plan_key": card["suggested_key"]},
         "/api/cases/{case_id}/reject": {"reason": "test"},
         "/api/cases/{case_id}/adopt": {"overrides": [], "note": "test"},
         "/api/cases/{case_id}/requests": {"rec_version": v, "fact_id": fact["fact_id"]},
         "/api/signals/{signal_id}/confirm": {"revision": ans.json()["revision"], "checked_both": True},
         "/api/settings": {"expected_version": before["version"], "changes": {"hold_ttl_min": 30}},
+        "/api/lots/{lot_id}/holds": {"reason": "test"},  # 07-08: the lot's manager places a hold
+        "/api/holds/{hold_id}/release": {"note": "test"},  # 07-08: and releases it with a note
+        "/api/cases/{case_id}/review": {"flag_ids": ["test"], "note": "test"},  # 07-09: Reviewed · keep plan
+        "/api/cases/{case_id}/select": {"rec_version": v, "plan_key": card["suggested_key"]},  # 07-10
+        "/api/cases/{case_id}/cancel": {"reason": "test"},  # 07-11: Cancel approved plan
+        "/api/cases/{case_id}/reassess": {},  # 07-12: Reassess
+        "/api/signals/{signal_id}/withdraw": {},  # 07-13: withdraw a field report
+        "/api/signals/{signal_id}/dismiss": {"reason": "test"},  # 07-13: dismiss a field report
+        "/api/signals/{signal_id}/done": {},  # 07-14: Mark done
+        "/api/signals/{signal_id}": {"revision": 1},  # 07-14: edit a report
+        "/api/signals/{signal_id}/preview": {"revision": 1},  # 07-15: the impact preview
+        "/api/signals/preview": {"kind": "CAPACITY", "fields": {}},  # 07-20: the preview before filing
     }
     with db.tx() as conn:
         keys_before = db.one(conn, "SELECT count(*) AS n FROM idempotency_keys WHERE session_id = "
@@ -751,6 +920,8 @@ def test_every_write_route_needs_an_idempotency_key(client):
         url = path.format_map(Ids(ids))  # a route module's own id (06.1) is a placeholder: the key is checked first
         if path.endswith("/answer"):
             r = client.request(method, url, files=multipart("again", counts))
+        elif path == "/api/signals":  # a field report's multipart form (07-13)
+            r = client.request(method, url, files={"kind": (None, "CAPACITY"), "fields": (None, "{}")})
         else:
             r = client.request(method, url, json=bodies.get(path, MODULE_BODY))
         assert error(r) == (400, "idempotency_key"), (method, path, r.json())

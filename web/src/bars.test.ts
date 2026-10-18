@@ -92,3 +92,16 @@ test("tableRows keeps a missing value as null, never zero", () => {
   const t = tableRows({ labels: ["Mon", "Tue"], series: [{ name: "Units", values: [3] }] });
   assert.deepEqual(t.rows, [["Mon", 3], ["Tue", null]]);
 });
+
+test("Assistant filtering follows server groups, including person-sent Data records, without regrouping", () => {
+  const entries = [
+    { type: "evidence_drafted", group: "Assistant", id: "draft" },
+    { type: "evidence_requested", group: "Data", id: "person-sent" },
+    { type: "evidence_drafted", group: "Data", id: "server-classified-data" },
+    { type: "opened", group: "assistant", id: "different-case" },
+  ];
+  assert.deepEqual(historyFilter(entries, "Assistant").map(e => e.id), ["draft"]);
+  assert.deepEqual(historyFilter(entries, "Data").map(e => e.id), ["person-sent", "server-classified-data"]);
+  assert.deepEqual(historyFilter([], "Assistant"), []);
+  assert.deepEqual(historyFilter(entries, "All"), entries);
+});

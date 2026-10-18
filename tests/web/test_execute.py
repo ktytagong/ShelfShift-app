@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from playwright.sync_api import Page, expect
 
 from tests.web.conftest import (
-    case_id_by_tag, case_json, cards_json, db_tx, run_id, session_json, switch_seat, take_ownership,
+    case_id_by_tag, case_json, cards_json, db_tx, decision_body, run_id, session_json, switch_seat, take_ownership,
 )
 
 pytestmark = pytest.mark.web
@@ -59,9 +59,9 @@ def prepare_story(page: Page) -> dict:
     take_ownership(page, case_id)
     post(page, case_path(case_id, "send"), {"rec_version": version})
     switch_seat(page, dest)
-    post(page, case_path(case_id, "decision"), {"rec_version": version, "decision": "accept"})
+    post(page, case_path(case_id, "decision"), decision_body(page, case_id, "accept", version))
     switch_seat(page, source)
-    post(page, case_path(case_id, "decision"), {"rec_version": version, "decision": "approve"})
+    post(page, case_path(case_id, "decision"), decision_body(page, case_id, "approve", version))
     post(page, case_path(case_id, "prepare"), {})
     view = get(page, case_path(case_id, "execution"))
     action = next(w for w in view["work_orders"] if w["kind"] == "TRANSFER" and w["state"] == "PLANNED")

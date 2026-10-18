@@ -532,7 +532,9 @@ def today_counts(conn, run: dict, actor: dict) -> dict:
     discrepancy of the cases that are prepared or ran (cases.decided_many, cases.execution_many). Whether a case waits
     on the account is `_names` over the three keys it reads, each computed by the rule a card uses on the same
     inputs: stepkeys.next_action (api/stepkeys.py stays the only place a state becomes a step or an owner),
-    cases.next_owner and the case's state."""
+    cases.next_owner and the case's state. The plan is the card's, the plan in force: the selection bound to the
+    active version when there is one, else the recommended key (api/selection.py `plan_in_force`; 07-CONTEXT D-23)."""
+    from . import selection  # it reads cases at import: imported here
     ref = refdata.get(run["dataset_version"])
     store = _store(ref, actor, None)
     bookings.expire_holds(conn, run)
@@ -545,7 +547,9 @@ def today_counts(conn, run: dict, actor: dict) -> dict:
     execution = cases.execution_many(conn, run["run_id"], rows)
     n = 0
     for c in rows:
-        key = keys[c["case_id"]]
+        key = keys[c["case_id"]]  # None without a version row, as plan_in_force gives without one
+        sel = selection.bound(c) if key is not None else None
+        key = sel["plan_key"] if sel is not None else key
         plan = cases.parse_plan(key) if key is not None else None
         d = decided[c["case_id"]]
         view = {"next_action": stepkeys.next_action(c, plan, d, execution[c["case_id"]]), "state": c["state"],
@@ -562,7 +566,8 @@ def today_counts(conn, run: dict, actor: dict) -> dict:
 def nav_counts(conn, run: dict, session: dict) -> dict:
     """GET /api/session `nav_counts` for the signed-in account: `today` (Today's action cards), `board` (the board's
     open stock decisions in the account's default scope: every stage but closed, flags included) and `tasks` (a
-    store's stock checks waiting on it, transfers to dispatch from it and transfers to receive at it; HQ none).
+    store's stock checks waiting on it, transfers to dispatch from it and transfers to receive at it, and since 07-19
+    the lot holds it owns and its open advisory tasks, so it is GET /api/tasks' six tiles summed; HQ none).
 
     Counted with set-based reads, never by building the pages they count. The equalities: today = len(today()
     ["cards"]) = today_counts' cards + checks; board = the board's stage_counts summed over stepkeys.STAGES =
@@ -575,9 +580,11 @@ def nav_counts(conn, run: dict, session: dict) -> dict:
     board = cases.board_counts(conn, run, actor)
     tasks = 0
     if actor["role"] != "hq":
+        from . import tasklist  # it reads movement and execution at import
         tasks = mine["checks"] + sum(
             movement.transfers(conn, run, actor, direction=d, state=s)["total"]
             for d, s in (("outgoing", "planned"), ("incoming", "dispatched")))
+        tasks += tasklist.open_beyond_checks(conn, run, actor["branch"])  # lot holds, advisory tasks (07-19)
     return {"today": mine["cards"] + mine["checks"], "board": board["open"] + board["flags"], "tasks": tasks}
 
 

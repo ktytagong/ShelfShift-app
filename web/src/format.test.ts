@@ -2,7 +2,9 @@
 // labels. The currency codes below are test inputs; the formatter itself holds no currency.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { centsDown, centsUp, dateLabel, expected, factor, hhmm, markDate, money, signed, units, weekday } from "./format.ts";
+import {
+  centsDown, centsUp, dateLabel, expected, factor, hhmm, markDate, money, signed, units, weekday, zonedNow, zonedToUtc,
+} from "./format.ts";
 
 const CAL = [
   { day: 3, date: "2026-10-15", weekday: "Thu" },
@@ -93,4 +95,33 @@ test("markDate: the dataset mark's date from an ISO date, en-US parts on the UTC
   assert.equal(markDate("2026-10-17"), "Sat 17 Oct 2026");
   assert.equal(markDate("2026-10-14"), "Wed 14 Oct 2026");
   assert.equal(markDate("2027-01-03"), "Sun 3 Jan 2027");
+});
+
+// --- "When did you check?" (07-17; 07-CONTEXT D-22; 07-UI-SPEC time-zone backstop: run under TZ=UTC and
+// TZ=America/New_York too) ---------------------------------------------------------------------------------------------
+
+test("zonedToUtc: a typed check time is Bangkok wall time sent as UTC, whatever the process zone", () => {
+  assert.equal(zonedToUtc("2026-10-16T20:40", "Asia/Bangkok"), "2026-10-16T13:40:00.000Z");
+  assert.equal(zonedToUtc("2026-10-17T03:15", "Asia/Bangkok"), "2026-10-16T20:15:00.000Z"); // across midnight
+  assert.equal(zonedToUtc("2026-10-16T20:40:30", "Asia/Bangkok"), "2026-10-16T13:40:30.000Z");
+  assert.equal(zonedToUtc("2026-03-08T02:30", "Asia/Bangkok"), "2026-03-07T19:30:00.000Z"); // New York's DST night
+});
+
+test("zonedToUtc: an unreadable value or an unknown zone gives null, never a guess", () => {
+  assert.equal(zonedToUtc("16/10/2026 20:40", "Asia/Bangkok"), null);
+  assert.equal(zonedToUtc("", "Asia/Bangkok"), null);
+  assert.equal(zonedToUtc("2026-10-16T20:40", "Not/A_Zone"), null);
+});
+
+test("zonedNow: the input's max is the Bangkok wall time now, to the minute", () => {
+  assert.equal(zonedNow("Asia/Bangkok", Date.parse("2026-10-16T13:40:59Z")), "2026-10-16T20:40");
+  assert.equal(zonedNow("Asia/Bangkok", Date.parse("2026-10-16T17:05:00Z")), "2026-10-17T00:05");
+  assert.equal(zonedNow("Not/A_Zone", Date.parse("2026-10-16T13:40:00Z")), "");
+});
+
+test("the process zone never moves either helper", () => {
+  const offset = new Date("2026-10-16T13:40:00Z").getTimezoneOffset(); // whatever TZ this run uses
+  assert.equal(typeof offset, "number");
+  assert.equal(zonedToUtc(zonedNow("Asia/Bangkok", Date.parse("2026-10-16T13:40:00Z")), "Asia/Bangkok"),
+    "2026-10-16T13:40:00.000Z");
 });

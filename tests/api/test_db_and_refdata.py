@@ -314,6 +314,9 @@ def settings_copy(tmp_path, edit):
     (lambda t: t["caps"]["session"]["reset"]["value"].update(window="week"), "settings.caps.session.reset"),
     (lambda t: t["caps"]["global"]["sandbox"].update(value=True), "settings.caps.global.sandbox"),
     (lambda t: t["caps"]["time_zone"].update(value="Mars/Olympus"), "settings.caps.time_zone"),
+    (lambda t: t["caps"]["workspace"]["signal"]["value"].update(limit=0), "settings.caps.workspace.signal.limit"),
+    (lambda t: t["caps"]["session"].update(signal=t["caps"]["workspace"]["signal"]),
+     "a kind is capped per session or per workspace, not both"),  # 07-CONTEXT D-20: one own cap per kind
 ])
 def test_a_malformed_settings_file_names_the_leaf(tmp_path, edit, where):
     assert config.load_settings() == config.SETTINGS  # the committed file loads
@@ -329,9 +332,13 @@ def test_settings_bounds_cover_exactly_the_three_writable_fields():
     }
     # the policy values FLOW-11 and spec §8 name, read from api/settings.json
     assert config.HOLD_TTL_MIN == 60 and config.ENGINE_TIMEOUT_S == 15
-    assert config.SESSION_CAPS == {"ai": (60, "hour"), "signal": (20, "day"), "upload": (10, "day"),
-                                   "reset": (20, "day")}
-    assert config.GLOBAL_CAPS == {"ai": 300, "sandbox": 300, "upload": 500}  # ai: 06-CONTEXT D-12
+    assert config.SESSION_CAPS == {"ai": (60, "hour"), "reset": (20, "day")}
+    # per workspace (07-CONTEXT D-20); the preview caps are read from the settings (conftest puts them out of reach)
+    assert {k: v for k, v in config.WORKSPACE_CAPS.items() if k != "preview"} == {"signal": (20, "day"), "upload": (10, "day")}
+    assert {k: v for k, v in config.GLOBAL_CAPS.items() if k != "preview"} == {"ai": 300, "sandbox": 300, "upload": 500}  # ai: 06-CONTEXT D-12
+    assert config.SETTINGS["caps"]["workspace"]["preview"] == {"limit": 4, "window": "minute"}  # 07-20 review
+    assert config.SETTINGS["caps"]["global"]["preview"] == {"limit": 12, "window": "minute"}  # across workspaces
+    assert config.GLOBAL_WINDOWS == {"preview": "minute"}  # every other global cap is per day
     assert config.CLIENT_CAPS == {"passcode": (10, "minute")}  # 06-CONTEXT D-24
     assert str(config.CAP_TZ) == "Asia/Bangkok"
     assert (config.REQUEST_LEAD_MIN, config.MAX_REQUESTS_PER_VERSION) == (15, 2)

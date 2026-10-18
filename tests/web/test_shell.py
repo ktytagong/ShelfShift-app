@@ -86,7 +86,7 @@ def test_the_root_route_is_today(visitor):
 
 # The registry's nav in its final order (sections "", Movement, Stock, Admin, each by `order`; 06.1-17..-29).
 NAV_ORDER = ["Today", "Decision board", "Schedule", "Tasks", "Branch transfers", "Stock & lots", "Analytics",
-             "Forecasts", "Reports", "Policies", "About"]
+             "Forecasts", "Business events", "Reports", "Policies", "About"]  # Business events: 07-20 (07-CONTEXT D-04)
 
 def nav_labels(page) -> list[str]:
     """The Main nav's links in order, each by its visible label (a count's words are visually hidden)."""

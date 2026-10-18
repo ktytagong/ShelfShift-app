@@ -24,7 +24,8 @@ def test_result_tables_are_shared_without_run_id():
 def test_schema_statements_are_additive_only():
     additive = re.compile(r'^(CREATE TABLE IF NOT EXISTS |CREATE (?:UNIQUE )?INDEX IF NOT EXISTS |'
                           r'ALTER TABLE \w+ ADD COLUMN IF NOT EXISTS )')
-    statements = db.statements(db.SCHEMA.read_text())
+    from tests.deploy.test_schema_additive import EXCEPTIONS, normal  # the deploy owner's recorded exceptions
+    statements = [s for s in db.statements(db.SCHEMA.read_text()) if normal(s) not in EXCEPTIONS]
     assert statements
     for statement in statements:
         assert additive.match(statement), statement

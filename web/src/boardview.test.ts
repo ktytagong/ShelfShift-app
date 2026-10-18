@@ -64,3 +64,54 @@ test("badgeChip: the status words of 06.1 (D-61), and an unverified amount is an
     assert.doesNotMatch(badgeChip(b, "USD").text, /cash|saving|loss|at stake/i);
   }
 });
+
+// --- Phase 7 badges (07-22; 07-UI-SPEC "Board badges", surface 2) ---------------------------------------------------
+
+test("cardBadges: Phase 7's priority, two shown, the rest behind '+N' with their names", async () => {
+  const { cardBadges } = await import("./boardview.ts");
+  const card = {
+    badges: [
+      { kind: "new_report", text: "New report" },
+      { kind: "review_flag", text: "New confirmed information · review required" },
+      { kind: "evidence_requested", text: "Evidence requested" },
+      { kind: "required_check", text: "Required check" },
+      { kind: "lot_hold", text: "Lot hold" },
+    ],
+    blocked_reasons: [], next_action: { key: null, who: [] },
+  } as unknown as Parameters<typeof cardBadges>[0];
+  const texts = cardBadges(card, "USD").map((c) => c.text);
+  assert.deepEqual(texts, ["Lot hold", "Required check", "New confirmed information · review required",
+    "Stock check requested", "New report"]);
+  assert.deepEqual(badgeOverflow(texts), {
+    shown: ["Lot hold", "Required check"], more: 3,
+    moreLabel: "New confirmed information · review required, Stock check requested, New report",
+  });
+});
+
+test("cardBadges: a not-allowed fact ranks above a review flag, an exposure below it", async () => {
+  const { cardBadges } = await import("./boardview.ts");
+  const unverified = (notAllowed: boolean) => ({
+    kind: "unverified", text: "Unverified", fact_ids: ["f"], not_allowed_fact_ids: notAllowed ? ["f"] : [],
+    decision_regret: notAllowed ? null : 12, net_revenue_difference: null, waste_policy_difference: null,
+  });
+  const card = (u: object) => ({
+    badges: [{ kind: "review_flag", text: "x" }, u], blocked_reasons: [], next_action: { key: null, who: [] },
+  }) as unknown as Parameters<typeof cardBadges>[0];
+  assert.deepEqual(cardBadges(card(unverified(true)), "USD").map((c) => c.kind), ["unverified", "review_flag"]);
+  assert.deepEqual(cardBadges(card(unverified(false)), "USD").map((c) => c.kind), ["review_flag", "unverified"]);
+});
+
+test("nextLine names who resolves a lot hold or a Required check", async () => {
+  const { nextLine } = await import("./boardview.ts");
+  const next = { key: "send", who: [{ role: "manager", branch: "S042" }] };
+  const held = {
+    next_action: next, blocked_reasons: ["lot_hold", "required_check"],
+    badges: [{ kind: "lot_hold", text: "Lot hold", owner_branches: ["S017"] },
+      { kind: "required_check", text: "Required check", owner_branches: ["S042"] }],
+  } as unknown as Parameters<typeof nextLine>[0];
+  assert.deepEqual(nextLine(held), { action: "Resolve hold", who: "S017 manager" });
+  const checked = { ...held, blocked_reasons: ["required_check"] } as unknown as Parameters<typeof nextLine>[0];
+  assert.deepEqual(nextLine(checked), { action: "Resolve check", who: "S042 manager" });
+  const free = { next_action: next, blocked_reasons: [], badges: [] } as unknown as Parameters<typeof nextLine>[0];
+  assert.deepEqual(nextLine(free), { action: "Review and send", who: "S042 manager" });
+});
