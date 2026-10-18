@@ -19,7 +19,7 @@ https://github.com/khadija2027/Demand-Forecasting-and-Inventory-Safety-in-the-Re
    HQ planner: type the HQ passcode in **HQ passcode**.
 4. Press **Sign in**. The app opens on **Today**, with the navigation on the left (a menu button on a phone).
 
-- The HQ passcode and the store passcode are on slide 13 of the submission deck. They are never written in this guide.
+- The HQ passcode and the store passcode are on slide 12 of the submission deck ("Provide links to your"). They are never written in this guide.
 - Every store manager uses the same store passcode; HQ has its own. The store passcode never opens HQ.
 - Each browser gets its own private workspace. Nothing you do affects another reviewer, and the shared data is never
   changed.
