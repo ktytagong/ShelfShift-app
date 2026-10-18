@@ -1,0 +1,169 @@
+{
+  "settings": {
+    "currency": {
+      "value": "USD",
+      "type": "Policy",
+      "source": "DATA-07: the currency is a setting in reference data; default USD"
+    },
+    "synthetic_label": {
+      "value": "Synthetic data · hypothetical scenario",
+      "type": "Policy",
+      "source": "honesty rule: shown on every screen"
+    }
+  },
+  "engine_policy": {
+    "packing_min": {
+      "value": 120,
+      "unit": "minutes",
+      "type": "Policy",
+      "source": "engine-3 Policy default (spec §6 Timing); store assumption"
+    },
+    "min_sellable_days": {
+      "value": 1,
+      "unit": "days",
+      "type": "Policy",
+      "source": "engine-3 Policy default (spec §6 Timing); store assumption"
+    },
+    "relabel_min": {
+      "value": 60,
+      "unit": "minutes",
+      "type": "Policy",
+      "source": "engine-3 Policy default (spec §6 Timing); store assumption"
+    },
+    "markdown_same_day_by_min": {
+      "value": 720,
+      "unit": "minutes",
+      "type": "Policy",
+      "source": "engine-3 Policy default (spec §6 Timing); store assumption"
+    },
+    "sellable_same_day_before_min": {
+      "value": 840,
+      "unit": "minutes",
+      "type": "Policy",
+      "source": "engine-3 Policy default (spec §6 Timing); store assumption"
+    },
+    "min_regret": {
+      "value": 0.03,
+      "unit": "USD",
+      "type": "Policy",
+      "source": "money guard: fixture value ÷ 36 (01-CONTEXT D-14)"
+    },
+    "crossover_range_floor": {
+      "value": 555.56,
+      "unit": "USD",
+      "type": "Policy",
+      "source": "money guard: fixture value ÷ 36 (01-CONTEXT D-14)"
+    },
+    "adjustment_cost_max": {
+      "value": 2777.78,
+      "unit": "USD",
+      "type": "Policy",
+      "source": "money guard: fixture value ÷ 36 (01-CONTEXT D-14)"
+    },
+    "stale_after_days": {
+      "value": 7,
+      "unit": "days",
+      "type": "Policy",
+      "source": "engine-2 value kept as the IN-03 seed (02-05); pending retailer",
+      "note": "every natural lot carries last_verified_day = its receipt day, so every milk lot older than 7 days is stale by construction and the board will request counts often; that is the model, not noise"
+    },
+    "stale_factor": {
+      "value": 0.7,
+      "unit": "share of the record",
+      "type": "Policy",
+      "source": "engine-2 value kept as the IN-03 seed (02-05); pending retailer"
+    },
+    "phantom_min_forecast": {
+      "value": 10.0,
+      "unit": "units",
+      "type": "Policy",
+      "source": "engine-2 value kept as the IN-03 seed (02-05); pending retailer"
+    },
+    "baseline_near_expiry_days": {
+      "value": 1,
+      "unit": "days",
+      "type": "Policy",
+      "source": "engine-2 value kept as the IN-03 seed (02-05); pending retailer"
+    },
+    "baseline_markdown_pct": {
+      "value": 30,
+      "unit": "percent",
+      "type": "Policy",
+      "source": "engine-2 value kept as the IN-03 seed (02-05); pending retailer"
+    },
+    "waste_price": {
+      "value": 0.0,
+      "unit": "USD/kg",
+      "type": "Policy",
+      "source": "ENG-10 default; a retailer policy value, not a cash cost"
+    },
+    "waste_flip_max": {
+      "value": 5.0,
+      "unit": "USD/kg",
+      "type": "Policy",
+      "source": "02-CONTEXT D-05: default reporting ceiling of the flip range (fixture 180 = $5/kg × 36)"
+    },
+    "shortlist_step": {
+      "value": 0,
+      "type": "Policy",
+      "source": "full search until Phase 6's bench decides (ENG-09)"
+    }
+  },
+  "markdown_response": {
+    "m20": {
+      "value": [1.30, 1.4333333333333333, 1.55],
+      "type": "Adoptable",
+      "source": "spec §5 table: the store's assumed response, low/base/high; assumption, not observed",
+      "note": "base = 43/30 exactly"
+    },
+    "m30": {
+      "value": [1.40, 1.60, 1.80],
+      "type": "Adoptable",
+      "source": "spec §5 table: the store's assumed response, low/base/high; assumption, not observed"
+    }
+  },
+  "markdown_schedules": {
+    "A": {
+      "value": [[2, 20], [1, 30]],
+      "unit": "(days before expiry, percent off) steps",
+      "type": "Assumption",
+      "source": "assumption · industry pattern: 20% at D−2, 30% at D−1; A: milk and products without an entry (ESL-01, Seed calibration 9, 03-CONTEXT D-20)",
+      "note": "pending retailer"
+    },
+    "B": {
+      "value": [[1, 20], [0, 30]],
+      "unit": "(days before expiry, percent off) steps",
+      "type": "Assumption",
+      "source": "assumption · 20% at D−1, 30% at D; B: 3-day products (03-CONTEXT D-20): with expiry = received + 3, A would leave one full-price day of four and B leaves two",
+      "note": "pending retailer"
+    },
+    "C": {
+      "value": [[0, 30]],
+      "unit": "(days before expiry, percent off) steps",
+      "type": "Assumption",
+      "source": "C: sensitivity only (ESL-03); never the baseline for a claim"
+    },
+    "default": {
+      "value": "A",
+      "type": "Assumption",
+      "source": "A: milk and products without an entry; B: 3-day products; C: sensitivity only (03-CONTEXT D-20; Seed calibration 9 option (a))"
+    }
+  },
+  "product_schedule": {
+    "MILK-1L": {
+      "value": "A",
+      "type": "Assumption",
+      "source": "A: milk and products without an entry (03-CONTEXT D-20)"
+    },
+    "STRAW-500": {
+      "value": "B",
+      "type": "Assumption",
+      "source": "B: 3-day products (03-CONTEXT D-20); retail practice, pending retailer"
+    },
+    "BREAD-400": {
+      "value": "B",
+      "type": "Assumption",
+      "source": "B: 3-day products (03-CONTEXT D-20); retail practice, pending retailer"
+    }
+  }
+}

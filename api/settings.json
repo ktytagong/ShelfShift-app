@@ -1,0 +1,45 @@
+{
+  "holds": {
+    "hold_ttl_min": {"value": 60, "unit": "minutes", "type": "Policy", "source": "spec §8 Bookings: a hold lasts 60 real minutes, never demo time (FLOW-05)", "note": "env HOLD_TTL_MIN overrides it at deploy"}
+  },
+  "engine": {
+    "timeout_s": {"value": 15, "unit": "seconds", "type": "Policy", "source": "04-CONTEXT Claude's Discretion, engine worker hang rule (OPS-06)", "note": "well above the 3 s case budget, which stays the api.bench gate and is never raised; env ENGINE_TIMEOUT_S overrides it at deploy"},
+    "queue_wait_s": {"value": 10, "unit": "seconds", "type": "Policy", "source": "04-RESEARCH Pitfall 1: a bounded wait for the one engine slot, then 503 engine_busy"}
+  },
+  "caps": {
+    "session": {
+      "ai": {"value": {"limit": 60, "window": "hour"}, "type": "Policy", "source": "spec §4 Caps; FLOW-11; 04-CONTEXT D-08"},
+      "signal": {"value": {"limit": 20, "window": "day"}, "type": "Policy", "source": "spec §4 Caps; FLOW-11; 04-CONTEXT D-08"},
+      "upload": {"value": {"limit": 10, "window": "day"}, "type": "Policy", "source": "spec §4 Caps (signals with a file); FLOW-11; 04-CONTEXT D-08"},
+      "reset": {"value": {"limit": 20, "window": "day"}, "type": "Policy", "source": "spec §4 Caps; FLOW-11; 04-CONTEXT D-08"}
+    },
+    "client": {
+      "passcode": {"value": {"limit": 10, "window": "minute"}, "type": "Policy", "source": "06-CONTEXT D-24 (replaces 04-REVIEW WR-03's 20 per hour): wrong passcode attempts, counted per address", "note": "only a wrong passcode counts; the address is stored as a hash; on Cloud Run it is the rightmost X-Forwarded-For entry (the one Google's front end appends), locally the TCP peer; after 10 wrong guesses within one clock minute a block lasts until that minute ends (at most 60 s) and is never permanent; visitors behind one shared NAT or VPN exit share a counter (accepted, D-24)"}
+    },
+    "global": {
+      "ai": {"value": 300, "unit": "requests per day", "type": "Policy", "source": "spec §4 Caps; 04-CONTEXT D-08; 06-CONTEXT D-12 (judging deployment)", "note": "requests, not dollars (06-CONTEXT D-13): live questions, live briefs and AI signal analysis share it; cached briefs and manual counts do not spend it (04-CONTEXT D-20); resets at midnight Asia/Bangkok; env GLOBAL_AI_CAP overrides it at deploy"},
+      "sandbox": {"value": 300, "unit": "sandboxes per day", "type": "Policy", "source": "spec §4 Caps; 04-CONTEXT D-08"},
+      "upload": {"value": 500, "unit": "uploads per day", "type": "Policy", "source": "spec §4 Caps; 04-CONTEXT D-08"}
+    },
+    "time_zone": {"value": "Asia/Bangkok", "type": "Policy", "source": "spec §4: daily caps reset at midnight Bangkok time"}
+  },
+  "prune": {
+    "retired_sandbox_hours": {"value": 24, "unit": "hours", "type": "Policy", "source": "04-REVIEW IN-01 (agy F-T5-03): a sandbox retired longer ago than this is no session's; its rows and keys go"},
+    "session_key_days": {"value": 30, "unit": "days", "type": "Policy", "source": "04-REVIEW IN-01: the ss_session cookie lives 30 days (app.COOKIE_MAX_AGE_S), so an older session-scoped key has no session left to retry it"},
+    "usage_window_days": {"value": 2, "unit": "days", "type": "Policy", "source": "04-REVIEW IN-01: a cap window (an hour or a day) older than this is never counted again"},
+    "engine_cache_days": {"value": 7, "unit": "days", "type": "Policy", "source": "04-REVIEW IN-01: an older cached result is computed again on its next use (results are deterministic)"},
+    "runs_per_batch": {"value": 3, "unit": "sandboxes per request", "type": "Policy", "source": "04-REVIEW IN-01: one bounded batch per reset or new session (no background work on Cloud Run), well inside the 2 s reset target"},
+    "rows_per_batch": {"value": 1000, "unit": "rows per table per request", "type": "Policy", "source": "04-REVIEW IN-01: the bound on each shared-table delete in one batch"}
+  },
+  "http": {
+    "max_body_bytes": {"value": 65536, "unit": "bytes", "type": "Policy", "source": "04-REVIEW WR-02 (agy F-T5-01): the JSON or form body is read up to this bound, before the passcode check", "note": "the demo path's bodies are a few hundred bytes; a larger one is 400 bad_request"}
+  },
+  "requests": {
+    "lead_min": {"value": 15, "unit": "minutes", "type": "Policy", "source": "plan REQUEST_LEAD_MIN; 04-RESEARCH A12; 04-API-CONTRACT Count path 5", "note": "a count request is due this long before decide_by"},
+    "max_per_version": {"value": 2, "unit": "requests per case version", "type": "Policy", "source": "spec §7; 04-CONTEXT D-20 (count requests share the limit)"}
+  },
+  "execution": {
+    "conditions": {"value": [{"key": "as_expected", "label": "As expected"}, {"key": "damaged", "label": "Damaged"}, {"key": "temperature_concern", "label": "Temperature concern"}], "type": "Policy", "source": "06.1-UI-SPEC open questions 2 and 5 (recommended defaults, pending the user)", "note": "the condition a dispatch or receipt records (06.1 D-48)"},
+    "resolutions": {"value": [{"key": "found_at_destination", "label": "Found at the destination"}, {"key": "lost_or_written_off", "label": "Lost or written off"}, {"key": "source_count_error", "label": "Counting error at the source"}], "type": "Policy", "source": "06.1-UI-SPEC open questions 2 and 5 (recommended defaults, pending the user)", "note": "how a receipt discrepancy is reconciled (06.1 D-65)"}
+  }
+}

@@ -1,0 +1,102 @@
+{
+ "actuals": "public units (sale_amount x the units factor, an Assumption) on in-stock days of the backtest window; stockout days are excluded, never filled",
+ "baseline": "same weekday last week",
+ "baseline_bias": -0.1497,
+ "baseline_wape": 0.424,
+ "bias": -0.1552,
+ "bias_definition": "\u03a3(forecast \u2212 actual) / \u03a3 actual; positive means over-forecast",
+ "category_level": "mgmt",
+ "comparison_label": "TimesFM 2.5 (49989 series) and ARIMA_PLUS (11 series) versus same weekday last week, using identical inputs; evaluated against held-out public sales on in-stock days.",
+ "coverage_80": 0.632,
+ "cutoff_day": -15,
+ "discounted_days_scored": 226703,
+ "excluded_stockout_days": 304606,
+ "forecast_run_id": "fr-backtest-b117b0ac",
+ "input_counts": {
+  "converted": 1035142,
+  "imputed": 1675392,
+  "recorded": 1075060,
+  "unfilled": 12008,
+  "unknown_price": 2398
+ },
+ "input_label": "estimated full-price-equivalent sales",
+ "label": "accuracy on public sales, in-stock days",
+ "mae_only_series": {
+  "count": 21,
+  "mean_mae": 14.3956
+ },
+ "model_vs_baseline": "better",
+ "note": "Figures of the released BigQuery forecast; quote them only with their label (accuracy on public sales, in-stock days) and providers",
+ "per_category": {
+  "G0": {
+   "baseline_bias": -0.2006,
+   "baseline_wape": 0.5198,
+   "bias": -0.2194,
+   "coverage_80": 0.6244,
+   "model_vs_baseline": "better",
+   "wape": 0.4551
+  },
+  "G1": {
+   "baseline_bias": -0.012,
+   "baseline_wape": 0.5562,
+   "bias": -0.003,
+   "coverage_80": 0.7586,
+   "model_vs_baseline": "better",
+   "wape": 0.4568
+  },
+  "G2": {
+   "baseline_bias": 0.0988,
+   "baseline_wape": 0.5508,
+   "bias": 0.1253,
+   "coverage_80": 0.6581,
+   "model_vs_baseline": "better",
+   "wape": 0.4928
+  },
+  "G3": {
+   "baseline_bias": 0.0767,
+   "baseline_wape": 0.4993,
+   "bias": 0.0708,
+   "coverage_80": 0.6999,
+   "model_vs_baseline": "better",
+   "wape": 0.4248
+  },
+  "G4": {
+   "baseline_bias": -0.2096,
+   "baseline_wape": 0.4332,
+   "bias": -0.225,
+   "coverage_80": 0.6115,
+   "model_vs_baseline": "better",
+   "wape": 0.3916
+  },
+  "G5": {
+   "baseline_bias": -0.0564,
+   "baseline_wape": 0.4492,
+   "bias": -0.0997,
+   "coverage_80": 0.6662,
+   "model_vs_baseline": "better",
+   "wape": 0.378
+  },
+  "G6": {
+   "baseline_bias": -0.1996,
+   "baseline_wape": 0.3809,
+   "bias": -0.2004,
+   "coverage_80": 0.6082,
+   "model_vs_baseline": "better",
+   "wape": 0.3421
+  }
+ },
+ "providers": {
+  "ai_forecast": 49989,
+  "arima_plus": 11
+ },
+ "reference_history_id": "fb-20cac9ab8808",
+ "scored_days": 395247,
+ "scored_series": 49378,
+ "series_without_in_stock_days": 601,
+ "unknown_price_days_scored": 1159,
+ "wape": 0.3755,
+ "window": [
+  -14,
+  -1
+ ]
+}

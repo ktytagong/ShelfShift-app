@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.env
+.env.*
+# Every example stays tracked: it names the keys with placeholders, never a value.
+!.env.example
+# The real deploy configuration (project, region, model, resource names): never committed (06-CONTEXT D-03, D-08).
+# deploy/releases/ is not ignored: release manifests are committed to this private repo (D-11).
+# The release lock (06-REVIEWS R2-11): ignored so the clean-tree check passes while a release or rollback holds it.
+deploy/.release.lock
+# Drill records (deploy/README.md step 11) name the project and its resources: they stay local, never committed.
+deploy/releases-drill/
+deploy/.env.local
+web/node_modules/
+web/dist/
+data/reference/reports/forecast-diagnostics.json
+test-results/
+# FreshRetailNet files, generated artifacts and the data-pipeline environment never enter git (05.2 D-06, D-07)
+public-data/
+.venv-data/

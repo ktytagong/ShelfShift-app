@@ -1,0 +1,506 @@
+{
+ "dataset_version": "ds-c8282d7e3605",
+ "files": {
+  "capacity": {
+   "columns": [
+    "store",
+    "zone",
+    "day",
+    "free_totes"
+   ],
+   "path": "parts/capacity.csv.gz",
+   "rows": 50,
+   "sha256": "ed40ac132085bf7f2a8272e6bd50698ea3e2ba57aa488341161da36fded71be9",
+   "table": "ref_capacity",
+   "truth": false
+  },
+  "forecast_points": {
+   "columns": [
+    "forecast_run_id",
+    "store",
+    "sku",
+    "day",
+    "low",
+    "base",
+    "high",
+    "provider",
+    "clamped",
+    "raw_low",
+    "raw_base",
+    "raw_high"
+   ],
+   "path": "parts/forecast_points.csv.gz",
+   "rows": 480,
+   "sha256": "fa96f95e4d939c62b0cd6b81c7562184e383b238a21faef3b073174d4c80b7c0",
+   "table": "ref_forecast_point",
+   "truth": false
+  },
+  "forecast_runs": {
+   "columns": [
+    "forecast_run_id",
+    "job",
+    "demo_day",
+    "cutoff_day",
+    "first_day",
+    "last_day",
+    "meta"
+   ],
+   "path": "parts/forecast_runs.csv.gz",
+   "rows": 5,
+   "sha256": "e3e44b0ccde3621874241650cfc0cd7ee63538849dc335504e50dc7417131b7a",
+   "table": "ref_forecast_run",
+   "truth": false
+  },
+  "inbound0": {
+   "columns": [
+    "inbound_id",
+    "store",
+    "sku",
+    "qty",
+    "arrival_day",
+    "arrival_min",
+    "expiry_day",
+    "received_seq",
+    "expiry_source",
+    "last_verified_day",
+    "origin"
+   ],
+   "path": "parts/inbound0.csv.gz",
+   "rows": 35,
+   "sha256": "1788b02d15e482dafe6737526418ba83b15f36c1c2d5bd220d7057af00c1684f",
+   "table": "ref_inbound0",
+   "truth": false
+  },
+  "lots0": {
+   "columns": [
+    "lot_id",
+    "store",
+    "sku",
+    "qty",
+    "expiry_day",
+    "received_seq",
+    "markdown_pct",
+    "expiry_source",
+    "last_verified_day",
+    "tag",
+    "origin"
+   ],
+   "path": "parts/lots0.csv.gz",
+   "rows": 14,
+   "sha256": "307ceb02a90c11ab442749bfd6b32083532425a0fd80da7920bd889d10aa0425",
+   "table": "ref_lot0",
+   "truth": false
+  },
+  "products": {
+   "columns": [
+    "sku",
+    "mgmt",
+    "cat1",
+    "cat2",
+    "cat3",
+    "category",
+    "zone",
+    "price",
+    "disposal_cost",
+    "units_per_tote",
+    "kg_per_unit",
+    "shelf_life_days",
+    "schedule",
+    "name"
+   ],
+   "path": "parts/products.csv.gz",
+   "rows": 2,
+   "sha256": "931854106acd9aa44fdb95b0f8b6f6697423c3a694d1af96d3616baa635982e4",
+   "table": "ref_product",
+   "truth": false
+  },
+  "runs": {
+   "columns": [
+    "run_code",
+    "day",
+    "origin",
+    "dest",
+    "loading_cutoff_min",
+    "departs_min",
+    "arrives_min",
+    "spare_totes",
+    "cold_chain",
+    "fixed_cost",
+    "per_unit_cost",
+    "cancel_cost",
+    "travel_min"
+   ],
+   "path": "parts/runs.csv.gz",
+   "rows": 28,
+   "sha256": "003ba3567aad8773f7992ef651e25542623a5846c584582d13c1ee5c53305e33",
+   "table": "ref_run",
+   "truth": false
+  },
+  "sales": {
+   "columns": [
+    "store",
+    "sku",
+    "day",
+    "units",
+    "sale_amount",
+    "oos_hours",
+    "stockout",
+    "discount",
+    "unknown_price",
+    "holiday",
+    "activity"
+   ],
+   "path": "parts/sales.csv.gz",
+   "rows": 490,
+   "sha256": "08d8b115f004030386d9a948fc581a9a004f4b5aeac41632119d2ad61cd50d7a",
+   "table": "ref_sales_day",
+   "truth": false
+  },
+  "stores": {
+   "columns": [
+    "store",
+    "city",
+    "geo_known"
+   ],
+   "path": "parts/stores.csv.gz",
+   "rows": 5,
+   "sha256": "f863b96d1c6d9f57cb8468b5f484272162272ab5ac82bc9a09d720047fd98480",
+   "table": "ref_store",
+   "truth": false
+  },
+  "truth_demand": {
+   "columns": [
+    "store",
+    "sku",
+    "day",
+    "demand"
+   ],
+   "path": "parts/truth_demand.csv.gz",
+   "rows": 70,
+   "sha256": "d62eab0f38e6be0f20aae9017cb63925867ad686de413c25a07105f0e572db64",
+   "table": "ref_truth_demand",
+   "truth": true
+  },
+  "truth_physical": {
+   "columns": [
+    "lot_id",
+    "qty"
+   ],
+   "path": "parts/truth_physical.csv.gz",
+   "rows": 49,
+   "sha256": "fa2366250f1f2d20fd95d140a14627163976a54a128d5fc8cb82aa985bc992a5",
+   "table": "ref_truth_physical",
+   "truth": true
+  },
+  "weather": {
+   "columns": [
+    "store",
+    "day",
+    "precip",
+    "temp",
+    "humidity",
+    "wind"
+   ],
+   "path": "parts/weather.csv.gz",
+   "rows": 245,
+   "sha256": "36997d2395434c49b00863d20d3eff1c30e6cfe12c54094ed7cb6da96cd5e828",
+   "table": "ref_weather_day",
+   "truth": false
+  }
+ },
+ "forecast": {
+  "clamped": 0,
+  "fallbacks": 0,
+  "input": {
+   "meta_path": "parts/forecast_input.json",
+   "meta_sha256": "d3adf860056a4634092f89a6c437a53b90909406de1ec6681665d8100977cd4d",
+   "path": "parts/forecast_input.csv.gz",
+   "reference_history_id": "fb-0fff46861d5a",
+   "rows": 2020,
+   "sha256": "1b16c328b8d8c3ce548f6da1d35a01c8a18015e8779662ae3e774d1da94c289d"
+  },
+  "note": "the local stand-in forecast (development and tests only); the release check refuses it; the BigQuery run replaces it (05.2-11)",
+  "points": 480,
+  "providers": {
+   "local-seasonal-naive": 480
+  },
+  "runs": [
+   {
+    "clamped_points": 0,
+    "cutoff_day": -1,
+    "fallbacks": 0,
+    "first_day": 0,
+    "forecast_run_id": "fr-d0-298800cf",
+    "job": "d0",
+    "last_day": 9,
+    "providers": {
+     "local-seasonal-naive": 10
+    },
+    "reference_history_id": "fb-0fff46861d5a"
+   },
+   {
+    "clamped_points": 0,
+    "cutoff_day": 0,
+    "fallbacks": 0,
+    "first_day": 1,
+    "forecast_run_id": "fr-d1-afbb85e4",
+    "job": "d1",
+    "last_day": 9,
+    "providers": {
+     "local-seasonal-naive": 10
+    },
+    "reference_history_id": "fb-0fff46861d5a"
+   },
+   {
+    "clamped_points": 0,
+    "cutoff_day": 1,
+    "fallbacks": 0,
+    "first_day": 2,
+    "forecast_run_id": "fr-d2-f1ab22ce",
+    "job": "d2",
+    "last_day": 9,
+    "providers": {
+     "local-seasonal-naive": 10
+    },
+    "reference_history_id": "fb-0fff46861d5a"
+   },
+   {
+    "clamped_points": 0,
+    "cutoff_day": 2,
+    "fallbacks": 0,
+    "first_day": 3,
+    "forecast_run_id": "fr-d3-1a622952",
+    "job": "d3",
+    "last_day": 9,
+    "providers": {
+     "local-seasonal-naive": 10
+    },
+    "reference_history_id": "fb-0fff46861d5a"
+   },
+   {
+    "clamped_points": 0,
+    "cutoff_day": -15,
+    "fallbacks": 0,
+    "first_day": -14,
+    "forecast_run_id": "fr-backtest-280504a4",
+    "job": "backtest",
+    "last_day": -1,
+    "providers": {
+     "local-seasonal-naive": 10
+    },
+    "reference_history_id": "fb-0fff46861d5a"
+   }
+  ],
+  "stand_in": true
+ },
+ "format": 1,
+ "input_version": "in-4ddc3084b32a",
+ "inputs": {
+  "dataset": "frn_sample_synthetic",
+  "files": {
+   "eval": {
+    "bytes": 34346,
+    "name": "frn_sample_synthetic.csv",
+    "rows": 70,
+    "sha256": "f13c9d5db109940d6a787eee28d4559a6c39559331d990616e24fba26e348ae6"
+   },
+   "train": {
+    "bytes": 34346,
+    "name": "frn_sample_synthetic.csv",
+    "rows": 420,
+    "sha256": "f13c9d5db109940d6a787eee28d4559a6c39559331d990616e24fba26e348ae6"
+   }
+  },
+  "fixture": {
+   "name": "frn_sample_synthetic.json",
+   "sha256": "62e3e3c3d410c4c100ccf83739390fd51f9fdb32400a358f9fcc7e9554aaf30e"
+  }
+ },
+ "kind": "public",
+ "reference_fingerprint": "ref-c9d39b1940b2",
+ "settings": {
+  "attribution": {
+   "citation": "Wang et al., 2025, arXiv:2505.16319",
+   "creator": "ShelfShift test fixture (synthetic)",
+   "license": "CC BY 4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
+   "name": "frn_sample_synthetic",
+   "source_url": "https://huggingface.co/datasets/Dingdong-Inc/FreshRetailNet-50K"
+  },
+  "board": {
+   "default_scope": "branch",
+   "page_size": 25
+  },
+  "calendar": {
+   "backtest_days": 14,
+   "data_as_of": "2026-10-17",
+   "day0": "2026-10-14",
+   "delivery_min": 360,
+   "demo_open_day": 3,
+   "first_day": -42,
+   "last_day": 6,
+   "last_demo_day": 6,
+   "open_min": 540,
+   "shift_days": 840
+  },
+  "case_opening": {
+   "days_before_first_step": 1,
+   "min_discounted_totes": 1,
+   "min_short_totes": 1,
+   "min_waste_units": 1
+  },
+  "catalogue": {
+   "budget": 200,
+   "kinds": [
+    "verify",
+    "transfer",
+    "markdown",
+    "keep",
+    "cold_chain",
+    "transfers_unavailable",
+    "close_call"
+   ],
+   "order": "the screen's stock at the step day, then Keep waste, descending, then key",
+   "required": [
+    "verify",
+    "transfer",
+    "markdown",
+    "keep"
+   ],
+   "start_kind": [
+    "verify",
+    "transfer"
+   ],
+   "warmup_scope": "none"
+  },
+  "categories": {
+   "default": {
+    "delivery_cycle_days": 2,
+    "disposal_cost": 0.08,
+    "kg_per_unit": 0.5,
+    "order_case": 8,
+    "price": 2.64,
+    "schedule": "B",
+    "shelf_life_days": 3,
+    "units_per_tote": 8,
+    "zone": "chilled"
+   },
+   "level": "mgmt",
+   "overrides": {}
+  },
+  "codes": {
+   "category": "G{}",
+   "city": "C{}",
+   "note": "codes prefixed for display; a disclosed modification",
+   "product": "P{}",
+   "store": "S{}"
+  },
+  "currency": "USD",
+  "designed": {
+   "label": "Designed example (test fixture)",
+   "product": "P101",
+   "rule": "test data: one series with physical 0 from day 0, its record unchanged",
+   "store": "S12"
+  },
+  "discount": {
+   "full_price": 1.0
+  },
+  "evaluation": {
+   "on_demand": true
+  },
+  "forecast": {
+   "confidence_level": 0.8,
+   "dataset": "shelfshift_public",
+   "fallback": "ARIMA_PLUS",
+   "location": "asia-southeast1",
+   "model": "TimesFM 2.5",
+   "runs": "d0..d3 plus the backtest"
+  },
+  "horizon_end": 9,
+  "mark": {
+   "text": "Public sales dataset · Simulated operational scenario · Scenario date: {date}"
+  },
+  "markdown_response": {
+   "m20": [
+    1.3,
+    1.4333333333333333,
+    1.55
+   ],
+   "m30": [
+    1.4,
+    1.6,
+    1.8
+   ]
+  },
+  "network": {
+   "cities": 2,
+   "k": 4,
+   "max_runs_per_store_per_day": 1,
+   "max_travel_min": 90,
+   "note": "Assumed positions and runs (reference/geography.json); not observed; stores missing from the mapping are excluded from transfers and counted",
+   "pairs": 4,
+   "run_days": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "runs": 28,
+   "runs_label": "a simulated truck schedule (D-34)",
+   "stores": 5,
+   "unmapped": [
+    "S13"
+   ],
+   "unmapped_stores": 1
+  },
+  "policy": {
+   "adjustment_cost_max": 2777.78,
+   "baseline_markdown_pct": 30,
+   "baseline_near_expiry_days": 1,
+   "crossover_range_floor": 555.56,
+   "markdown_same_day_by_min": 720,
+   "min_regret": 0.03,
+   "min_sellable_days": 1,
+   "packing_min": 120,
+   "phantom_min_forecast": 10.0,
+   "relabel_min": 60,
+   "sellable_same_day_before_min": 840,
+   "shortlist_step": 0,
+   "stale_after_days": 7,
+   "stale_factor": 0.7,
+   "waste_flip_max": 5.0,
+   "waste_price": 0.0
+  },
+  "series": {
+   "max_days": 97,
+   "statement_timeout_ms": 5000
+  },
+  "stockout": {
+   "column": "stock_hour6_22_cnt",
+   "hours_counted": 16,
+   "long_hours": 8,
+   "threshold": 0
+  },
+  "truth": {
+   "price_response": {
+    "m20": 1.0,
+    "m30": 1.0
+   }
+  },
+  "units": {
+   "factor": 10,
+   "rule": "units = sale_amount × units.factor"
+  },
+  "unknown_price": {
+   "above": 1.0,
+   "below_or_equal": 0.0,
+   "rule": "an unknown-price row (its discount unknown: at or below unknown_price.below_or_equal or above unknown_price.above) is converted at the full base price, with no response applied, tagged and counted per run; 'unknown price' means an unknown discount or markdown status, never a missing amount; the money price is the category row's Assumption, and a product whose category row has no price gets no money figure: its financial comparisons are unavailable, and full price never stands in for a missing amount"
+  },
+  "zones": [
+   "chilled"
+  ]
+ }
+}

@@ -1,0 +1,41 @@
+{
+  "mapping": {
+    "note": {"value": "Assumed positions and travel times; the dataset has no locations; proximity is never inferred from codes; city codes limit candidates to one city because the dataset card defines city_id as an encoded city ID", "type": "Assumption", "source": "05.2-06 D-34 (user); 05.2-CONTEXT D-30: an assumed location and route mapping, clearly labelled Assumption with its source", "note": "a configurable scenario assumption, never a public-dataset fact"}
+  },
+  "positions": {
+    "rule": {"value": "each mapped store gets a point uniform in a disc of positions.city_radius_km around its city, drawn from a stream keyed by positions.seed, the city code and the store code; only distances inside one city are used", "type": "Assumption", "source": "05.2-06 D-34 (user): positions uniform in a 15 km disc per city; data/runs.py positions", "note": "assumed positions, never observed; a city's centre is irrelevant"},
+    "city_radius_km": {"value": 15, "unit": "km", "type": "Assumption", "source": "05.2-06 D-34 (user): positions uniform in a 15 km disc per city"},
+    "seed": {"value": 52052, "type": "Assumption", "source": "05.2-06 D-34 (user): the 05.2-05 measurement seed, kept so the D-34 measured figures reproduce", "note": "every draw is a keyed stream (data.runs._rng); a different seed is a different assumed map"}
+  },
+  "coverage": {
+    "unmapped": {"value": [], "unit": "raw store codes", "type": "Assumption", "source": "05.2-06 D-34 (user): every store mapped", "note": "a store listed here is excluded from transfers and shows Transfers unavailable: location or route data missing; it keeps sales, forecast, stock, keep and markdown, and is counted in the data report (D-31)"}
+  },
+  "travel": {
+    "source": {"value": "assumed_positions", "type": "Assumption", "source": "05.2-06 D-34 (user); 05.2-CONTEXT D-29, D-30: the travel-time source is a setting; distance and travel time inside a city come only from the assumed mapping", "note": "assumed_positions: euclidean km between the assumed positions ÷ travel.speed_kmh × 60 + travel.handling_min, rounded up (data/runs.py travel_min); the only source data/runs.py implements"},
+    "speed_kmh": {"value": 30, "unit": "km/h", "type": "Assumption", "source": "05.2-06 D-34 (user): 30 km/h"},
+    "handling_min": {"value": 15, "unit": "minutes per trip", "type": "Assumption", "source": "05.2-06 D-34 (user): plus 15 min handling", "note": "loading and unloading, added to every trip"}
+  },
+  "service": {
+    "same_city": {"value": true, "type": "Assumption", "source": "05.2-06 D-34 (user); 05.2-CONTEXT D-30: the dataset card defines city_id as an encoded city ID, so it may limit candidates to the same city; spec §5: transfers stay within a city", "note": "the city code is compared for equality only, never read as a distance"},
+    "max_travel_min": {"value": 60, "unit": "minutes", "type": "Policy", "source": "05.2-06 D-34 (user): a 60 min service limit; 05.2-CONTEXT D-29: the maximum travel time is a setting, never a code constant", "note": "a destination at exactly this travel time is eligible"},
+    "filters": {"value": ["same_city", "max_travel_min", "runs.k", "runs.days"], "type": "Assumption", "source": "05.2-06 D-34 (user); 05.2-CONTEXT D-29 stage 1: the lot-independent eligibility; arrival before expiry, cold chain and receiving capacity are checked per lot at case time", "note": "transport cost is never a filter: the engine weighs the run's cost against keep and markdown (D-29)"}
+  },
+  "runs": {
+    "k": {"value": 4, "unit": "runs per store per day", "type": "Policy", "source": "05.2-06 D-34 (user): k = 4, full search; a simulated truck schedule", "note": "each source keeps its k nearest eligible destinations by travel time, one run each per run day; a fallback to a lower k is set here with a rebuild only if 05.2-17 or 05.2-24 misses 3 s, and it discloses the reduced search coverage and keeps every at-risk lot"},
+    "days": {"value": [0, 1, 2, 3, 4, 5, 6], "unit": "day index", "type": "Assumption", "source": "05.2-06 D-34 (user): runs every day 0..6; a simulated truck schedule"},
+    "loading_cutoff_min": {"value": 720, "unit": "minutes after midnight", "type": "Assumption", "source": "05.2-06 D-34 (user): cutoff 12:00; a simulated truck schedule"},
+    "departs_min": {"value": 750, "unit": "minutes after midnight", "type": "Assumption", "source": "05.2-06 D-34 (user): departure 12:30; a simulated truck schedule"},
+    "spare_totes": {"value": 15, "unit": "totes per run", "type": "Assumption", "source": "05.2-06 D-34 (user): 15 spare totes; a simulated truck schedule"},
+    "cold_chain_share": {"value": 0.667, "unit": "share of runs", "type": "Assumption", "source": "05.2-06 D-34 (user): cold-chain share 0.667 (4 of the 6 synthetic runs); a simulated truck schedule", "note": "drawn per (origin, destination); 05.2-05 measured with 0.6667"}
+  },
+  "costs": {
+    "fixed_base": {"value": 12, "unit": "USD per run", "type": "Assumption", "source": "05.2-06 D-34 (user): $12 + $0.50/km", "note": "the quote is fixed_base + per_km × km; the engine compares it with keep and markdown, never a filter (D-29)"},
+    "per_km": {"value": 0.5, "unit": "USD per km", "type": "Assumption", "source": "05.2-06 D-34 (user): $12 + $0.50/km"},
+    "per_unit": {"value": 0, "unit": "USD per unit", "type": "Assumption", "source": "05.2-06 D-34 (user): $0 per unit"},
+    "cancel": {"value": null, "unit": "USD", "type": "Assumption", "source": "05.2-06 D-34 (user): cancel = the full quote", "note": "null = the full quote (spec §5)"}
+  },
+  "capacity": {
+    "chilled": {"value": 20, "unit": "free totes per store per day", "type": "Assumption", "source": "05.2-06 D-34 (user): capacity 20 chilled totes"},
+    "ambient": {"value": 25, "unit": "free totes per store per day", "type": "Assumption", "source": "05.2-06 D-34 (user): capacity 25 ambient totes"}
+  }
+}

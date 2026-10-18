@@ -1,0 +1,6 @@
+{
+  "markdown_truth": {
+    "m20": {"value": 1.38, "type": "Assumption", "source": "the hidden true response (spec §5); read only by data.seed"},
+    "m30": {"value": 1.52, "type": "Assumption", "source": "the hidden true response (spec §5); read only by data.seed"}
+  }
+}

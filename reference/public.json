@@ -1,0 +1,133 @@
+{
+  "dataset": {
+    "name": {"value": "FreshRetailNet-50K", "type": "Data", "source": "Hugging Face dataset card, verified 2026-10-16 (05.2-RESEARCH Dataset facts)"},
+    "creator": {"value": "Dingdong-Inc", "type": "Data", "source": "Hugging Face dataset card: Data Developer (attribution required by CC BY 4.0)"},
+    "license": {"value": "CC BY 4.0", "type": "Data", "source": "Hugging Face dataset card: License/Terms of Use"},
+    "license_url": {"value": "https://creativecommons.org/licenses/by/4.0/", "type": "Data", "source": "Creative Commons, the license the dataset card names"},
+    "source_url": {"value": "https://huggingface.co/datasets/Dingdong-Inc/FreshRetailNet-50K", "type": "Data", "source": "Hugging Face dataset page"},
+    "citation": {"value": "Wang et al., 2025, arXiv:2505.16319", "type": "Data", "source": "Hugging Face dataset card: Citation"},
+    "files": {
+      "train": {
+        "name": {"value": "train.parquet", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "sha256": {"value": "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "bytes": {"value": 106436287, "unit": "bytes", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "rows": {"value": 4500000, "unit": "rows", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "first_dt": {"value": "2024-03-28", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "last_dt": {"value": "2024-06-25", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"}
+      },
+      "eval": {
+        "name": {"value": "eval.parquet", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "sha256": {"value": "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "bytes": {"value": 8440124, "unit": "bytes", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "rows": {"value": 350000, "unit": "rows", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "first_dt": {"value": "2024-06-26", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"},
+        "last_dt": {"value": "2024-07-02", "type": "Data", "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)"}
+      }
+    },
+    "columns": {
+      "value": ["city_id", "store_id", "management_group_id", "first_category_id", "second_category_id", "third_category_id",
+                "product_id", "dt", "sale_amount", "stock_hour6_22_cnt", "discount", "holiday_flag", "activity_flag",
+                "precpt", "avg_temperature", "avg_humidity", "avg_wind_level"],
+      "type": "Data",
+      "source": "Hugging Face LFS ids and dataset card, verified 2026-10-16 (05.2-RESEARCH)",
+      "note": "the card's 19 columns minus the hourly arrays hours_sale and hours_stock_status; 05.2-03 checks them against the parquet schema"
+    }
+  },
+  "calendar": {
+    "shift_days": {"value": 840, "unit": "days", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification", "note": "120 weeks, so every shifted date keeps its weekday"},
+    "day0": {"value": "2026-10-14", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification", "note": "Wed 14 Oct 2026, the shifted first eval date"},
+    "first_day": {"value": -90, "unit": "day index", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification", "note": "the shifted first train date"},
+    "last_day": {"value": 6, "unit": "day index", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification", "note": "the shifted last eval date"},
+    "demo_open_day": {"value": 3, "unit": "day index", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification", "note": "the warm-up is kept: days 0..2 run before the app opens"},
+    "last_demo_day": {"value": 6, "unit": "day index", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification"},
+    "data_as_of": {"value": "2026-10-17", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification", "note": "day0 + demo_open_day; D-04: a reference value the UI formats, never a code constant"},
+    "open_min": {"value": 540, "unit": "minutes after midnight", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification; the demo day opens as in reference/world.json"},
+    "delivery_min": {"value": 360, "unit": "minutes after midnight", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification; deliveries arrive as in reference/world.json"},
+    "backtest_days": {"value": 14, "unit": "days", "type": "Data", "source": "05.2-CONTEXT D-13; a disclosed modification; the backtest window as in reference/world.json"}
+  },
+  "stockout": {
+    "column": {"value": "stock_hour6_22_cnt", "type": "Policy", "source": "05.2-CONTEXT D-14: any out-of-stock hour 06-22"},
+    "threshold": {"value": 0, "unit": "hours", "type": "Policy", "source": "05.2-CONTEXT D-14: any out-of-stock hour 06-22", "note": "a day is a stockout when the column is above this"},
+    "hours_counted": {"value": 16, "unit": "hours", "type": "Data", "source": "dataset card: hours 06-22; verified min 0, max 16 (05.2-RESEARCH Dataset facts)", "note": "a count outside 0..this is refused"},
+    "long_hours": {"value": 8, "unit": "hours", "type": "Data", "source": "05.2-RESEARCH Dataset facts: the share of series-days with 8 or more out-of-stock hours (reporting bucket)"}
+  },
+  "unknown_price": {
+    "below_or_equal": {"value": 0.0, "type": "Policy", "source": "05.2-CONTEXT D-17; the conversion rule for these rows is set in 05.2-07 from the 05.2-06 decision D-35"},
+    "above": {"value": 1.0, "type": "Policy", "source": "05.2-CONTEXT D-17; the conversion rule for these rows is set in 05.2-07 from the 05.2-06 decision D-35"},
+    "rule": {"value": "an unknown-price row (its discount unknown: at or below unknown_price.below_or_equal or above unknown_price.above) is converted at the full base price, with no response applied, tagged and counted per run; 'unknown price' means an unknown discount or markdown status, never a missing amount; the money price is the category row's Assumption, and a product whose category row has no price gets no money figure: its financial comparisons are unavailable, and full price never stands in for a missing amount", "type": "Policy", "source": "05.2-06 D-35 (user), definition checked 2026-10-17: the dataset has no money price column and discount is a ratio"}
+  },
+  "discount": {
+    "full_price": {"value": 1.0, "type": "Data", "source": "dataset card: 1.0 means no discount, 0.9 means 10% off", "note": "a known-price row below this is a discounted row"}
+  },
+  "units": {
+    "factor": {"value": 10, "unit": "units per 1.0 of sale_amount", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; rule A10: the profile shows no single lattice (share 0.32), so a stated round factor is used", "note": "the inferred units are never a public-dataset fact"},
+    "rule": {"value": "units = sale_amount × units.factor", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; 05.2-CONTEXT D-20 and spec §5 Units: sale_amount is rescaled, not units"}
+  },
+  "codes": {
+    "city": {"value": "C{}", "type": "Data", "source": "05.2-CONTEXT D-02: cities show their codes; the prefix is a disclosed display modification", "note": "{} is the dataset's city_id as text; reversible"},
+    "store": {"value": "S{}", "type": "Data", "source": "05.2-CONTEXT D-02: stores show their codes; the prefix is a disclosed display modification", "note": "{} is the dataset's store_id as text; reversible"},
+    "product": {"value": "P{}", "type": "Data", "source": "05.2-CONTEXT D-02: products are labelled Product code, never given an invented name; the prefix is a disclosed display modification", "note": "{} is the dataset's product_id as text; reversible"},
+    "category": {"value": "G{}", "type": "Data", "source": "05.2-CONTEXT D-02: category codes at categories.level; the prefix is a disclosed display modification", "note": "{} is the dataset's code at categories.level as text; reversible"},
+    "note": {"value": "codes prefixed for display; a disclosed modification", "type": "Data", "source": "05.2-CONTEXT D-02; 05.2-RESEARCH Attribution and license: Modifications"}
+  },
+  "mark": {
+    "text": {"value": "Public sales dataset · Simulated operational scenario · Scenario date: {date}", "type": "Policy", "source": "05.2-CONTEXT D-04 as amended by the user 2026-10-17 (binding)", "note": "{date} is calendar.data_as_of, formatted by the UI; the UI may show the date on its own line"}
+  },
+  "truth": {
+    "price_response": {
+      "m20": {"value": 1.0, "unit": "× demand at 20% off", "type": "Assumption", "source": "05.2-06 D-36 (user): an unmeasured no-lift assumption for the warm-up worlds", "note": "the do-nothing world sells the public units wherever simulated stock covers them; the alternative was not measured"},
+      "m30": {"value": 1.0, "unit": "× demand at 30% off", "type": "Assumption", "source": "05.2-06 D-36 (user): an unmeasured no-lift assumption for the warm-up worlds", "note": "the do-nothing world sells the public units wherever simulated stock covers them; the alternative was not measured"}
+    }
+  },
+  "stock": {
+    "multiplier": {"value": [0.9, 1.0], "unit": "× the in-stock estimate", "type": "Assumption", "source": "05.2-06 D-39 (user): delivery multiplier 0.9-1.0 with the minimal whole-case top-up; the synthetic release range (reference/world.json ordering)", "note": "simulated stock and replenishment, never observed in FreshRetailNet-50K"},
+    "lookback_days": {"value": 28, "unit": "days", "type": "Assumption", "source": "05.2-06 D-39 (user); the synthetic ordering rule (reference/world.json ordering, Seed calibration 2)"},
+    "same_weekday_obs": {"value": 4, "unit": "observations", "type": "Assumption", "source": "05.2-06 D-39 (user); the synthetic ordering rule (reference/world.json ordering, Seed calibration 2)"},
+    "error_share": {"value": 0.1, "unit": "share of regular lots", "type": "Assumption", "source": "05.2-06 D-39 (user): error model share 0.1; the declared record-error model (reference/world.json error_model)"},
+    "error_range": {"value": [0.6, 0.95], "unit": "physical ÷ record, rounded down", "type": "Assumption", "source": "05.2-06 D-39 (user): range [0.6, 0.95]; the declared record-error model (reference/world.json error_model)"},
+    "error_from_day": {"value": -15, "unit": "day index", "type": "Assumption", "source": "05.2-06 D-39 (user): from day -15; the declared record-error model (reference/world.json error_model)"},
+    "expiry_estimated_share": {"value": 0.0, "unit": "share of lots", "type": "Assumption", "source": "05.2-06 D-39 (user): expiry-estimated share 0.0; the synthetic world's natural lots are all PRINTED"},
+    "topup_on_eval_days": {"value": false, "type": "Assumption", "source": "05.2-06 D-39 (user): eval-day top-ups are reported, not delivered to the worlds", "note": "the warm-up shortage this leaves (16% of series-days measured) is a simulated result, never observed in FreshRetailNet-50K"},
+    "seed": {"value": 52052, "type": "Assumption", "source": "the 05.2-05 measurement seed, kept so the D-39 measured figures reproduce", "note": "every draw is a keyed stream (data.stock._rng); a different seed is a different simulated stock"}
+  },
+  "case_opening": {
+    "days_before_first_step": {"value": 1, "unit": "days", "type": "Policy", "source": "same values as reference/world.json case_opening (ESL-02, 03-CONTEXT D-22)"},
+    "min_waste_units": {"value": 1, "unit": "units", "type": "Policy", "source": "same values as reference/world.json case_opening (ESL-02, 03-CONTEXT D-22)"},
+    "min_discounted_totes": {"value": 1, "unit": "totes", "type": "Policy", "source": "same values as reference/world.json case_opening (ESL-02, 03-CONTEXT D-22)", "note": "counted in the product's units_per_tote"},
+    "min_short_totes": {"value": 1, "unit": "totes", "type": "Policy", "source": "same values as reference/world.json case_opening (ESL-02, 03-CONTEXT D-22)", "note": "counted in the product's units_per_tote"}
+  },
+  "evaluation": {
+    "on_demand": {"value": true, "type": "Policy", "source": "05.2-CONTEXT D-24, D-25: a flagged item shows Needs evaluation; the engine runs when someone opens it or asks; the result is cached by rec_version"}
+  },
+  "board": {
+    "default_scope": {"value": "branch", "type": "Policy", "source": "05.2-CONTEXT D-26: the board defaults to the signed-in branch; HQ filters by store and risk"},
+    "page_size": {"value": 25, "unit": "items per page", "type": "Policy", "source": "05.2-CONTEXT D-26: results are paginated; one page a manager scans at a glance"}
+  },
+  "catalogue": {
+    "kinds": {"value": ["verify", "transfer", "markdown", "keep", "cold_chain", "transfers_unavailable", "close_call"], "type": "Policy", "source": "05.2-06 D-38 (user): verify-before-you-move, transfer, markdown, keep, cold-chain-excluded, transfers-unavailable, close call", "note": "the short names data/measure.py reports; nothing is tuned to make a kind appear"},
+    "budget": {"value": 200, "unit": "evaluations", "type": "Policy", "source": "05.2-06 D-38 (user): 200 evaluations; the board and the catalogue report show evaluated against total; unevaluated lots stay visible as Needs evaluation"},
+    "order": {"value": "the screen's stock at the step day, then Keep waste, descending, then key", "type": "Policy", "source": "05.2-06 D-38 (user): ordered by stock at risk"},
+    "required": {"value": ["verify", "transfer", "markdown", "keep"], "type": "Policy", "source": "05.2-06 D-38 (user): required for the judge's path", "note": "an absent verify kind gets one clearly labelled designed example by 05.2-18's written rule (the user chose option (a))"},
+    "start_kind": {"value": ["verify", "transfer"], "type": "Policy", "source": "05.2-06 D-38 (user): the start seat is the source store of the first verify-before-you-move case, else of the first transfer case, else the first store"},
+    "warmup_scope": {"value": "none", "type": "Policy", "source": "05.2-06 D-38 (user): warm-up autopilot scope none; 05.2-CONTEXT D-25: the warm-up evaluates only the items it acts on"}
+  },
+  "series": {
+    "max_days": {"value": 97, "unit": "days", "type": "Policy", "source": "05.2-CONTEXT D-11: history loads only for the selected store and product; at most the whole public range, days -90..6"},
+    "statement_timeout_ms": {"value": 5000, "unit": "milliseconds", "type": "Policy", "source": "05.2-CONTEXT D-11; 05.2-RESEARCH Security: slow analytics scans on db-f1-micro fail as a plain error instead of holding a connection"}
+  },
+  "policy": {
+    "shortlist_step": {"value": 0, "type": "Policy", "source": "05.2-06 D-34 (user): k = 4, shortlist step 0 (full search)", "note": "a fallback (step 5, then 10, then a lower k) is set here with a rebuild only if 05.2-17 or 05.2-24 misses 3 s, shows Best among the plans evaluated., discloses the reduced search coverage and keeps every at-risk lot"},
+    "source": {"value": "reference/policy.json engine_policy and markdown_response; the same retailer-policy assumptions as the synthetic set", "type": "Policy", "source": "05.2-07: the public set reuses the synthetic engine Policy, with policy.shortlist_step replaced"}
+  },
+  "forecast": {
+    "model": {"value": "TimesFM 2.5", "type": "Policy", "source": "spec §5 Forecast; 05.2-CONTEXT D-19; CLAUDE.md stack: AI.FORECAST with model => 'TimesFM 2.5'"},
+    "fallback": {"value": "ARIMA_PLUS", "type": "Policy", "source": "spec §5 Forecast: the documented fallback provider"},
+    "confidence_level": {"value": 0.8, "unit": "share", "type": "Policy", "source": "spec §5 Forecast: low and high are the 80% interval"},
+    "location": {"value": "asia-southeast1", "type": "Policy", "source": "spec §4 Region: BigQuery runs in asia-southeast1"},
+    "dataset": {"value": "shelfshift_public", "type": "Policy", "source": "05.2-RESEARCH Runtime State Inventory: a dataset of its own, so the synthetic run stays reproducible"},
+    "runs": {"value": "d0..d3 plus the backtest", "type": "Policy", "source": "05.2-CONTEXT D-19; spec §5 Forecast", "note": "days 4..6 for the offline weekcheck can follow later"}
+  },
+  "budget": {
+    "max_bytes_billed": {"value": 5368709120, "unit": "bytes per query", "type": "Policy", "source": "user 2026-10-17: the budget limit is enforced on every paid query", "note": "5 GiB, about 5 times the roughly 1 GB a query over the 22.1 M-row input reads; every BigQuery query job of the public forecast sets it as maximum_bytes_billed, so BigQuery refuses a query over it without charging, and every paid query is dry-run first and not sent when its estimate is over it (the ARIMA_PLUS training after AI.FORECAST, on the series that need the fallback). The US$30/month billing alert only warns; this cap stops. A run-time guard of the user's BigQuery run, not an input of the set, so public_config.fingerprint leaves this block out"}
+  }
+}

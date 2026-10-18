@@ -1,0 +1,5 @@
+-r requirements.in
+# every app pin stays exactly as requirements.lock has it
+-c requirements.lock
+# data pipeline only (05.2 D-07): reads the two FreshRetailNet-50K parquet files in .venv-data; never in requirements.lock or the image
+pyarrow==25.0.1

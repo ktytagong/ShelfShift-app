@@ -1,0 +1,317 @@
+{
+ "_note": "Contract-shaped answers of GET /api/lots and GET /api/lots/{lot_id} on the public dataset (04-API-CONTRACT row 2026-10-17, 06.1-14 as built). Product codes and lot ids are placeholders, never product names. 06.1-31 reruns these states on the real public fixture.",
+ "page1": {
+  "items": [
+   {
+    "lot_id": "L-P0101-01",
+    "branch": "S042",
+    "sku": "P0101",
+    "product": "P0101",
+    "zone": "chilled",
+    "origin": null,
+    "expiry_day": 6,
+    "expiry_date": "2026-10-18",
+    "expiry_source": "PRINTED",
+    "qty": 300.0,
+    "markdown_pct": 0,
+    "last_verified_day": 5,
+    "last_verified_date": "2026-10-17",
+    "reserved": 0.0,
+    "available": 300.0,
+    "incoming": 0.0,
+    "forecast_to_expiry": 120.0,
+    "next_markdown": {
+     "day": 6,
+     "date": "2026-10-18",
+     "pct": 20
+    },
+    "discrepancies": 0,
+    "case_key": null,
+    "case_state": null,
+    "flag_key": "SUS-41",
+    "action": "open",
+    "eligibility": {
+     "applies": true,
+     "status": "available",
+     "considered": 3,
+     "eligible": 2,
+     "excluded": [
+      {
+       "run_code": "R-07",
+       "dest": "S031",
+       "reason": "too late to sell"
+      }
+     ],
+     "restricted": true
+    },
+    "kinds": {
+     "stock": "simulated",
+     "forecast": "forecast"
+    }
+   },
+   {
+    "lot_id": "L-P0102-01",
+    "branch": "S042",
+    "sku": "P0102",
+    "product": "P0102",
+    "zone": "chilled",
+    "origin": null,
+    "expiry_day": 6,
+    "expiry_date": "2026-10-18",
+    "expiry_source": "PRINTED",
+    "qty": 80.0,
+    "markdown_pct": 0,
+    "last_verified_day": 5,
+    "last_verified_date": "2026-10-17",
+    "reserved": 0.0,
+    "available": 80.0,
+    "incoming": 0.0,
+    "forecast_to_expiry": 95.5,
+    "next_markdown": {
+     "day": 6,
+     "date": "2026-10-18",
+     "pct": 20
+    },
+    "discrepancies": 0,
+    "case_key": "SUS-42",
+    "case_state": "OPEN",
+    "flag_key": null,
+    "action": "view",
+    "eligibility": {
+     "applies": true,
+     "status": "available",
+     "considered": 3,
+     "eligible": 2,
+     "excluded": [
+      {
+       "run_code": "R-07",
+       "dest": "S031",
+       "reason": "too late to sell"
+      }
+     ],
+     "restricted": true
+    },
+    "kinds": {
+     "stock": "simulated",
+     "forecast": "forecast"
+    }
+   }
+  ],
+  "page": 1,
+  "page_size": 2,
+  "total": 3,
+  "scope": {
+   "branch": "S042",
+   "default": true
+  }
+ },
+ "page2": {
+  "items": [
+   {
+    "lot_id": "L-P0103-01",
+    "branch": "S042",
+    "sku": "P0103",
+    "product": "P0103",
+    "zone": "chilled",
+    "origin": null,
+    "expiry_day": 7,
+    "expiry_date": "2026-10-19",
+    "expiry_source": "PRINTED",
+    "qty": 40.0,
+    "markdown_pct": 0,
+    "last_verified_day": 5,
+    "last_verified_date": "2026-10-17",
+    "reserved": 0.0,
+    "available": 40.0,
+    "incoming": 0.0,
+    "forecast_to_expiry": null,
+    "next_markdown": {
+     "day": 6,
+     "date": "2026-10-18",
+     "pct": 20
+    },
+    "discrepancies": 1,
+    "case_key": null,
+    "case_state": null,
+    "flag_key": null,
+    "action": null,
+    "eligibility": {
+     "applies": true,
+     "status": "unavailable_unmapped",
+     "considered": 0,
+     "eligible": 0,
+     "excluded": [],
+     "restricted": false
+    },
+    "kinds": {
+     "stock": "simulated",
+     "forecast": "forecast"
+    }
+   }
+  ],
+  "page": 2,
+  "page_size": 2,
+  "total": 3,
+  "scope": {
+   "branch": "S042",
+   "default": true
+  }
+ },
+ "page1_after_open": {
+  "items": [
+   {
+    "lot_id": "L-P0101-01",
+    "branch": "S042",
+    "sku": "P0101",
+    "product": "P0101",
+    "zone": "chilled",
+    "origin": null,
+    "expiry_day": 6,
+    "expiry_date": "2026-10-18",
+    "expiry_source": "PRINTED",
+    "qty": 300.0,
+    "markdown_pct": 0,
+    "last_verified_day": 5,
+    "last_verified_date": "2026-10-17",
+    "reserved": 0.0,
+    "available": 300.0,
+    "incoming": 0.0,
+    "forecast_to_expiry": 120.0,
+    "next_markdown": {
+     "day": 6,
+     "date": "2026-10-18",
+     "pct": 20
+    },
+    "discrepancies": 0,
+    "case_key": "SUS-41",
+    "case_state": "OPEN",
+    "flag_key": null,
+    "action": "view",
+    "eligibility": {
+     "applies": true,
+     "status": "available",
+     "considered": 3,
+     "eligible": 2,
+     "excluded": [
+      {
+       "run_code": "R-07",
+       "dest": "S031",
+       "reason": "too late to sell"
+      }
+     ],
+     "restricted": true
+    },
+    "kinds": {
+     "stock": "simulated",
+     "forecast": "forecast"
+    }
+   },
+   {
+    "lot_id": "L-P0102-01",
+    "branch": "S042",
+    "sku": "P0102",
+    "product": "P0102",
+    "zone": "chilled",
+    "origin": null,
+    "expiry_day": 6,
+    "expiry_date": "2026-10-18",
+    "expiry_source": "PRINTED",
+    "qty": 80.0,
+    "markdown_pct": 0,
+    "last_verified_day": 5,
+    "last_verified_date": "2026-10-17",
+    "reserved": 0.0,
+    "available": 80.0,
+    "incoming": 0.0,
+    "forecast_to_expiry": 95.5,
+    "next_markdown": {
+     "day": 6,
+     "date": "2026-10-18",
+     "pct": 20
+    },
+    "discrepancies": 0,
+    "case_key": "SUS-42",
+    "case_state": "OPEN",
+    "flag_key": null,
+    "action": "view",
+    "eligibility": {
+     "applies": true,
+     "status": "available",
+     "considered": 3,
+     "eligible": 2,
+     "excluded": [
+      {
+       "run_code": "R-07",
+       "dest": "S031",
+       "reason": "too late to sell"
+      }
+     ],
+     "restricted": true
+    },
+    "kinds": {
+     "stock": "simulated",
+     "forecast": "forecast"
+    }
+   }
+  ],
+  "page": 1,
+  "page_size": 2,
+  "total": 3,
+  "scope": {
+   "branch": "S042",
+   "default": true
+  }
+ },
+ "drawer_unmapped": {
+  "lot_id": "L-P0103-01",
+  "branch": "S042",
+  "sku": "P0103",
+  "product": "P0103",
+  "zone": "chilled",
+  "origin": null,
+  "expiry_day": 7,
+  "expiry_date": "2026-10-19",
+  "expiry_source": "PRINTED",
+  "qty": 40.0,
+  "markdown_pct": 0,
+  "last_verified_day": 5,
+  "last_verified_date": "2026-10-17",
+  "reserved": 0.0,
+  "available": 40.0,
+  "incoming": 0.0,
+  "forecast_to_expiry": null,
+  "next_markdown": {
+   "day": 6,
+   "date": "2026-10-18",
+   "pct": 20
+  },
+  "discrepancies": 1,
+  "case_key": null,
+  "case_state": null,
+  "flag_key": null,
+  "action": null,
+  "eligibility": {
+   "applies": true,
+   "status": "unavailable_unmapped",
+   "considered": 0,
+   "eligible": 0,
+   "excluded": [],
+   "restricted": false
+  },
+  "kinds": {
+   "stock": "simulated",
+   "forecast": "forecast"
+  },
+  "holds": [],
+  "review_flags": [],
+  "transfers": [],
+  "history": []
+ },
+ "flag_risk": {
+  "a": "S042",
+  "b": true,
+  "keep_waste": 180.0,
+  "stock_at_step": 200.0,
+  "step_day": 6
+ }
+}

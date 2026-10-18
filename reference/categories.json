@@ -1,0 +1,15 @@
+{
+  "level": {"value": "mgmt", "type": "Policy", "source": "05.2-06 D-33 (user): the category level that carries the assumptions is management_group_id (7 codes in the profile); 05.2-CONTEXT D-20", "note": "a row of day_rows names this level's code; the dataset gives codes only, never a category name (D-02)"},
+  "default": {
+    "zone": {"value": "chilled", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; the 3-day chilled default, the synthetic STRAW-500 row", "note": "the dataset gives no storage zone; never a public-dataset fact"},
+    "price": {"value": 2.64, "unit": "USD", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; the synthetic STRAW-500 price (spec §5 table)", "note": "the dataset has no money price column (D-35); never a public-dataset fact"},
+    "disposal_cost": {"value": 0.08, "unit": "USD", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; the synthetic STRAW-500 disposal cost (spec §5 table)", "note": "the only waste cost; never a public-dataset fact"},
+    "units_per_tote": {"value": 8, "unit": "units per tote", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; the synthetic STRAW-500 tote"},
+    "kg_per_unit": {"value": 0.5, "unit": "kg", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; the synthetic STRAW-500 weight (spec §5 table)"},
+    "shelf_life_days": {"value": 3, "unit": "days", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; the 3-day chilled default", "note": "expiry = received day + shelf life (as reference/world.json selling_window)"},
+    "schedule": {"value": "B", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; markdown schedule B of reference/policy.json (20% at D-1, 30% at D), the 3-day products' schedule (03-CONTEXT D-20)"},
+    "order_case": {"value": 8, "unit": "units per case", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; the synthetic STRAW-500 order case"},
+    "delivery_cycle_days": {"value": 2, "unit": "days", "type": "Assumption", "source": "05.2-06 D-33 (user): a configurable scenario assumption; the synthetic STRAW-500 delivery cycle"}
+  },
+  "overrides": {}
+}

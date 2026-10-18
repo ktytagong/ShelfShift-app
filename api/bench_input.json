@@ -1,0 +1,528 @@
+{
+ "bookings": {
+  "demand": [],
+  "lot_price": [],
+  "lot_units": [],
+  "run_totes": [],
+  "totes": []
+ },
+ "capacity": [
+  {
+   "branch": "Lat Phrao",
+   "day": 3,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 4,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 5,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 6,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 7,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 8,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 9,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 10,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 11,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 12,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 13,
+   "free_totes": 21
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 14,
+   "free_totes": 21
+  },
+  {
+   "branch": "Thonburi",
+   "day": 3,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 4,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 5,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 6,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 7,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 8,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 9,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 10,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 11,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 12,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 13,
+   "free_totes": 20
+  },
+  {
+   "branch": "Thonburi",
+   "day": 14,
+   "free_totes": 20
+  }
+ ],
+ "case_lot_id": "MLK-042",
+ "decision_min": 540,
+ "engine_version": "engine-3",
+ "forecasts": [
+  {
+   "base": 87.89,
+   "branch": "Bang Na",
+   "day": 3,
+   "high": 151.14,
+   "low": 40.1
+  },
+  {
+   "base": 93.59,
+   "branch": "Bang Na",
+   "day": 4,
+   "high": 159.51,
+   "low": 44.12
+  },
+  {
+   "base": 101.95,
+   "branch": "Bang Na",
+   "day": 5,
+   "high": 171.42,
+   "low": 49.67
+  },
+  {
+   "base": 106.99,
+   "branch": "Bang Na",
+   "day": 6,
+   "high": 175.64,
+   "low": 55.52
+  },
+  {
+   "base": 97.63,
+   "branch": "Bang Na",
+   "day": 7,
+   "high": 164.97,
+   "low": 49.07
+  },
+  {
+   "base": 92.09,
+   "branch": "Bang Na",
+   "day": 8,
+   "high": 156.7,
+   "low": 45.2
+  },
+  {
+   "base": 85.9,
+   "branch": "Bang Na",
+   "day": 9,
+   "high": 150.79,
+   "low": 38.95
+  },
+  {
+   "base": 86.3,
+   "branch": "Bang Na",
+   "day": 10,
+   "high": 152.3,
+   "low": 39.32
+  },
+  {
+   "base": 93.93,
+   "branch": "Bang Na",
+   "day": 11,
+   "high": 162.8,
+   "low": 45.37
+  },
+  {
+   "base": 102.4,
+   "branch": "Bang Na",
+   "day": 12,
+   "high": 173.64,
+   "low": 49.65
+  },
+  {
+   "base": 105.33,
+   "branch": "Bang Na",
+   "day": 13,
+   "high": 178.37,
+   "low": 52.28
+  },
+  {
+   "base": 97.35,
+   "branch": "Bang Na",
+   "day": 14,
+   "high": 167.41,
+   "low": 46.91
+  },
+  {
+   "base": 35.74,
+   "branch": "Lat Phrao",
+   "day": 3,
+   "high": 49.31,
+   "low": 23.37
+  },
+  {
+   "base": 35.41,
+   "branch": "Lat Phrao",
+   "day": 4,
+   "high": 49.73,
+   "low": 22.36
+  },
+  {
+   "base": 38.81,
+   "branch": "Lat Phrao",
+   "day": 5,
+   "high": 53.64,
+   "low": 25.28
+  },
+  {
+   "base": 41.76,
+   "branch": "Lat Phrao",
+   "day": 6,
+   "high": 56.71,
+   "low": 27.69
+  },
+  {
+   "base": 42.37,
+   "branch": "Lat Phrao",
+   "day": 7,
+   "high": 57.59,
+   "low": 28.43
+  },
+  {
+   "base": 35.46,
+   "branch": "Lat Phrao",
+   "day": 8,
+   "high": 50.65,
+   "low": 21.73
+  },
+  {
+   "base": 37.88,
+   "branch": "Lat Phrao",
+   "day": 9,
+   "high": 52.9,
+   "low": 24.13
+  },
+  {
+   "base": 35.66,
+   "branch": "Lat Phrao",
+   "day": 10,
+   "high": 50.9,
+   "low": 21.85
+  },
+  {
+   "base": 35.95,
+   "branch": "Lat Phrao",
+   "day": 11,
+   "high": 51.08,
+   "low": 22.36
+  },
+  {
+   "base": 39.04,
+   "branch": "Lat Phrao",
+   "day": 12,
+   "high": 54.29,
+   "low": 25.2
+  },
+  {
+   "base": 42.26,
+   "branch": "Lat Phrao",
+   "day": 13,
+   "high": 57.69,
+   "low": 28.22
+  },
+  {
+   "base": 42.69,
+   "branch": "Lat Phrao",
+   "day": 14,
+   "high": 57.8,
+   "low": 28.56
+  },
+  {
+   "base": 44.65,
+   "branch": "Thonburi",
+   "day": 3,
+   "high": 64.72,
+   "low": 24.4
+  },
+  {
+   "base": 44.74,
+   "branch": "Thonburi",
+   "day": 4,
+   "high": 64.74,
+   "low": 24.52
+  },
+  {
+   "base": 44.57,
+   "branch": "Thonburi",
+   "day": 5,
+   "high": 64.35,
+   "low": 24.32
+  },
+  {
+   "base": 44.94,
+   "branch": "Thonburi",
+   "day": 6,
+   "high": 64.16,
+   "low": 24.75
+  },
+  {
+   "base": 45.01,
+   "branch": "Thonburi",
+   "day": 7,
+   "high": 64.19,
+   "low": 24.78
+  },
+  {
+   "base": 44.76,
+   "branch": "Thonburi",
+   "day": 8,
+   "high": 64.24,
+   "low": 24.73
+  },
+  {
+   "base": 44.28,
+   "branch": "Thonburi",
+   "day": 9,
+   "high": 63.66,
+   "low": 24.15
+  },
+  {
+   "base": 43.61,
+   "branch": "Thonburi",
+   "day": 10,
+   "high": 63.06,
+   "low": 23.53
+  },
+  {
+   "base": 44.46,
+   "branch": "Thonburi",
+   "day": 11,
+   "high": 63.82,
+   "low": 24.29
+  },
+  {
+   "base": 44.75,
+   "branch": "Thonburi",
+   "day": 12,
+   "high": 64.14,
+   "low": 24.57
+  },
+  {
+   "base": 44.44,
+   "branch": "Thonburi",
+   "day": 13,
+   "high": 64.04,
+   "low": 24.64
+  },
+  {
+   "base": 44.57,
+   "branch": "Thonburi",
+   "day": 14,
+   "high": 63.92,
+   "low": 24.46
+  }
+ ],
+ "inbound": [
+  {
+   "arrival_day": 4,
+   "arrival_min": 360,
+   "branch": "Thonburi",
+   "expiry_day": 14,
+   "inbound_id": "MLK-341",
+   "qty": 130.0,
+   "received_seq": 4003
+  }
+ ],
+ "lots": [
+  {
+   "branch": "Lat Phrao",
+   "expiry_day": 5,
+   "expiry_source": "PRINTED",
+   "last_verified_day": -5,
+   "lot_id": "MLK-038",
+   "markdown_pct": 0,
+   "qty": 60.0,
+   "received_seq": -4997
+  },
+  {
+   "branch": "Bang Na",
+   "expiry_day": 6,
+   "expiry_source": "PRINTED",
+   "last_verified_day": 3,
+   "lot_id": "MLK-042",
+   "markdown_pct": 0,
+   "qty": 807.0,
+   "received_seq": -4000
+  },
+  {
+   "branch": "Thonburi",
+   "expiry_day": 11,
+   "expiry_source": "PRINTED",
+   "last_verified_day": 1,
+   "lot_id": "MLK-340",
+   "markdown_pct": 0,
+   "qty": 41.0,
+   "received_seq": 1004
+  }
+ ],
+ "markdown": {
+  "m20": [
+   1.3,
+   1.4333333333333333,
+   1.55
+  ],
+  "m30": [
+   1.4,
+   1.6,
+   1.8
+  ]
+ },
+ "markdown_schedule": [
+  [
+   1,
+   30
+  ],
+  [
+   2,
+   20
+  ]
+ ],
+ "overrides": [],
+ "policy": {
+  "adjustment_cost_max": 2777.78,
+  "baseline_markdown_pct": 30,
+  "baseline_near_expiry_days": 1,
+  "crossover_range_floor": 555.56,
+  "markdown_same_day_by_min": 720,
+  "min_regret": 0.03,
+  "min_sellable_days": 1,
+  "packing_min": 120,
+  "phantom_min_forecast": 10.0,
+  "relabel_min": 60,
+  "sellable_same_day_before_min": 840,
+  "shortlist_step": 0,
+  "stale_after_days": 7,
+  "stale_factor": 0.7,
+  "waste_flip_max": 5.0,
+  "waste_price": 0.0
+ },
+ "product": {
+  "disposal_cost": 0.06,
+  "kg_per_unit": 1.03,
+  "price": 1.11,
+  "sku": "MILK-1L",
+  "units_per_tote": 10,
+  "zone": "chilled"
+ },
+ "reported_facts": [],
+ "runs": [
+  {
+   "arrives_min": 800,
+   "available": true,
+   "cancel_cost": null,
+   "cold_chain": true,
+   "day": 3,
+   "departs_min": 750,
+   "dest": "Lat Phrao",
+   "fixed_cost": 16.67,
+   "loading_cutoff_min": 720,
+   "origin": "Bang Na",
+   "per_unit_cost": 0.0,
+   "run_code": "R-02",
+   "spare_totes": 22
+  },
+  {
+   "arrives_min": 900,
+   "available": true,
+   "cancel_cost": null,
+   "cold_chain": true,
+   "day": 3,
+   "departs_min": 810,
+   "dest": "Thonburi",
+   "fixed_cost": 19.44,
+   "loading_cutoff_min": 780,
+   "origin": "Bang Na",
+   "per_unit_cost": 0.0,
+   "run_code": "R-03",
+   "spare_totes": 20
+  }
+ ],
+ "sales_yesterday": [
+  [
+   "Bang Na",
+   109.0
+  ],
+  [
+   "Lat Phrao",
+   0.0
+  ],
+  [
+   "Thonburi",
+   43.0
+  ]
+ ],
+ "today": 3
+}

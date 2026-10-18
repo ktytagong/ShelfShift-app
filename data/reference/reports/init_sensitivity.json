@@ -1,0 +1,121 @@
+{
+ "configuration": {
+  "burn_in_days": 56,
+  "case_window_days": [
+   0,
+   6
+  ],
+  "history_days": [
+   -90,
+   -1
+  ],
+  "schedules": {
+   "BREAD-400": [
+    [
+     1,
+     20
+    ],
+    [
+     0,
+     30
+    ]
+   ],
+   "MILK-1L": [
+    [
+     2,
+     20
+    ],
+    [
+     1,
+     30
+    ]
+   ],
+   "STRAW-500": [
+    [
+     1,
+     20
+    ],
+    [
+     0,
+     30
+    ]
+   ]
+  }
+ },
+ "dataset_version": "ds-82f67857f136",
+ "factors": {
+  "0.8": {
+   "-30..-1": {
+    "series_days": 2250,
+    "stockout_series_days": 216,
+    "stockout_share": 0.096
+   },
+   "-60..-31": {
+    "series_days": 2250,
+    "stockout_series_days": 257,
+    "stockout_share": 0.1142
+   },
+   "-90..-61": {
+    "series_days": 2250,
+    "stockout_series_days": 310,
+    "stockout_share": 0.1378
+   }
+  },
+  "1.0": {
+   "-30..-1": {
+    "series_days": 2250,
+    "stockout_series_days": 211,
+    "stockout_share": 0.0938
+   },
+   "-60..-31": {
+    "series_days": 2250,
+    "stockout_series_days": 237,
+    "stockout_share": 0.1053
+   },
+   "-90..-61": {
+    "series_days": 2250,
+    "stockout_series_days": 265,
+    "stockout_share": 0.1178
+   }
+  },
+  "1.2": {
+   "-30..-1": {
+    "series_days": 2250,
+    "stockout_series_days": 206,
+    "stockout_share": 0.0916
+   },
+   "-60..-31": {
+    "series_days": 2250,
+    "stockout_series_days": 230,
+    "stockout_share": 0.1022
+   },
+   "-90..-61": {
+    "series_days": 2250,
+    "stockout_series_days": 259,
+    "stockout_share": 0.1151
+   }
+  }
+ },
+ "gap_1.2_minus_0.8": {
+  "-30..-1": -0.0044,
+  "-60..-31": -0.012,
+  "-90..-61": -0.0227
+ },
+ "generator_commit": "31893ff",
+ "input_version": "in-47626e29b3fa",
+ "label": "Synthetic data · hypothetical scenario",
+ "multiplier": [
+  0.9,
+  1.0
+ ],
+ "note": "A consistency check on the final configuration (case ordering on, each product's schedule (A milk, B strawberries and bread), 90–100%, 56-day burn-in); nothing is tuned from it (D-04).",
+ "reference_fingerprint": "ref-170363f54824",
+ "scenario": "evaluation",
+ "seeds": [
+  20261012,
+  1,
+  2,
+  3,
+  4
+ ]
+}

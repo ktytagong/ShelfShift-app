@@ -1,0 +1,100 @@
+{
+ "all_zero_series": {
+  "backtest": 0,
+  "d0": 0,
+  "d1": 0,
+  "d2": 0,
+  "d3": 0
+ },
+ "day0": "2026-10-14",
+ "forecast": {
+  "confidence_level": 0.8,
+  "dataset": "shelfshift_public",
+  "fallback": "ARIMA_PLUS",
+  "location": "asia-southeast1",
+  "model": "TimesFM 2.5"
+ },
+ "horizon_end": 9,
+ "input_counts": {
+  "backtest": {
+   "converted": 2,
+   "imputed": 4,
+   "recorded": 273,
+   "unfilled": 0,
+   "unknown_price": 1
+  },
+  "d0": {
+   "converted": 4,
+   "imputed": 5,
+   "recorded": 409,
+   "unfilled": 0,
+   "unknown_price": 2
+  },
+  "d1": {
+   "converted": 4,
+   "imputed": 5,
+   "recorded": 419,
+   "unfilled": 0,
+   "unknown_price": 2
+  },
+  "d2": {
+   "converted": 4,
+   "imputed": 5,
+   "recorded": 429,
+   "unfilled": 0,
+   "unknown_price": 2
+  },
+  "d3": {
+   "converted": 4,
+   "imputed": 5,
+   "recorded": 439,
+   "unfilled": 0,
+   "unknown_price": 2
+  }
+ },
+ "input_label": "estimated full-price-equivalent sales",
+ "jobs": [
+  {
+   "cutoff": -1,
+   "first_day": 0,
+   "job": "d0",
+   "last_day": 9
+  },
+  {
+   "cutoff": 0,
+   "first_day": 1,
+   "job": "d1",
+   "last_day": 9
+  },
+  {
+   "cutoff": 1,
+   "first_day": 2,
+   "job": "d2",
+   "last_day": 9
+  },
+  {
+   "cutoff": 2,
+   "first_day": 3,
+   "job": "d3",
+   "last_day": 9
+  },
+  {
+   "cutoff": -15,
+   "first_day": -14,
+   "job": "backtest",
+   "last_day": -1
+  }
+ ],
+ "reference_history_id": "fb-0fff46861d5a",
+ "rows": 2020,
+ "series": 10,
+ "series_runs": 50,
+ "sha256": "1b16c328b8d8c3ce548f6da1d35a01c8a18015e8779662ae3e774d1da94c289d",
+ "store_city": {
+  "S11": "C1",
+  "S12": "C1",
+  "S13": "C1",
+  "S21": "C2",
+  "S22": "C2"
+ }
+}

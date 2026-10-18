@@ -1,0 +1,131 @@
+{
+  "label": "synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows",
+  "dataset": {
+    "name": {
+      "value": "frn_sample_synthetic",
+      "type": "Data",
+      "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)",
+      "note": "synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows"
+    },
+    "creator": {
+      "value": "ShelfShift test fixture (synthetic)",
+      "type": "Data",
+      "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+    },
+    "files": {
+      "train": {
+        "name": {
+          "value": "frn_sample_synthetic.csv",
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "sha256": {
+          "value": "f13c9d5db109940d6a787eee28d4559a6c39559331d990616e24fba26e348ae6",
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "bytes": {
+          "value": 34346,
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "rows": {
+          "value": 420,
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "first_dt": {
+          "value": "2024-05-15",
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "last_dt": {
+          "value": "2024-06-25",
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        }
+      },
+      "eval": {
+        "name": {
+          "value": "frn_sample_synthetic.csv",
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "sha256": {
+          "value": "f13c9d5db109940d6a787eee28d4559a6c39559331d990616e24fba26e348ae6",
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "bytes": {
+          "value": 34346,
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "rows": {
+          "value": 70,
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "first_dt": {
+          "value": "2024-06-26",
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        },
+        "last_dt": {
+          "value": "2024-07-02",
+          "type": "Data",
+          "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)"
+        }
+      }
+    }
+  },
+  "calendar": {
+    "first_day": {
+      "value": -42,
+      "type": "Data",
+      "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)",
+      "note": "the fixture's first train date"
+    }
+  },
+  "units": {
+    "factor": {
+      "value": 10,
+      "type": "Assumption",
+      "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)",
+      "note": "1 / STEP: the fixture's sale_amount is units x STEP"
+    }
+  },
+  "geography": {
+    "coverage": {
+      "unmapped": {
+        "value": [
+          "13"
+        ],
+        "type": "Assumption",
+        "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)",
+        "note": "the fixture's unmapped store (the D-31 path)"
+      }
+    },
+    "service": {
+      "max_travel_min": {
+        "value": 90,
+        "type": "Policy",
+        "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)",
+        "note": "the fixture's own service limit, so its mapped pairs have a run"
+      }
+    }
+  },
+  "designed": {
+    "verify_example": {
+      "value": {
+        "store": "12",
+        "product": "101",
+        "rule": "test data: one series with physical 0 from day 0, its record unchanged",
+        "label": "Designed example (test fixture)"
+      },
+      "type": "Policy",
+      "source": "tests/data/fixtures/make_frn_sample.py (synthetic test fixture in the FreshRetailNet-50K schema; not FreshRetailNet rows)",
+      "note": "the fixture's designed example (test data only)"
+    }
+  }
+}

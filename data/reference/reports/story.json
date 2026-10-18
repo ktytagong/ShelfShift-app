@@ -1,0 +1,375 @@
+{
+ "basis_id": "fb-f151207529e0",
+ "day3_state_note": "The record at 09:00 on day 3: the lots at the start of day 3 plus that morning's 06:00 deliveries, which are lots at 09:00, not inbound (03-CONTEXT D-21). Only the runs leaving the source today are offered (D-24, a recorded limitation): on Thu the engine compares Keep against today's actions, so Keep's projection does not know about a later day's run; the case stays open and the next day's evaluation sees that day's runs. Lots are the record, never physical stock; a confirmed count enters only as a stock_count reported fact.",
+ "engine_version": "engine-3",
+ "forecast_providers": {
+  "ai_forecast": 15
+ },
+ "forecast_run_id": "fr-d3-9ed9fc3a",
+ "input_version": "in-47626e29b3fa",
+ "label": "Synthetic data · hypothetical scenario · designed demo situation",
+ "lat_phrao_milk_recorded_day2": 0.0,
+ "note": "Engine projections on synthetic data with the forecast run named under forecast_providers; nothing here is observed. The milk story is a designed demo situation, never a typical case or evaluation evidence (D-15, Seed calibration 8).",
+ "reviewer_lots": {
+  "BRD-301": {
+   "branch": "Thonburi",
+   "competing_lots": [
+    {
+     "expiry_day": 3,
+     "first_step_day": 2,
+     "lot_id": "BRD-467",
+     "origin": "natural",
+     "qty": 7.92,
+     "tag": null
+    }
+   ],
+   "expiry_day": 5,
+   "fact_checks": [],
+   "first_step_day": 4,
+   "kind": "MARKDOWN",
+   "recommended": "md20",
+   "recommended_label": "Markdown 20%",
+   "record_day3": 93.0,
+   "rejected": [
+    {
+     "label": "Transfer to Lat Phrao (R-08)",
+     "reasons": [
+      "no unmet demand at destination"
+     ],
+     "run_code": "R-08"
+    }
+   ],
+   "run_code": null,
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "md20",
+     "high": "keep",
+     "low": "md20"
+    },
+    "wins": 2
+   },
+   "schedule": [
+    [
+     1,
+     20
+    ],
+    [
+     0,
+     30
+    ]
+   ],
+   "sku": "BREAD-400",
+   "tag": "bread-keep",
+   "target": "Keep wins",
+   "target_met": false
+  },
+  "MLK-042": {
+   "branch": "Bang Na",
+   "competing_lots": [],
+   "expiry_day": 6,
+   "fact_checks": [
+    {
+     "changes_plan": true,
+     "fact_id": "Lat Phrao:phantom",
+     "kind": "PHANTOM_STOCK",
+     "lot_ids": [
+      "MLK-038"
+     ],
+     "pick_changed": true,
+     "pick_feasible_if_alt": true,
+     "regret": 34.32
+    }
+   ],
+   "first_step_day": 4,
+   "kind": "TRANSFER",
+   "recommended": "tr:Lat Phrao:R-02:110:md20",
+   "recommended_label": "Transfer 110 to Lat Phrao (R-02), markdown rest 20%",
+   "record_day3": 807.0,
+   "rejected": [],
+   "run_code": "R-02",
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "tr:Lat Phrao:R-02:110:md20",
+     "high": "keep",
+     "low": "tr:Lat Phrao:R-02:94:md20"
+    },
+    "wins": 1
+   },
+   "schedule": [
+    [
+     2,
+     20
+    ],
+    [
+     1,
+     30
+    ]
+   ],
+   "sku": "MILK-1L",
+   "tag": "milk-story",
+   "target": "transfer that a confirmed count changes",
+   "target_met": true
+  },
+  "MLK-055": {
+   "branch": "Bang Kapi",
+   "competing_lots": [],
+   "expiry_day": 6,
+   "fact_checks": [],
+   "first_step_day": 4,
+   "kind": "KEEP",
+   "recommended": "keep",
+   "recommended_label": "Keep",
+   "record_day3": 123.0,
+   "rejected": [],
+   "run_code": null,
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "keep",
+     "high": "keep",
+     "low": "keep"
+    },
+    "wins": 3
+   },
+   "schedule": [
+    [
+     2,
+     20
+    ],
+    [
+     1,
+     30
+    ]
+   ],
+   "sku": "MILK-1L",
+   "tag": "milk-close-call",
+   "target": "wins 2 of 3",
+   "target_met": false
+  },
+  "STR-201": {
+   "branch": "Rangsit",
+   "competing_lots": [],
+   "expiry_day": 5,
+   "fact_checks": [
+    {
+     "changes_plan": false,
+     "fact_id": "STR-201:expiry",
+     "kind": "ESTIMATED_EXPIRY",
+     "lot_ids": [
+      "STR-201"
+     ],
+     "pick_changed": true,
+     "pick_feasible_if_alt": true,
+     "regret": 0.0
+    }
+   ],
+   "first_step_day": 4,
+   "kind": "MARKDOWN",
+   "recommended": "md20",
+   "recommended_label": "Markdown 20%",
+   "record_day3": 103.0,
+   "rejected": [
+    {
+     "label": "Transfer to Bang Kapi (R-05)",
+     "reasons": [
+      "cold chain"
+     ],
+     "run_code": "R-05"
+    }
+   ],
+   "run_code": null,
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "md20",
+     "high": "keep",
+     "low": "md20"
+    },
+    "wins": 2
+   },
+   "schedule": [
+    [
+     1,
+     20
+    ],
+    [
+     0,
+     30
+    ]
+   ],
+   "sku": "STRAW-500",
+   "tag": "strawberry-cold-chain",
+   "target": "every transfer rejected for cold chain; a markdown wins",
+   "target_met": true
+  }
+ },
+ "stand_in_forecast": false,
+ "sus19": {
+  "about": {
+   "case_lot_record_day3": 810,
+   "days_since_phantom_count": 8,
+   "keep_wasted_units_after_count": 250,
+   "keep_wasted_units_on_record": 250,
+   "lat_phrao_base_forecast_day3": 35,
+   "lat_phrao_base_forecast_to_expiry": 150,
+   "lat_phrao_free_totes_min": 20,
+   "lat_phrao_record_day3": 60,
+   "lat_phrao_unmet_after_count": 150,
+   "lat_phrao_unmet_on_record": 110,
+   "phantom_unserved_units": 25,
+   "source_base_forecast_day3": 90,
+   "source_base_forecast_to_expiry": 390,
+   "transfer_qty_after_count": 150,
+   "transfer_qty_on_record": 110
+  },
+  "after_count": {
+   "act_before": {
+    "day": 3,
+    "latest_decision_min": 1439,
+    "text": "act by 23:59: the schedule takes the lot to 20% off at opening on day 4"
+   },
+   "candidates_checked": 468,
+   "decide_by": {
+    "day": 3,
+    "latest_decision_min": 600,
+    "source": "run",
+    "text": "transfer becomes impossible after 10:00 (run R-02 loading cutoff 12:00 minus 2 h packing)"
+   },
+   "dest": "Lat Phrao",
+   "kind": "TRANSFER",
+   "markdown_step": {
+    "day": 4,
+    "days_until": 1,
+    "pct": 20
+   },
+   "net": {
+    "base": 795.05,
+    "high": 873.94,
+    "low": 508.69
+   },
+   "pct": 20,
+   "qty": 151,
+   "recommended": "tr:Lat Phrao:R-02:151:md20",
+   "recommended_label": "Transfer 151 to Lat Phrao (R-02), markdown rest 20%",
+   "run_code": "R-02",
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "tr:Lat Phrao:R-02:151:md20",
+     "high": "tr:Lat Phrao:R-02:121:hold",
+     "low": "tr:Lat Phrao:R-02:141:md20"
+    },
+    "wins": 1
+   },
+   "wait": {
+    "day": 3,
+    "latest_decision_min": 660,
+    "run_code": "R-03",
+    "text": "transfer becomes impossible after 11:00 (run R-03 loading cutoff 13:00 minus 2 h packing)"
+   },
+   "wasted_units": 61.57
+  },
+  "beats": {
+   "count_changes_plan": true,
+   "opens_thu_before_fri_step": true,
+   "phantom_gap_visible": true,
+   "r02_usable": true
+  },
+  "count_fact": {
+   "counted_day": 3,
+   "kind": "stock_count",
+   "lot_id": "MLK-038",
+   "units": 0.0
+  },
+  "demo_line": "Decide by 10:00 today; the price drops 20% tomorrow",
+  "lots": {
+   "case": "MLK-042",
+   "phantom": "MLK-038",
+   "phantom_branch": "Lat Phrao",
+   "source": "Bang Na",
+   "window_days": [
+    3,
+    6
+   ]
+  },
+  "numbers": {
+   "case_lot_record_day3": 807.0,
+   "days_since_phantom_count": 8,
+   "keep_wasted_units_after_count": 250.66,
+   "keep_wasted_units_on_record": 250.66,
+   "lat_phrao_base_forecast_day3": 35.74,
+   "lat_phrao_base_forecast_to_expiry": 151.72,
+   "lat_phrao_free_totes_min": 21,
+   "lat_phrao_record_day3": 60.0,
+   "lat_phrao_unmet_after_count": 151.72,
+   "lat_phrao_unmet_on_record": 110.5,
+   "phantom_unserved_units": 25.62,
+   "source_base_forecast_day3": 87.89,
+   "source_base_forecast_to_expiry": 390.42,
+   "transfer_qty_after_count": 151,
+   "transfer_qty_on_record": 110
+  },
+  "on_record": {
+   "act_before": {
+    "day": 3,
+    "latest_decision_min": 1439,
+    "text": "act by 23:59: the schedule takes the lot to 20% off at opening on day 4"
+   },
+   "candidates_checked": 345,
+   "decide_by": {
+    "day": 3,
+    "latest_decision_min": 600,
+    "source": "run",
+    "text": "transfer becomes impossible after 10:00 (run R-02 loading cutoff 12:00 minus 2 h packing)"
+   },
+   "dest": "Lat Phrao",
+   "kind": "TRANSFER",
+   "markdown_step": {
+    "day": 4,
+    "days_until": 1,
+    "pct": 20
+   },
+   "net": {
+    "base": 800.27,
+    "high": 913.28,
+    "low": 509.18
+   },
+   "pct": 20,
+   "qty": 110,
+   "recommended": "tr:Lat Phrao:R-02:110:md20",
+   "recommended_label": "Transfer 110 to Lat Phrao (R-02), markdown rest 20%",
+   "run_code": "R-02",
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "tr:Lat Phrao:R-02:110:md20",
+     "high": "keep",
+     "low": "tr:Lat Phrao:R-02:94:md20"
+    },
+    "wins": 1
+   },
+   "wait": {
+    "day": 3,
+    "latest_decision_min": 660,
+    "run_code": "R-03",
+    "text": "transfer becomes impossible after 11:00 (run R-03 loading cutoff 13:00 minus 2 h packing)"
+   },
+   "wasted_units": 102.57
+  },
+  "phantom_fact": {
+   "best_plan_if_alt": "tr:Lat Phrao:R-02:151:md20",
+   "changes_plan": true,
+   "decision_regret": 34.32,
+   "fact_id": "Lat Phrao:phantom",
+   "lot_ids": [
+    "MLK-038"
+   ],
+   "pick_changed": true,
+   "recorded_value": 60.0,
+   "regret": 34.32,
+   "unserved_units": 25.62
+  },
+  "phantom_physical": 0.0,
+  "r02_rejection_reasons": [],
+  "recommended_uses_r02": true,
+  "video_phrase": "wins 1 of 3 on the record and 1 of 3 after the count",
+  "wins_after_count": 1,
+  "wins_on_record": 1
+ }
+}

@@ -1,0 +1,17 @@
+# The build context holds only what the Dockerfile copies (06-CONTEXT D-18).
+# Version control and local environments: never part of an image.
+.git
+.venv
+**/__pycache__
+.pytest_cache
+test-results/
+# Tests stay out of the image; it runs the app and its jobs only.
+tests/
+# Secrets and deploy records never enter an image: the git-ignored configuration, any .env file and the release
+# manifests (06-CONTEXT D-08, D-11).
+deploy/
+.env
+.env.*
+# The web stage installs and builds web/ itself from the lock (npm ci), so local builds never leak in.
+web/node_modules
+web/dist

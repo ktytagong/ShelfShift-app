@@ -1,0 +1,136 @@
+{
+  "calendar": {
+    "day0": {"value": "2026-10-12", "type": "Data", "source": "Day 0 = Mon 12 Oct 2026 (spec §5)"},
+    "history_days": {"value": 90, "unit": "days", "type": "Data", "source": "kept history, days −90..−1 (spec §5)"},
+    "last_demo_day": {"value": 6, "unit": "day index", "type": "Data", "source": "demo week ends Sun 18 Oct, day 6 (spec §5)"},
+    "demo_open_day": {"value": 3, "unit": "day index", "type": "Data", "source": "the live demo opens on Thu 15 Oct, day 3 (spec §5)"},
+    "open_min": {"value": 540, "unit": "minutes", "type": "Data", "source": "every demo day starts at 09:00 Asia/Bangkok (spec §5)"},
+    "delivery_min": {"value": 360, "unit": "minutes", "type": "Data", "source": "scheduled deliveries arrive at 06:00 and sell that day (spec §5; 03-CONTEXT D-13)"},
+    "backtest_days": {"value": 14, "unit": "days", "type": "Data", "source": "forecast holdout window: days −14..−1, cutoff day −15 (spec §5)"},
+    "burn_in_days": {"value": 56, "unit": "days", "type": "Assumption", "source": "D-03: simulated before day −90 and discarded"},
+    "open_within_days": {"value": 2, "unit": "days", "type": "Policy", "source": "plan Task 14 seed shape only; superseded by ESL-02 as a case-opening rule (03-CONTEXT D-22)"}
+  },
+  "case_opening": {
+    "days_before_first_step": {"value": 1, "unit": "days", "type": "Policy", "source": "ESL-02 case-opening screen (03-CONTEXT D-22); pending retailer"},
+    "min_waste_units": {"value": 1, "unit": "units", "type": "Policy", "source": "ESL-02 case-opening screen (03-CONTEXT D-22); pending retailer"},
+    "min_discounted_totes": {"value": 1, "unit": "totes", "type": "Policy", "source": "ESL-02 case-opening screen (03-CONTEXT D-22); pending retailer", "note": "counted in the product's units_per_tote"},
+    "min_short_totes": {"value": 1, "unit": "totes", "type": "Policy", "source": "ESL-02 case-opening screen (03-CONTEXT D-22); pending retailer", "note": "counted in the product's units_per_tote"}
+  },
+  "branches": {"value": ["Bang Na", "Rangsit", "Lat Phrao", "Bang Kapi", "Thonburi"], "type": "Data", "source": "synthetic Bangkok branches (spec §5)"},
+  "products": {
+    "MILK-1L": {
+      "name": {"value": "Fresh milk 1 L", "type": "Data", "source": "synthetic product (spec §5 table)"},
+      "zone": {"value": "chilled", "type": "Data", "source": "synthetic product (spec §5 table)"},
+      "price": {"value": 1.11, "unit": "USD", "type": "Assumption", "source": "spec §5 table; synthetic"},
+      "disposal_cost": {"value": 0.06, "unit": "USD", "type": "Assumption", "source": "spec §5 table; synthetic; the only waste cost (no purchase cost: sunk)"},
+      "units_per_tote": {"value": 10, "unit": "units per tote", "type": "Assumption", "source": "transport tote; pending retailer"},
+      "kg_per_unit": {"value": 1.03, "unit": "kg", "type": "Data", "source": "spec §5 table; synthetic"},
+      "shelf_life_days": {"value": 10, "unit": "days", "type": "Assumption", "source": "spec §5 table; pending retailer"},
+      "selling_window": {"value": "expiry = received day + shelf life; sellable to the end of the expiry day; a 06:00 delivery sells the same day, so a lot sells on shelf life + 1 days", "type": "Assumption", "source": "D-13; assumption · pending retailer"},
+      "order_case": {"value": 10, "unit": "units per case", "type": "Assumption", "source": "D-02; assumption · pending retailer; its own value, set equal to units_per_tote"},
+      "delivery_cycle_days": {"value": 3, "unit": "days", "type": "Assumption", "source": "plan Task 14 delivery cycle; pending retailer"},
+      "lot_prefix": {"value": "MLK", "type": "Data", "source": "lot id prefix (plan Task 14)"}
+    },
+    "STRAW-500": {
+      "name": {"value": "Strawberries 500 g", "type": "Data", "source": "synthetic product (spec §5 table)"},
+      "zone": {"value": "chilled", "type": "Data", "source": "synthetic product (spec §5 table)"},
+      "price": {"value": 2.64, "unit": "USD", "type": "Assumption", "source": "spec §5 table; synthetic"},
+      "disposal_cost": {"value": 0.08, "unit": "USD", "type": "Assumption", "source": "spec §5 table; synthetic; the only waste cost (no purchase cost: sunk)"},
+      "units_per_tote": {"value": 8, "unit": "units per tote", "type": "Assumption", "source": "transport tote; pending retailer"},
+      "kg_per_unit": {"value": 0.50, "unit": "kg", "type": "Data", "source": "spec §5 table; synthetic"},
+      "shelf_life_days": {"value": 3, "unit": "days", "type": "Assumption", "source": "spec §5 table; pending retailer"},
+      "selling_window": {"value": "expiry = received day + shelf life; sellable to the end of the expiry day; a 06:00 delivery sells the same day, so a lot sells on shelf life + 1 days", "type": "Assumption", "source": "D-13; assumption · pending retailer"},
+      "order_case": {"value": 8, "unit": "units per case", "type": "Assumption", "source": "D-02; assumption · pending retailer; its own value, set equal to units_per_tote"},
+      "delivery_cycle_days": {"value": 2, "unit": "days", "type": "Assumption", "source": "plan Task 14 delivery cycle; pending retailer"},
+      "lot_prefix": {"value": "STR", "type": "Data", "source": "lot id prefix (plan Task 14)"}
+    },
+    "BREAD-400": {
+      "name": {"value": "Bread 400 g", "type": "Data", "source": "synthetic product (spec §5 table)"},
+      "zone": {"value": "ambient", "type": "Data", "source": "synthetic product (spec §5 table)"},
+      "price": {"value": 0.97, "unit": "USD", "type": "Assumption", "source": "spec §5 table; synthetic"},
+      "disposal_cost": {"value": 0.03, "unit": "USD", "type": "Assumption", "source": "spec §5 table; synthetic; the only waste cost (no purchase cost: sunk)"},
+      "units_per_tote": {"value": 12, "unit": "units per tote", "type": "Assumption", "source": "transport tote; pending retailer"},
+      "kg_per_unit": {"value": 0.40, "unit": "kg", "type": "Data", "source": "spec §5 table; synthetic"},
+      "shelf_life_days": {"value": 3, "unit": "days", "type": "Assumption", "source": "spec §5 table; pending retailer"},
+      "selling_window": {"value": "expiry = received day + shelf life; sellable to the end of the expiry day; a 06:00 delivery sells the same day, so a lot sells on shelf life + 1 days", "type": "Assumption", "source": "D-13; assumption · pending retailer"},
+      "order_case": {"value": 12, "unit": "units per case", "type": "Assumption", "source": "D-02; assumption · pending retailer; its own value, set equal to units_per_tote"},
+      "delivery_cycle_days": {"value": 2, "unit": "days", "type": "Assumption", "source": "plan Task 14 delivery cycle; pending retailer"},
+      "lot_prefix": {"value": "BRD", "type": "Data", "source": "lot id prefix (plan Task 14)"}
+    }
+  },
+  "demand": {
+    "base_demand": {
+      "MILK-1L": {"value": {"Bang Na": 100, "Rangsit": 60, "Lat Phrao": 45, "Bang Kapi": 55, "Thonburi": 50}, "unit": "units per day", "type": "Data", "source": "synthetic demand model (plan Task 14); full-price units per day"},
+      "STRAW-500": {"value": {"Bang Na": 20, "Rangsit": 18, "Lat Phrao": 22, "Bang Kapi": 15, "Thonburi": 16}, "unit": "units per day", "type": "Data", "source": "synthetic demand model (plan Task 14); full-price units per day"},
+      "BREAD-400": {"value": {"Bang Na": 40, "Rangsit": 35, "Lat Phrao": 30, "Bang Kapi": 28, "Thonburi": 25}, "unit": "units per day", "type": "Data", "source": "synthetic demand model (plan Task 14); full-price units per day"}
+    },
+    "weekday_profile_raw": {"value": [0.9514, 0.9735, 0.9004, 0.8664, 0.9219, 1.1447, 1.1897], "unit": "relative demand, Mon..Sun", "type": "Data", "source": "weekday profile derived from FreshRetailNet-50K (frn_all medians, Mon..Sun); data.config normalises it to mean 1"},
+    "sigma": {"value": 0.45, "type": "Assumption", "source": "Seed calibration 1: mean-1 lognormal daily factor"}
+  },
+  "ordering": {
+    "delivery_multiplier_release": {"value": [0.90, 1.00], "unit": "× the in-stock estimate", "type": "Assumption", "source": "D-01: × the in-stock estimate; not a service fill rate", "note": "sizing from in-stock days only is biased low: when the order is 90–100% of the estimate, the in-stock days are the lower-demand days; this is the slow rise in stockouts D-03 reports"},
+    "delivery_multiplier_reported": {"value": [0.85, 0.95], "unit": "× the in-stock estimate", "type": "Assumption", "source": "D-01: reported beside the release range"},
+    "lookback_days": {"value": 28, "unit": "days", "type": "Policy", "source": "Seed calibration 2; unchanged by D-03"},
+    "same_weekday_obs": {"value": 4, "unit": "observations", "type": "Policy", "source": "Seed calibration 2; unchanged by D-03"},
+    "opening_factor": {"value": 1.0, "unit": "× base demand per day", "type": "Assumption", "source": "burn-in only: opening order = factor × base demand per day; an initialization that knows the mean from the demand model (DATA-02)"},
+    "init_sensitivity_factors": {"value": [0.8, 1.2], "unit": "× the opening factor", "type": "Assumption", "source": "D-04 consistency check only; nothing is tuned from it"}
+  },
+  "capacity": {
+    "chilled": {"value": {"Bang Na": 20, "Rangsit": 18, "Lat Phrao": 21, "Bang Kapi": 18, "Thonburi": 20}, "unit": "free totes per day", "type": "Assumption", "source": "synthetic storage capacity (plan Task 14)", "note": "Lat Phrao 16 to 21 on 2026-10-15 (user decision, D-15 knob: capacity; per branch, so every day) so SUS-19 also gets its second look on Day 4 after the count (04-10)"},
+    "ambient": {"value": {"Bang Na": 25, "Rangsit": 25, "Lat Phrao": 25, "Bang Kapi": 25, "Thonburi": 25}, "unit": "free totes per day", "type": "Assumption", "source": "synthetic storage capacity (plan Task 14)"}
+  },
+  "runs": {
+    "R-02": {
+      "timetable": {"value": {"origin": "Bang Na", "dest": "Lat Phrao", "days": [3, 4], "loading_cutoff_min": 720, "departs_min": 750, "arrives_min": 800, "spare_totes": 22, "cold_chain": true}, "type": "Data", "source": "synthetic transport timetable (plan Task 14)", "note": "day 4 added 2026-10-15 (user decision, D-15 knob: runs) so SUS-19 can get its second look on Day 4 (04-10)"},
+      "fixed_cost": {"value": 16.67, "unit": "USD", "type": "Assumption", "source": "quote; fixture money ÷ 36"},
+      "per_unit_cost": {"value": 0.0, "unit": "USD", "type": "Assumption", "source": "handling per unit moved; synthetic"},
+      "cancel_cost": {"value": null, "unit": "USD", "type": "Assumption", "source": "Assumption, not observed; null = the full quote (spec §5)"}
+    },
+    "R-03": {
+      "timetable": {"value": {"origin": "Bang Na", "dest": "Thonburi", "days": [3, 5], "loading_cutoff_min": 780, "departs_min": 810, "arrives_min": 900, "spare_totes": 20, "cold_chain": true}, "type": "Data", "source": "synthetic transport timetable (plan Task 14)"},
+      "fixed_cost": {"value": 19.44, "unit": "USD", "type": "Assumption", "source": "quote; fixture money ÷ 36"},
+      "per_unit_cost": {"value": 0.0, "unit": "USD", "type": "Assumption", "source": "handling per unit moved; synthetic"},
+      "cancel_cost": {"value": null, "unit": "USD", "type": "Assumption", "source": "Assumption, not observed; null = the full quote (spec §5)"}
+    },
+    "R-05": {
+      "timetable": {"value": {"origin": "Rangsit", "dest": "Bang Kapi", "days": [0, 3, 6], "loading_cutoff_min": 660, "departs_min": 690, "arrives_min": 750, "spare_totes": 15, "cold_chain": false}, "type": "Data", "source": "synthetic transport timetable (plan Task 14)"},
+      "fixed_cost": {"value": 13.89, "unit": "USD", "type": "Assumption", "source": "quote; fixture money ÷ 36"},
+      "per_unit_cost": {"value": 0.0, "unit": "USD", "type": "Assumption", "source": "handling per unit moved; synthetic"},
+      "cancel_cost": {"value": null, "unit": "USD", "type": "Assumption", "source": "Assumption, not observed; null = the full quote (spec §5)"}
+    },
+    "R-07": {
+      "timetable": {"value": {"origin": "Bang Kapi", "dest": "Rangsit", "days": [3, 4], "loading_cutoff_min": 690, "departs_min": 720, "arrives_min": 790, "spare_totes": 6, "cold_chain": true}, "type": "Data", "source": "synthetic transport timetable (plan Task 14)"},
+      "fixed_cost": {"value": 25.0, "unit": "USD", "type": "Assumption", "source": "quote; fixture money ÷ 36"},
+      "per_unit_cost": {"value": 0.0, "unit": "USD", "type": "Assumption", "source": "handling per unit moved; synthetic"},
+      "cancel_cost": {"value": null, "unit": "USD", "type": "Assumption", "source": "Assumption, not observed; null = the full quote (spec §5)"}
+    },
+    "R-08": {
+      "timetable": {"value": {"origin": "Thonburi", "dest": "Lat Phrao", "days": [3], "loading_cutoff_min": 720, "departs_min": 750, "arrives_min": 830, "spare_totes": 10, "cold_chain": false}, "type": "Data", "source": "synthetic transport timetable (plan Task 14)"},
+      "fixed_cost": {"value": 25.0, "unit": "USD", "type": "Assumption", "source": "quote; fixture money ÷ 36"},
+      "per_unit_cost": {"value": 0.0, "unit": "USD", "type": "Assumption", "source": "handling per unit moved; synthetic"},
+      "cancel_cost": {"value": null, "unit": "USD", "type": "Assumption", "source": "Assumption, not observed; null = the full quote (spec §5)"}
+    },
+    "R-09": {
+      "timetable": {"value": {"origin": "Lat Phrao", "dest": "Bang Kapi", "days": [5, 6], "loading_cutoff_min": 720, "departs_min": 750, "arrives_min": 820, "spare_totes": 12, "cold_chain": true}, "type": "Data", "source": "synthetic transport timetable (plan Task 14)"},
+      "fixed_cost": {"value": 18.06, "unit": "USD", "type": "Assumption", "source": "quote; fixture money ÷ 36"},
+      "per_unit_cost": {"value": 0.0, "unit": "USD", "type": "Assumption", "source": "handling per unit moved; synthetic"},
+      "cancel_cost": {"value": null, "unit": "USD", "type": "Assumption", "source": "Assumption, not observed; null = the full quote (spec §5)"}
+    }
+  },
+  "error_model": {
+    "share": {"value": 0.10, "unit": "share of lots", "type": "Assumption", "source": "declared record-error model (spec §5 Hidden truth)"},
+    "range": {"value": [0.60, 0.95], "unit": "physical ÷ record, rounded down", "type": "Assumption", "source": "declared record-error model (spec §5 Hidden truth)"},
+    "from_day": {"value": -15, "unit": "day index", "type": "Assumption", "source": "declared record-error model (spec §5 Hidden truth)", "note": "lots received from this day on can carry an error"}
+  },
+  "forecast": {
+    "model": {"value": "TimesFM 2.5", "type": "Policy", "source": "DATA-03; spec §5: low/high = the 80% interval"},
+    "fallback": {"value": "ARIMA_PLUS", "type": "Policy", "source": "DATA-03; spec §5: low/high = the 80% interval"},
+    "confidence_level": {"value": 0.8, "type": "Policy", "source": "DATA-03; spec §5: low/high = the 80% interval"},
+    "location": {"value": "asia-southeast1", "type": "Policy", "source": "DATA-03; spec §5: low/high = the 80% interval"},
+    "dataset": {"value": "shelfshift", "type": "Policy", "source": "DATA-03; spec §5: low/high = the 80% interval"}
+  },
+  "benchmarks": {
+    "freshretailnet_stockout_days": {"value": 0.443, "unit": "share of series-days", "type": "Reported", "source": "FreshRetailNet-50K; a benchmark, never a target (D-01, D-11)"},
+    "freshretailnet_half_day_or_more": {"value": 0.175, "unit": "share of series-days", "type": "Reported", "source": "FreshRetailNet-50K; a benchmark, never a target (D-01, D-11)"}
+  }
+}

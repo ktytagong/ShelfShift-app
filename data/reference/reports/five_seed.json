@@ -1,0 +1,575 @@
+{
+ "benchmarks": {
+  "half_day_or_more": 0.175,
+  "label": "FreshRetailNet-50K; benchmarks, never targets",
+  "stockout_days": 0.443
+ },
+ "case_window_label": "Lots in the case window with stock left stand in for open cases per demo day: Phase 3 cannot run the ESL-02 screen, which Phase 4 builds. Phase 8's five-seed weekcheck reports open cases per demo day, max and mean per seed (03-CONTEXT D-16 amended).",
+ "currency": "USD",
+ "dataset_version": "ds-82f67857f136",
+ "generator_commit": "31893ff",
+ "input_version": "in-47626e29b3fa",
+ "label": "Synthetic data · hypothetical scenario",
+ "note": "Reported per seed and pooled; no pass/fail; nothing tuned (D-16)",
+ "ranges": {
+  "0.85-0.95": {
+   "configuration": {
+    "burn_in_days": 56,
+    "case_window_days": [
+     0,
+     6
+    ],
+    "history_days": [
+     -90,
+     -1
+    ],
+    "opening_factor": 1.0,
+    "schedules": {
+     "BREAD-400": [
+      [
+       1,
+       20
+      ],
+      [
+       0,
+       30
+      ]
+     ],
+     "MILK-1L": [
+      [
+       2,
+       20
+      ],
+      [
+       1,
+       30
+      ]
+     ],
+     "STRAW-500": [
+      [
+       1,
+       20
+      ],
+      [
+       0,
+       30
+      ]
+     ]
+    }
+   },
+   "multiplier": [
+    0.85,
+    0.95
+   ],
+   "per_seed": {
+    "1": {
+     "case_window": {
+      "lots_expiring_empty": 45,
+      "lots_with_stock_left": 0,
+      "units_left": 0.0
+     },
+     "estimator": {
+      "bias_vs_true_mean": -0.0309,
+      "e_sum": 48773.3569,
+      "fallback_count": 1,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 806,
+       "b": 1,
+       "c": 0,
+       "four": 543,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 7.87,
+      "half_day_or_more_series_days": 125,
+      "half_day_or_more_share": 0.0926,
+      "net_revenue_after_operating_costs": 59069.51,
+      "received": 46142,
+      "revenue": 59077.38,
+      "series_days": 1350,
+      "sold_20": 4993.53,
+      "sold_30": 848.86,
+      "sold_full": 40091.71,
+      "stockout_series_days": 272,
+      "stockout_share": 0.2015,
+      "transport_and_handling": 0.0,
+      "wasted": 100.47
+     }
+    },
+    "2": {
+     "case_window": {
+      "lots_expiring_empty": 45,
+      "lots_with_stock_left": 0,
+      "units_left": 0.0
+     },
+     "estimator": {
+      "bias_vs_true_mean": -0.0906,
+      "e_sum": 45772.7165,
+      "fallback_count": 1,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 905,
+       "b": 1,
+       "c": 0,
+       "four": 444,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 0.53,
+      "half_day_or_more_series_days": 126,
+      "half_day_or_more_share": 0.0933,
+      "net_revenue_after_operating_costs": 56865.3,
+      "received": 43670,
+      "revenue": 56865.83,
+      "series_days": 1350,
+      "sold_20": 3491.23,
+      "sold_30": 501.23,
+      "sold_full": 39717.35,
+      "stockout_series_days": 301,
+      "stockout_share": 0.223,
+      "transport_and_handling": 0.0,
+      "wasted": 6.62
+     }
+    },
+    "20261012": {
+     "case_window": {
+      "lots_expiring_empty": 43,
+      "lots_with_stock_left": 2,
+      "units_left": 24.03
+     },
+     "estimator": {
+      "bias_vs_true_mean": -0.0285,
+      "e_sum": 48894.9174,
+      "fallback_count": 1,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 818,
+       "b": 1,
+       "c": 0,
+       "four": 531,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 7.63,
+      "half_day_or_more_series_days": 125,
+      "half_day_or_more_share": 0.0926,
+      "net_revenue_after_operating_costs": 59378.21,
+      "received": 46522,
+      "revenue": 59385.84,
+      "series_days": 1350,
+      "sold_20": 5450.98,
+      "sold_30": 1200.12,
+      "sold_full": 39682.33,
+      "stockout_series_days": 263,
+      "stockout_share": 0.1948,
+      "transport_and_handling": 0.0,
+      "wasted": 133.73
+     }
+    },
+    "3": {
+     "case_window": {
+      "lots_expiring_empty": 44,
+      "lots_with_stock_left": 1,
+      "units_left": 7.03
+     },
+     "estimator": {
+      "bias_vs_true_mean": -0.0449,
+      "e_sum": 48071.3483,
+      "fallback_count": 0,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 768,
+       "b": 0,
+       "c": 0,
+       "four": 582,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 1.78,
+      "half_day_or_more_series_days": 121,
+      "half_day_or_more_share": 0.0896,
+      "net_revenue_after_operating_costs": 59004.69,
+      "received": 45564,
+      "revenue": 59006.47,
+      "series_days": 1350,
+      "sold_20": 4776.26,
+      "sold_30": 846.74,
+      "sold_full": 39901.52,
+      "stockout_series_days": 264,
+      "stockout_share": 0.1956,
+      "transport_and_handling": 0.0,
+      "wasted": 39.88
+     }
+    },
+    "4": {
+     "case_window": {
+      "lots_expiring_empty": 45,
+      "lots_with_stock_left": 0,
+      "units_left": 0.0
+     },
+     "estimator": {
+      "bias_vs_true_mean": -0.0847,
+      "e_sum": 46069.1214,
+      "fallback_count": 2,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 869,
+       "b": 2,
+       "c": 0,
+       "four": 479,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 2.65,
+      "half_day_or_more_series_days": 145,
+      "half_day_or_more_share": 0.1074,
+      "net_revenue_after_operating_costs": 56903.05,
+      "received": 43944,
+      "revenue": 56905.7,
+      "series_days": 1350,
+      "sold_20": 4367.19,
+      "sold_30": 805.25,
+      "sold_full": 38873.77,
+      "stockout_series_days": 308,
+      "stockout_share": 0.2281,
+      "transport_and_handling": 0.0,
+      "wasted": 59.88
+     }
+    }
+   },
+   "pooled": {
+    "case_window": {
+     "lots_expiring_empty": 222,
+     "lots_with_stock_left": 3,
+     "units_left": 31.06
+    },
+    "estimator": {
+     "bias_vs_true_mean": -0.0559,
+     "e_sum": 237581.4605,
+     "fallback_count": 5,
+     "init_failed_count": 0,
+     "mean_sum": 251654.563,
+     "tier_counts": {
+      "a": 4166,
+      "b": 5,
+      "c": 0,
+      "four": 2579,
+      "init_failed": 0
+     }
+    },
+    "history": {
+     "disposal": 20.46,
+     "half_day_or_more_series_days": 642,
+     "half_day_or_more_share": 0.0951,
+     "net_revenue_after_operating_costs": 291220.76,
+     "received": 225842,
+     "revenue": 291241.22,
+     "series_days": 6750,
+     "sold_20": 23079.19,
+     "sold_30": 4202.2,
+     "sold_full": 198266.68,
+     "stockout_series_days": 1408,
+     "stockout_share": 0.2086,
+     "transport_and_handling": 0.0,
+     "wasted": 340.58
+    }
+   },
+   "role": "reported beside the release range (D-01)"
+  },
+  "0.90-1.00": {
+   "configuration": {
+    "burn_in_days": 56,
+    "case_window_days": [
+     0,
+     6
+    ],
+    "history_days": [
+     -90,
+     -1
+    ],
+    "opening_factor": 1.0,
+    "schedules": {
+     "BREAD-400": [
+      [
+       1,
+       20
+      ],
+      [
+       0,
+       30
+      ]
+     ],
+     "MILK-1L": [
+      [
+       2,
+       20
+      ],
+      [
+       1,
+       30
+      ]
+     ],
+     "STRAW-500": [
+      [
+       1,
+       20
+      ],
+      [
+       0,
+       30
+      ]
+     ]
+    }
+   },
+   "multiplier": [
+    0.9,
+    1.0
+   ],
+   "per_seed": {
+    "1": {
+     "case_window": {
+      "lots_expiring_empty": 42,
+      "lots_with_stock_left": 3,
+      "units_left": 20.28
+     },
+     "estimator": {
+      "bias_vs_true_mean": 0.0039,
+      "e_sum": 50525.961,
+      "fallback_count": 1,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 543,
+       "b": 1,
+       "c": 0,
+       "four": 806,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 22.11,
+      "half_day_or_more_series_days": 63,
+      "half_day_or_more_share": 0.0467,
+      "net_revenue_after_operating_costs": 63287.39,
+      "received": 50278,
+      "revenue": 63309.5,
+      "series_days": 1350,
+      "sold_20": 7611.98,
+      "sold_30": 2277.35,
+      "sold_full": 39899.32,
+      "stockout_series_days": 152,
+      "stockout_share": 0.1126,
+      "transport_and_handling": 0.0,
+      "wasted": 340.7
+     }
+    },
+    "2": {
+     "case_window": {
+      "lots_expiring_empty": 43,
+      "lots_with_stock_left": 2,
+      "units_left": 20.06
+     },
+     "estimator": {
+      "bias_vs_true_mean": -0.0214,
+      "e_sum": 49253.7842,
+      "fallback_count": 1,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 480,
+       "b": 1,
+       "c": 0,
+       "four": 869,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 4.26,
+      "half_day_or_more_series_days": 40,
+      "half_day_or_more_share": 0.0296,
+      "net_revenue_after_operating_costs": 62211.86,
+      "received": 49096,
+      "revenue": 62216.12,
+      "series_days": 1350,
+      "sold_20": 7430.66,
+      "sold_30": 1708.44,
+      "sold_full": 39831.01,
+      "stockout_series_days": 134,
+      "stockout_share": 0.0993,
+      "transport_and_handling": 0.0,
+      "wasted": 57.5
+     }
+    },
+    "20261012": {
+     "case_window": {
+      "lots_expiring_empty": 42,
+      "lots_with_stock_left": 3,
+      "units_left": 54.74
+     },
+     "estimator": {
+      "bias_vs_true_mean": 0.0231,
+      "e_sum": 51492.5725,
+      "fallback_count": 0,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 528,
+       "b": 0,
+       "c": 0,
+       "four": 822,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 14.16,
+      "half_day_or_more_series_days": 57,
+      "half_day_or_more_share": 0.0422,
+      "net_revenue_after_operating_costs": 64135.16,
+      "received": 51350,
+      "revenue": 64149.32,
+      "series_days": 1350,
+      "sold_20": 8159.76,
+      "sold_30": 2549.97,
+      "sold_full": 40170.8,
+      "stockout_series_days": 153,
+      "stockout_share": 0.1133,
+      "transport_and_handling": 0.0,
+      "wasted": 288.18
+     }
+    },
+    "3": {
+     "case_window": {
+      "lots_expiring_empty": 37,
+      "lots_with_stock_left": 8,
+      "units_left": 94.13
+     },
+     "estimator": {
+      "bias_vs_true_mean": 0.0207,
+      "e_sum": 51371.7367,
+      "fallback_count": 0,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 414,
+       "b": 0,
+       "c": 0,
+       "four": 936,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 10.84,
+      "half_day_or_more_series_days": 48,
+      "half_day_or_more_share": 0.0356,
+      "net_revenue_after_operating_costs": 64430.86,
+      "received": 51110,
+      "revenue": 64441.7,
+      "series_days": 1350,
+      "sold_20": 8626.17,
+      "sold_30": 2257.17,
+      "sold_full": 39979.5,
+      "stockout_series_days": 116,
+      "stockout_share": 0.0859,
+      "transport_and_handling": 0.0,
+      "wasted": 220.04
+     }
+    },
+    "4": {
+     "case_window": {
+      "lots_expiring_empty": 44,
+      "lots_with_stock_left": 1,
+      "units_left": 1.38
+     },
+     "estimator": {
+      "bias_vs_true_mean": -0.021,
+      "e_sum": 49274.4717,
+      "fallback_count": 0,
+      "init_failed_count": 0,
+      "mean_sum": 50330.9126,
+      "tier_counts": {
+       "a": 539,
+       "b": 0,
+       "c": 0,
+       "four": 811,
+       "init_failed": 0
+      }
+     },
+     "history": {
+      "disposal": 13.02,
+      "half_day_or_more_series_days": 69,
+      "half_day_or_more_share": 0.0511,
+      "net_revenue_after_operating_costs": 62022.75,
+      "received": 49314,
+      "revenue": 62035.77,
+      "series_days": 1350,
+      "sold_20": 7768.01,
+      "sold_30": 2419.05,
+      "sold_full": 38929.84,
+      "stockout_series_days": 158,
+      "stockout_share": 0.117,
+      "transport_and_handling": 0.0,
+      "wasted": 296.38
+     }
+    }
+   },
+   "pooled": {
+    "case_window": {
+     "lots_expiring_empty": 208,
+     "lots_with_stock_left": 17,
+     "units_left": 190.59
+    },
+    "estimator": {
+     "bias_vs_true_mean": 0.001,
+     "e_sum": 251918.5261,
+     "fallback_count": 2,
+     "init_failed_count": 0,
+     "mean_sum": 251654.563,
+     "tier_counts": {
+      "a": 2504,
+      "b": 2,
+      "c": 0,
+      "four": 4244,
+      "init_failed": 0
+     }
+    },
+    "history": {
+     "disposal": 64.39,
+     "half_day_or_more_series_days": 277,
+     "half_day_or_more_share": 0.041,
+     "net_revenue_after_operating_costs": 316088.02,
+     "received": 251148,
+     "revenue": 316152.41,
+     "series_days": 6750,
+     "sold_20": 39596.58,
+     "sold_30": 11211.98,
+     "sold_full": 198810.47,
+     "stockout_series_days": 713,
+     "stockout_share": 0.1056,
+     "transport_and_handling": 0.0,
+     "wasted": 1202.8
+    }
+   },
+   "role": "release (D-01)"
+  }
+ },
+ "reference_fingerprint": "ref-170363f54824",
+ "scenario": "evaluation",
+ "seeds": [
+  20261012,
+  1,
+  2,
+  3,
+  4
+ ]
+}

@@ -1,0 +1,2806 @@
+{
+ "demand": [
+  {
+   "branch": "Bang Na",
+   "day": -14,
+   "demand": 47.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -14,
+   "demand": 133.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -14,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -14,
+   "demand": 57.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -14,
+   "demand": 35.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -14,
+   "demand": 17.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -14,
+   "demand": 17.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -14,
+   "demand": 77.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -14,
+   "demand": 27.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -14,
+   "demand": 23.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -14,
+   "demand": 47.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -14,
+   "demand": 12.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -14,
+   "demand": 16.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -14,
+   "demand": 39.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -14,
+   "demand": 8.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -13,
+   "demand": 44.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -13,
+   "demand": 107.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -13,
+   "demand": 27.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -13,
+   "demand": 42.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -13,
+   "demand": 65.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -13,
+   "demand": 12.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -13,
+   "demand": 49.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -13,
+   "demand": 41.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -13,
+   "demand": 18.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -13,
+   "demand": 24.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -13,
+   "demand": 16.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -13,
+   "demand": 8.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -13,
+   "demand": 26.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -13,
+   "demand": 59.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -13,
+   "demand": 8.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -12,
+   "demand": 20.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -12,
+   "demand": 61.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -12,
+   "demand": 30.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -12,
+   "demand": 25.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -12,
+   "demand": 140.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -12,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -12,
+   "demand": 23.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -12,
+   "demand": 9.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -12,
+   "demand": 31.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -12,
+   "demand": 17.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -12,
+   "demand": 37.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -12,
+   "demand": 8.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -12,
+   "demand": 22.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -12,
+   "demand": 99.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -12,
+   "demand": 21.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -11,
+   "demand": 67.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -11,
+   "demand": 62.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -11,
+   "demand": 30.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -11,
+   "demand": 46.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -11,
+   "demand": 40.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -11,
+   "demand": 9.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -11,
+   "demand": 37.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -11,
+   "demand": 48.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -11,
+   "demand": 19.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -11,
+   "demand": 10.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -11,
+   "demand": 42.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -11,
+   "demand": 9.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -11,
+   "demand": 28.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -11,
+   "demand": 59.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -11,
+   "demand": 19.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -10,
+   "demand": 50.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -10,
+   "demand": 97.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -10,
+   "demand": 15.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -10,
+   "demand": 18.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -10,
+   "demand": 29.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -10,
+   "demand": 24.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -10,
+   "demand": 24.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -10,
+   "demand": 23.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -10,
+   "demand": 45.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -10,
+   "demand": 22.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -10,
+   "demand": 38.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -10,
+   "demand": 17.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -10,
+   "demand": 41.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -10,
+   "demand": 28.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -10,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -9,
+   "demand": 29.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -9,
+   "demand": 111.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -9,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -9,
+   "demand": 63.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -9,
+   "demand": 72.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -9,
+   "demand": 32.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -9,
+   "demand": 47.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -9,
+   "demand": 45.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -9,
+   "demand": 17.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -9,
+   "demand": 5.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -9,
+   "demand": 83.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -9,
+   "demand": 5.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -9,
+   "demand": 17.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -9,
+   "demand": 24.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -9,
+   "demand": 25.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -8,
+   "demand": 33.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -8,
+   "demand": 116.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -8,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -8,
+   "demand": 40.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -8,
+   "demand": 74.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -8,
+   "demand": 20.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -8,
+   "demand": 11.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -8,
+   "demand": 24.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -8,
+   "demand": 27.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -8,
+   "demand": 33.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -8,
+   "demand": 27.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -8,
+   "demand": 8.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -8,
+   "demand": 25.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -8,
+   "demand": 71.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -8,
+   "demand": 15.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -7,
+   "demand": 22.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -7,
+   "demand": 98.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -7,
+   "demand": 22.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -7,
+   "demand": 46.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -7,
+   "demand": 34.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -7,
+   "demand": 37.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -7,
+   "demand": 31.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -7,
+   "demand": 35.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -7,
+   "demand": 18.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -7,
+   "demand": 20.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -7,
+   "demand": 36.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -7,
+   "demand": 9.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -7,
+   "demand": 9.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -7,
+   "demand": 58.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -7,
+   "demand": 9.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -6,
+   "demand": 23.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -6,
+   "demand": 99.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -6,
+   "demand": 54.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -6,
+   "demand": 26.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -6,
+   "demand": 44.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -6,
+   "demand": 7.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -6,
+   "demand": 46.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -6,
+   "demand": 38.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -6,
+   "demand": 21.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -6,
+   "demand": 44.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -6,
+   "demand": 56.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -6,
+   "demand": 7.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -6,
+   "demand": 11.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -6,
+   "demand": 39.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -6,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -5,
+   "demand": 52.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -5,
+   "demand": 33.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -5,
+   "demand": 28.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -5,
+   "demand": 12.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -5,
+   "demand": 118.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -5,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -5,
+   "demand": 17.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -5,
+   "demand": 31.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -5,
+   "demand": 9.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -5,
+   "demand": 30.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -5,
+   "demand": 97.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -5,
+   "demand": 13.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -5,
+   "demand": 22.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -5,
+   "demand": 28.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -5,
+   "demand": 13.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -4,
+   "demand": 25.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -4,
+   "demand": 62.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -4,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -4,
+   "demand": 13.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -4,
+   "demand": 44.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -4,
+   "demand": 37.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -4,
+   "demand": 37.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -4,
+   "demand": 17.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -4,
+   "demand": 22.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -4,
+   "demand": 9.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -4,
+   "demand": 36.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -4,
+   "demand": 12.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -4,
+   "demand": 17.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -4,
+   "demand": 29.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -4,
+   "demand": 13.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -3,
+   "demand": 30.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -3,
+   "demand": 54.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -3,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -3,
+   "demand": 22.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -3,
+   "demand": 27.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -3,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -3,
+   "demand": 20.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -3,
+   "demand": 43.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -3,
+   "demand": 13.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -3,
+   "demand": 16.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -3,
+   "demand": 43.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -3,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -3,
+   "demand": 11.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -3,
+   "demand": 58.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -3,
+   "demand": 18.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -2,
+   "demand": 47.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -2,
+   "demand": 104.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -2,
+   "demand": 20.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -2,
+   "demand": 107.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -2,
+   "demand": 75.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -2,
+   "demand": 38.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -2,
+   "demand": 17.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -2,
+   "demand": 54.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -2,
+   "demand": 20.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -2,
+   "demand": 26.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -2,
+   "demand": 73.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -2,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -2,
+   "demand": 24.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -2,
+   "demand": 54.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -2,
+   "demand": 17.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -1,
+   "demand": 125.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -1,
+   "demand": 160.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": -1,
+   "demand": 24.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -1,
+   "demand": 73.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -1,
+   "demand": 33.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": -1,
+   "demand": 5.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -1,
+   "demand": 26.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -1,
+   "demand": 46.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": -1,
+   "demand": 17.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -1,
+   "demand": 36.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -1,
+   "demand": 167.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": -1,
+   "demand": 4.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -1,
+   "demand": 21.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -1,
+   "demand": 47.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": -1,
+   "demand": 18.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 0,
+   "demand": 43.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 0,
+   "demand": 85.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 0,
+   "demand": 19.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 0,
+   "demand": 11.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 0,
+   "demand": 51.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 0,
+   "demand": 20.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 0,
+   "demand": 45.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 0,
+   "demand": 18.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 0,
+   "demand": 19.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 0,
+   "demand": 11.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 0,
+   "demand": 46.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 0,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 0,
+   "demand": 20.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 0,
+   "demand": 44.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 0,
+   "demand": 37.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 1,
+   "demand": 102.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 1,
+   "demand": 80.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 1,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 1,
+   "demand": 35.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 1,
+   "demand": 61.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 1,
+   "demand": 32.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 1,
+   "demand": 24.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 1,
+   "demand": 68.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 1,
+   "demand": 27.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 1,
+   "demand": 8.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 1,
+   "demand": 81.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 1,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 1,
+   "demand": 23.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 1,
+   "demand": 47.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 1,
+   "demand": 12.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 2,
+   "demand": 44.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 2,
+   "demand": 109.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 2,
+   "demand": 5.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 2,
+   "demand": 17.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 2,
+   "demand": 37.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 2,
+   "demand": 12.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 2,
+   "demand": 3.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 2,
+   "demand": 18.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 2,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 2,
+   "demand": 29.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 2,
+   "demand": 84.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 2,
+   "demand": 5.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 2,
+   "demand": 28.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 2,
+   "demand": 43.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 2,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 3,
+   "demand": 32.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 3,
+   "demand": 66.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 3,
+   "demand": 15.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 3,
+   "demand": 52.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 3,
+   "demand": 49.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 3,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 3,
+   "demand": 32.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 3,
+   "demand": 33.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 3,
+   "demand": 9.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 3,
+   "demand": 7.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 3,
+   "demand": 23.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 3,
+   "demand": 19.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 3,
+   "demand": 12.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 3,
+   "demand": 43.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 3,
+   "demand": 15.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 4,
+   "demand": 36.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 4,
+   "demand": 75.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 4,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 4,
+   "demand": 48.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 4,
+   "demand": 51.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 4,
+   "demand": 68.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 4,
+   "demand": 19.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 4,
+   "demand": 41.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 4,
+   "demand": 40.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 4,
+   "demand": 29.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 4,
+   "demand": 67.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 4,
+   "demand": 27.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 4,
+   "demand": 14.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 4,
+   "demand": 46.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 4,
+   "demand": 21.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 5,
+   "demand": 21.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 5,
+   "demand": 37.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 5,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 5,
+   "demand": 29.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 5,
+   "demand": 18.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 5,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 5,
+   "demand": 34.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 5,
+   "demand": 59.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 5,
+   "demand": 26.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 5,
+   "demand": 36.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 5,
+   "demand": 53.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 5,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 5,
+   "demand": 19.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 5,
+   "demand": 84.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 5,
+   "demand": 7.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 6,
+   "demand": 54.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 6,
+   "demand": 209.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 6,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 6,
+   "demand": 37.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 6,
+   "demand": 102.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 6,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 6,
+   "demand": 17.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 6,
+   "demand": 17.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 6,
+   "demand": 38.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 6,
+   "demand": 19.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 6,
+   "demand": 20.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 6,
+   "demand": 36.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 6,
+   "demand": 51.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 6,
+   "demand": 106.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 6,
+   "demand": 34.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 7,
+   "demand": 10.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 7,
+   "demand": 137.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 7,
+   "demand": 6.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 7,
+   "demand": 57.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 7,
+   "demand": 42.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 7,
+   "demand": 24.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 7,
+   "demand": 22.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 7,
+   "demand": 46.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 7,
+   "demand": 22.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 7,
+   "demand": 31.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 7,
+   "demand": 24.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 7,
+   "demand": 12.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 7,
+   "demand": 25.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 7,
+   "demand": 38.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 7,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 8,
+   "demand": 36.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 8,
+   "demand": 115.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 8,
+   "demand": 21.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 8,
+   "demand": 13.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 8,
+   "demand": 51.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 8,
+   "demand": 6.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 8,
+   "demand": 39.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 8,
+   "demand": 29.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 8,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 8,
+   "demand": 78.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 8,
+   "demand": 47.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 8,
+   "demand": 33.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 8,
+   "demand": 33.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 8,
+   "demand": 40.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 8,
+   "demand": 9.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 9,
+   "demand": 15.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 9,
+   "demand": 17.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 9,
+   "demand": 15.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 9,
+   "demand": 8.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 9,
+   "demand": 47.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 9,
+   "demand": 17.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 9,
+   "demand": 44.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 9,
+   "demand": 72.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 9,
+   "demand": 15.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 9,
+   "demand": 58.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 9,
+   "demand": 35.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 9,
+   "demand": 8.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 9,
+   "demand": 15.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 9,
+   "demand": 40.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 9,
+   "demand": 9.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 10,
+   "demand": 42.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 10,
+   "demand": 51.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 10,
+   "demand": 8.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 10,
+   "demand": 19.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 10,
+   "demand": 56.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 10,
+   "demand": 20.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 10,
+   "demand": 23.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 10,
+   "demand": 138.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 10,
+   "demand": 29.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 10,
+   "demand": 31.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 10,
+   "demand": 111.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 10,
+   "demand": 6.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 10,
+   "demand": 9.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 10,
+   "demand": 37.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 10,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 11,
+   "demand": 56.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 11,
+   "demand": 39.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 11,
+   "demand": 15.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 11,
+   "demand": 19.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 11,
+   "demand": 53.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 11,
+   "demand": 18.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 11,
+   "demand": 19.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 11,
+   "demand": 17.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 11,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 11,
+   "demand": 28.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 11,
+   "demand": 25.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 11,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 11,
+   "demand": 19.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 11,
+   "demand": 22.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 11,
+   "demand": 23.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 12,
+   "demand": 37.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 12,
+   "demand": 204.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 12,
+   "demand": 21.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 12,
+   "demand": 44.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 12,
+   "demand": 55.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 12,
+   "demand": 2.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 12,
+   "demand": 43.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 12,
+   "demand": 36.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 12,
+   "demand": 35.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 12,
+   "demand": 86.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 12,
+   "demand": 40.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 12,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 12,
+   "demand": 10.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 12,
+   "demand": 34.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 12,
+   "demand": 36.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 13,
+   "demand": 18.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 13,
+   "demand": 80.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 13,
+   "demand": 20.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 13,
+   "demand": 19.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 13,
+   "demand": 39.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 13,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 13,
+   "demand": 23.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 13,
+   "demand": 45.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 13,
+   "demand": 32.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 13,
+   "demand": 28.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 13,
+   "demand": 55.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 13,
+   "demand": 22.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 13,
+   "demand": 72.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 13,
+   "demand": 102.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 13,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 14,
+   "demand": 18.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 14,
+   "demand": 160.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 14,
+   "demand": 56.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 14,
+   "demand": 47.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 14,
+   "demand": 54.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 14,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 14,
+   "demand": 28.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 14,
+   "demand": 66.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 14,
+   "demand": 27.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 14,
+   "demand": 41.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 14,
+   "demand": 33.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 14,
+   "demand": 24.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 14,
+   "demand": 15.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 14,
+   "demand": 33.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 14,
+   "demand": 24.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 15,
+   "demand": 50.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 15,
+   "demand": 73.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 15,
+   "demand": 22.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 15,
+   "demand": 28.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 15,
+   "demand": 70.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 15,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 15,
+   "demand": 14.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 15,
+   "demand": 48.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 15,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 15,
+   "demand": 27.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 15,
+   "demand": 52.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 15,
+   "demand": 16.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 15,
+   "demand": 22.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 15,
+   "demand": 39.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 15,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 16,
+   "demand": 23.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 16,
+   "demand": 69.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Na",
+   "day": 16,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 16,
+   "demand": 28.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 16,
+   "demand": 67.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Rangsit",
+   "day": 16,
+   "demand": 10.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 16,
+   "demand": 25.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 16,
+   "demand": 60.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Lat Phrao",
+   "day": 16,
+   "demand": 11.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 16,
+   "demand": 46.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 16,
+   "demand": 53.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Bang Kapi",
+   "day": 16,
+   "demand": 14.0,
+   "sku": "STRAW-500"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 16,
+   "demand": 10.0,
+   "sku": "BREAD-400"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 16,
+   "demand": 30.0,
+   "sku": "MILK-1L"
+  },
+  {
+   "branch": "Thonburi",
+   "day": 16,
+   "demand": 4.0,
+   "sku": "STRAW-500"
+  }
+ ],
+ "input_version": "in-47626e29b3fa",
+ "physical": {
+  "BRD-461": 0.0,
+  "MLK-038": 0.0,
+  "MLK-331": 0.0,
+  "STR-476": 27.0,
+  "STR-480": 29.0
+ },
+ "price_response": {
+  "m20": 1.38,
+  "m30": 1.52
+ }
+}

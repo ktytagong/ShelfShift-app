@@ -1,0 +1,15 @@
+[project]
+name = "shelfshift"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: needs Vertex AI or BigQuery; run before recording the video and before rehearsals",
+    "web: browser tests in tests/web against a real API child and vite preview; run with make test-web",
+    "deployed: the judge's path against a running URL (the deployed service, or the local Compose app with SS_JOURNEY_LOCAL=1); never touches a database; run with make journey-deployed or make compose-check",
+]
+# Browser tests are opt-in (review WR-09): `make test-web` and `make web-check` pass their own -m, which overrides this.
+# Deployed tests are opt-in too (06-REVIEWS R2-7): `make journey-deployed` and `make compose-check` pass -m deployed.
+addopts = "-m 'not live and not web and not deployed'"

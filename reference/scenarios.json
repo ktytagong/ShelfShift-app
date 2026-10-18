@@ -1,0 +1,27 @@
+{
+  "demo": {
+    "seed": {"value": 20261012, "type": "Data", "source": "release seed"},
+    "case_no_start": {"value": 16, "type": "Data", "source": "first number of the SUS-n sequence; SUS-19 itself is assigned by the milk-story tag, not by opening order (03-CONTEXT D-23)"},
+    "designed_lots": {
+      "MLK-042": {"value": {"branch": "Bang Na", "sku": "MILK-1L", "received_day": -4, "extra": 200, "tag": "milk-story", "options": {"verified": 3}}, "type": "Assumption", "source": "designed demo situation (D-12); ROADMAP Phase 3: received −4, expires end of Sun 18 Oct"},
+      "MLK-038": {"value": {"branch": "Lat Phrao", "sku": "MILK-1L", "received_day": -5, "extra": 60, "tag": "milk-phantom", "options": {"phantom": true}}, "type": "Assumption", "source": "designed demo situation (D-12); phantom lot: record = extra, physical 0"},
+      "STR-201": {"value": {"branch": "Rangsit", "sku": "STRAW-500", "received_day": 2, "extra": 30, "tag": "strawberry-cold-chain", "options": {"estimated": true, "verified": 2}}, "type": "Assumption", "source": "designed demo situation (D-12); D-18 amended, D-20: received day 2, expires day 5, first step day 4 under schedule B; counted on receipt"},
+      "BRD-301": {"value": {"branch": "Thonburi", "sku": "BREAD-400", "received_day": 2, "extra": 0, "tag": "bread-keep", "options": {"verified": 2}}, "type": "Assumption", "source": "designed demo situation (D-12); D-18 amended, D-20: received day 2, expires day 5, first step day 4 under schedule B; counted on receipt"},
+      "MLK-055": {"value": {"branch": "Bang Kapi", "sku": "MILK-1L", "received_day": -4, "extra": 70, "tag": "milk-close-call", "options": {"verified": 2}}, "type": "Assumption", "source": "designed demo situation (D-12); D-18: received one day later, expires day 6, first step day 4 under schedule A"},
+      "BRD-302": {"value": {"branch": "Rangsit", "sku": "BREAD-400", "received_day": -1, "extra": 25, "tag": "warmup-bread", "options": {}}, "type": "Assumption", "source": "designed demo situation (D-12); warm-up lot"},
+      "STR-202": {"value": {"branch": "Bang Na", "sku": "STRAW-500", "received_day": 0, "extra": 14, "tag": "warmup-strawberry", "options": {}}, "type": "Assumption", "source": "designed demo situation (D-12); warm-up lot"},
+      "BRD-303": {"value": {"branch": "Bang Na", "sku": "BREAD-400", "received_day": 3, "extra": 30, "tag": "day4-bread", "options": {}}, "type": "Assumption", "source": "designed demo situation (D-12); a day-4 case"},
+      "STR-203": {"value": {"branch": "Lat Phrao", "sku": "STRAW-500", "received_day": 4, "extra": 16, "tag": "day5-strawberry", "options": {}}, "type": "Assumption", "source": "designed demo situation (D-12); a day-5 case"}
+    },
+    "skips": {
+      "rangsit-milk": {"value": {"branch": "Rangsit", "sku": "MILK-1L", "first_day": 3, "last_day": 4}, "type": "Assumption", "source": "designed demo situation (D-12); Rangsit runs short of milk on days 4–5: the close call"},
+      "bang-kapi-bread": {"value": {"branch": "Bang Kapi", "sku": "BREAD-400", "first_day": -1, "last_day": 0}, "type": "Assumption", "source": "designed demo situation (D-12); Bang Kapi short of bread when the warm-up opens"},
+      "lat-phrao-bread": {"value": {"branch": "Lat Phrao", "sku": "BREAD-400", "first_day": 3, "last_day": 3}, "type": "Assumption", "source": "designed demo situation (D-12); Lat Phrao short of bread on day 3"}
+    }
+  },
+  "evaluation": {
+    "seeds": {"value": [20261012, 1, 2, 3, 4], "type": "Data", "source": "D-16: reported per seed and pooled"},
+    "designed_lots": {"value": {}, "type": "Data", "source": "D-12 / Seed calibration 7: evaluation worlds have no designed lots and no skips"},
+    "skips": {"value": {}, "type": "Data", "source": "D-12 / Seed calibration 7: evaluation worlds have no designed lots and no skips"}
+  }
+}

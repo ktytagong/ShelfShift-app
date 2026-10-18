@@ -1,0 +1,300 @@
+{
+ "_about": "A contract-shaped GET /api/analytics answer (04-API-CONTRACT row 2026-10-17, 06.1-14 as built) for the browser tests' page.route; the browser suite runs the synthetic set, whose real answer is available false. Codes follow the tiny public fixture's shape (S11, P101); every figure is made up for the test.",
+ "available": true,
+ "branch": "S11",
+ "period": {
+  "from": "2026-10-03",
+  "to": "2026-10-16"
+ },
+ "sales_by_product": [
+  {
+   "sku": "P104",
+   "product": "P104",
+   "units": 412.0,
+   "hours_out_of_stock": 3,
+   "kind": "public"
+  },
+  {
+   "sku": "P101",
+   "product": "P101",
+   "units": 386.5,
+   "hours_out_of_stock": 0,
+   "kind": "public"
+  },
+  {
+   "sku": "P102",
+   "product": "P102",
+   "units": 240.0,
+   "hours_out_of_stock": 6,
+   "kind": "public"
+  },
+  {
+   "sku": "P107",
+   "product": "P107",
+   "units": 118.0,
+   "hours_out_of_stock": 0,
+   "kind": "public"
+  },
+  {
+   "sku": "P103",
+   "product": "P103",
+   "units": 64.0,
+   "hours_out_of_stock": 12,
+   "kind": "public"
+  }
+ ],
+ "series": {
+  "sku": "P104",
+  "product": "P104",
+  "days": [
+   {
+    "day": -14,
+    "date": "2026-10-03",
+    "units": 28.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -13,
+    "date": "2026-10-04",
+    "units": 31.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -12,
+    "date": "2026-10-05",
+    "units": 25.0,
+    "hours_out_of_stock": 1,
+    "kind": "public"
+   },
+   {
+    "day": -11,
+    "date": "2026-10-06",
+    "units": 30.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -10,
+    "date": "2026-10-07",
+    "units": 27.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -9,
+    "date": "2026-10-08",
+    "units": 33.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -8,
+    "date": "2026-10-09",
+    "units": 29.0,
+    "hours_out_of_stock": 2,
+    "kind": "public"
+   },
+   {
+    "day": -7,
+    "date": "2026-10-10",
+    "units": 26.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -6,
+    "date": "2026-10-11",
+    "units": 32.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -5,
+    "date": "2026-10-12",
+    "units": 30.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -4,
+    "date": "2026-10-13",
+    "units": 28.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -3,
+    "date": "2026-10-14",
+    "units": 31.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -2,
+    "date": "2026-10-15",
+    "units": 29.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   },
+   {
+    "day": -1,
+    "date": "2026-10-16",
+    "units": 33.0,
+    "hours_out_of_stock": 0,
+    "kind": "public"
+   }
+  ],
+  "forecast": [
+   {
+    "day": 0,
+    "date": "2026-10-17",
+    "low": 23.1,
+    "base": 29.4,
+    "high": 36.2,
+    "provider": "TimesFM 2.5",
+    "kind": "forecast"
+   },
+   {
+    "day": 1,
+    "date": "2026-10-18",
+    "low": 23.8,
+    "base": 30.1,
+    "high": 36.9,
+    "provider": "TimesFM 2.5",
+    "kind": "forecast"
+   },
+   {
+    "day": 2,
+    "date": "2026-10-19",
+    "low": 22.4,
+    "base": 28.7,
+    "high": 35.4,
+    "provider": "TimesFM 2.5",
+    "kind": "forecast"
+   },
+   {
+    "day": 3,
+    "date": "2026-10-20",
+    "low": 24.6,
+    "base": 31.2,
+    "high": 38.3,
+    "provider": "TimesFM 2.5",
+    "kind": "forecast"
+   },
+   {
+    "day": 4,
+    "date": "2026-10-21",
+    "low": 23.5,
+    "base": 29.9,
+    "high": 36.8,
+    "provider": "TimesFM 2.5",
+    "kind": "forecast"
+   },
+   {
+    "day": 5,
+    "date": "2026-10-22",
+    "low": 24.0,
+    "base": 30.6,
+    "high": 37.5,
+    "provider": "TimesFM 2.5",
+    "kind": "forecast"
+   },
+   {
+    "day": 6,
+    "date": "2026-10-23",
+    "low": 22.3,
+    "base": 28.8,
+    "high": 35.6,
+    "provider": "TimesFM 2.5",
+    "kind": "forecast"
+   }
+  ],
+  "kinds": {
+   "days": "public",
+   "forecast": "forecast"
+  }
+ },
+ "aging": [
+  {
+   "bucket": "0–1",
+   "min_days": null,
+   "max_days": 1,
+   "units": 46.0,
+   "lots": 3,
+   "kind": "simulated"
+  },
+  {
+   "bucket": "2–3",
+   "min_days": 2,
+   "max_days": 3,
+   "units": 120.5,
+   "lots": 4,
+   "kind": "simulated"
+  },
+  {
+   "bucket": "4–7",
+   "min_days": 4,
+   "max_days": 7,
+   "units": 210.0,
+   "lots": 5,
+   "kind": "simulated"
+  },
+  {
+   "bucket": "8+",
+   "min_days": 8,
+   "max_days": null,
+   "units": 32.0,
+   "lots": 1,
+   "kind": "simulated"
+  }
+ ],
+ "waste": [
+  {
+   "lot_id": "S11-P104-0-a",
+   "sku": "P104",
+   "product": "P104",
+   "key": "SUS-3",
+   "units": 38.6,
+   "kg": 19.3,
+   "value": 101.9,
+   "basis": "keep",
+   "source": "engine",
+   "kind": "estimated"
+  },
+  {
+   "lot_id": "S11-P102--1-r",
+   "sku": "P102",
+   "product": "P102",
+   "key": "SUS-5",
+   "units": 21.2,
+   "kg": 10.6,
+   "value": 55.97,
+   "basis": "keep",
+   "source": "screen",
+   "kind": "estimated"
+  },
+  {
+   "lot_id": "S11-P103-1-r",
+   "sku": "P103",
+   "product": "P103",
+   "key": "SUS-6",
+   "units": 9.4,
+   "kg": 4.7,
+   "value": null,
+   "basis": "keep",
+   "source": "screen",
+   "kind": "estimated"
+  }
+ ],
+ "kinds": {
+  "sales_by_product": "public",
+  "series": {
+   "days": "public",
+   "forecast": "forecast"
+  },
+  "aging": "simulated",
+  "waste": "estimated"
+ }
+}

@@ -1,0 +1,1766 @@
+{
+  "rule": "Flagged lots of the open day, in the stated order, each evaluated and fact-checked through the engine until every kind has a tagged case or the budget is spent; an item is tagged with the first kind in the reference order that it matches and that has no case yet. verify-before-move: a PHANTOM_STOCK or STALE_COUNT check with pick_changed true and decision_regret >= the input Policy's min_regret; transfer / markdown / keep: the recommended plan's kind; cold-chain-excluded: a run excluded or rejected for 'cold chain'; transfers-unavailable: the source store is missing from the location mapping; close-call: the recommended plan wins 2 of 3 scenarios. Kinds that do not occur are reported, never forced.",
+  "order_rule": "the screen's stock at the step day, then Keep waste, descending, then key",
+  "dataset_version": "ds-125a6390ee03",
+  "template": "tpl-500cb5f830",
+  "day": 3,
+  "budget": 200,
+  "flagged": 4487,
+  "evaluated": 200,
+  "order": [
+    "SUS-13606",
+    "SUS-14112",
+    "SUS-13155",
+    "SUS-8378",
+    "SUS-14283",
+    "SUS-8772",
+    "SUS-14008",
+    "SUS-14161",
+    "SUS-14033",
+    "SUS-14010",
+    "SUS-7771",
+    "SUS-14153",
+    "SUS-13112",
+    "SUS-12252",
+    "SUS-12178",
+    "SUS-14492",
+    "SUS-14012",
+    "SUS-14443",
+    "SUS-12123",
+    "SUS-12389",
+    "SUS-12091",
+    "SUS-14308",
+    "SUS-13943",
+    "SUS-14023",
+    "SUS-12317",
+    "SUS-14447",
+    "SUS-13321",
+    "SUS-14508",
+    "SUS-9964",
+    "SUS-12041",
+    "SUS-14328",
+    "SUS-11927",
+    "SUS-13229",
+    "SUS-12879",
+    "SUS-12705",
+    "SUS-12068",
+    "SUS-14426",
+    "SUS-12331",
+    "SUS-12797",
+    "SUS-14345",
+    "SUS-12424",
+    "SUS-9380",
+    "SUS-9713",
+    "SUS-13891",
+    "SUS-7313",
+    "SUS-13677",
+    "SUS-13468",
+    "SUS-12488",
+    "SUS-13110",
+    "SUS-12070",
+    "SUS-12103",
+    "SUS-12886",
+    "SUS-12018",
+    "SUS-12280",
+    "SUS-12408",
+    "SUS-9544",
+    "SUS-14248",
+    "SUS-11487",
+    "SUS-13680",
+    "SUS-7669",
+    "SUS-11915",
+    "SUS-13668",
+    "SUS-12785",
+    "SUS-12101",
+    "SUS-12401",
+    "SUS-14448",
+    "SUS-13337",
+    "SUS-12035",
+    "SUS-9384",
+    "SUS-8217",
+    "SUS-14474",
+    "SUS-11481",
+    "SUS-14032",
+    "SUS-12152",
+    "SUS-8965",
+    "SUS-13818",
+    "SUS-14597",
+    "SUS-13243",
+    "SUS-12328",
+    "SUS-11117",
+    "SUS-11301",
+    "SUS-12483",
+    "SUS-12604",
+    "SUS-14590",
+    "SUS-13029",
+    "SUS-11306",
+    "SUS-12030",
+    "SUS-12310",
+    "SUS-13452",
+    "SUS-13919",
+    "SUS-14587",
+    "SUS-14581",
+    "SUS-12016",
+    "SUS-12438",
+    "SUS-12496",
+    "SUS-14586",
+    "SUS-13581",
+    "SUS-14624",
+    "SUS-14623",
+    "SUS-14505",
+    "SUS-12766",
+    "SUS-13408",
+    "SUS-13447",
+    "SUS-13490",
+    "SUS-11230",
+    "SUS-12157",
+    "SUS-13187",
+    "SUS-12056",
+    "SUS-14405",
+    "SUS-11677",
+    "SUS-14278",
+    "SUS-11176",
+    "SUS-12490",
+    "SUS-12343",
+    "SUS-13696",
+    "SUS-13807",
+    "SUS-14368",
+    "SUS-8867",
+    "SUS-14241",
+    "SUS-13515",
+    "SUS-12591",
+    "SUS-14388",
+    "SUS-9628",
+    "SUS-12829",
+    "SUS-11261",
+    "SUS-14181",
+    "SUS-14351",
+    "SUS-13202",
+    "SUS-10244",
+    "SUS-11945",
+    "SUS-14115",
+    "SUS-12021",
+    "SUS-13679",
+    "SUS-14646",
+    "SUS-14009",
+    "SUS-13059",
+    "SUS-12333",
+    "SUS-14154",
+    "SUS-13340",
+    "SUS-12393",
+    "SUS-12254",
+    "SUS-12869",
+    "SUS-12416",
+    "SUS-13003",
+    "SUS-14562",
+    "SUS-11552",
+    "SUS-13083",
+    "SUS-14523",
+    "SUS-12359",
+    "SUS-14128",
+    "SUS-13058",
+    "SUS-13329",
+    "SUS-13266",
+    "SUS-9405",
+    "SUS-12142",
+    "SUS-12293",
+    "SUS-12919",
+    "SUS-13825",
+    "SUS-12395",
+    "SUS-13270",
+    "SUS-12495",
+    "SUS-12406",
+    "SUS-14599",
+    "SUS-13700",
+    "SUS-13359",
+    "SUS-11202",
+    "SUS-12045",
+    "SUS-10948",
+    "SUS-13149",
+    "SUS-11378",
+    "SUS-12353",
+    "SUS-12897",
+    "SUS-11366",
+    "SUS-12712",
+    "SUS-12629",
+    "SUS-14063",
+    "SUS-13338",
+    "SUS-12648",
+    "SUS-9659",
+    "SUS-13610",
+    "SUS-12695",
+    "SUS-12063",
+    "SUS-13917",
+    "SUS-9908",
+    "SUS-13524",
+    "SUS-10266",
+    "SUS-13205",
+    "SUS-12519",
+    "SUS-11134",
+    "SUS-13345",
+    "SUS-10557",
+    "SUS-13298",
+    "SUS-11971",
+    "SUS-13148",
+    "SUS-12608",
+    "SUS-13010",
+    "SUS-14637",
+    "SUS-13881",
+    "SUS-12790",
+    "SUS-14163"
+  ],
+  "items": [
+    {
+      "key": "SUS-13606",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14112",
+      "kinds": [
+        "transfer",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13155",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-8378",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14283",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-8772",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-14008",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14161",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-14033",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14010",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-7771",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14153",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13112",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12252",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12178",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14492",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14012",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14443",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12123",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12389",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12091",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14308",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13943",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14023",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12317",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14447",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13321",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14508",
+      "kinds": [
+        "transfer",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-9964",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12041",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14328",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-11927",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13229",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12879",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-12705",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12068",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-14426",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12331",
+      "kinds": [
+        "markdown"
+      ]
+    },
+    {
+      "key": "SUS-12797",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14345",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12424",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-9380",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-9713",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13891",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-7313",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13677",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13468",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12488",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13110",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12070",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-12103",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12886",
+      "kinds": [
+        "verify",
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-12018",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12280",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12408",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-9544",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14248",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-11487",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13680",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-7669",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-11915",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13668",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12785",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12101",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12401",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-14448",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13337",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12035",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-9384",
+      "kinds": [
+        "verify",
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-8217",
+      "kinds": [
+        "verify",
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14474",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-11481",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14032",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12152",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-8965",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13818",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14597",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13243",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12328",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-11117",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-11301",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12483",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12604",
+      "kinds": [
+        "markdown"
+      ]
+    },
+    {
+      "key": "SUS-14590",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-13029",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-11306",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12030",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-12310",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13452",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13919",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14587",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14581",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12016",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12438",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12496",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14586",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13581",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14624",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-14623",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-14505",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12766",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13408",
+      "kinds": [
+        "verify",
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13447",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13490",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-11230",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12157",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13187",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12056",
+      "kinds": [
+        "transfer",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14405",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-11677",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14278",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-11176",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12490",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12343",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-13696",
+      "kinds": [
+        "verify",
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-13807",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-14368",
+      "kinds": [
+        "markdown"
+      ]
+    },
+    {
+      "key": "SUS-8867",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14241",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13515",
+      "kinds": [
+        "verify",
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-12591",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-14388",
+      "kinds": [
+        "transfer",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-9628",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12829",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-11261",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14181",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-14351",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13202",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-10244",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-11945",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14115",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12021",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13679",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14646",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14009",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13059",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12333",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-14154",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13340",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-12393",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12254",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12869",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12416",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-13003",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-14562",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-11552",
+      "kinds": [
+        "keep",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13083",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14523",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12359",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14128",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13058",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13329",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13266",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-9405",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12142",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12293",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12919",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13825",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12395",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-13270",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12495",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12406",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14599",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13700",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13359",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-11202",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12045",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-10948",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13149",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-11378",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12353",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12897",
+      "kinds": [
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-11366",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12712",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12629",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14063",
+      "kinds": [
+        "verify",
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13338",
+      "kinds": [
+        "markdown",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12648",
+      "kinds": [
+        "transfer",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-9659",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13610",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12695",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12063",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13917",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-9908",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13524",
+      "kinds": [
+        "verify",
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-10266",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13205",
+      "kinds": [
+        "markdown"
+      ]
+    },
+    {
+      "key": "SUS-12519",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-11134",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-13345",
+      "kinds": [
+        "transfer",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-10557",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13298",
+      "kinds": [
+        "verify",
+        "transfer"
+      ]
+    },
+    {
+      "key": "SUS-11971",
+      "kinds": [
+        "markdown",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13148",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-12608",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-13010",
+      "kinds": [
+        "keep",
+        "cold_chain",
+        "close_call"
+      ]
+    },
+    {
+      "key": "SUS-14637",
+      "kinds": [
+        "keep"
+      ]
+    },
+    {
+      "key": "SUS-13881",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-12790",
+      "kinds": [
+        "keep",
+        "cold_chain"
+      ]
+    },
+    {
+      "key": "SUS-14163",
+      "kinds": [
+        "keep"
+      ]
+    }
+  ],
+  "kinds": {
+    "verify-before-move": {
+      "tag": "verify",
+      "count": 9,
+      "case": {
+        "key": "SUS-12886",
+        "store": "S329",
+        "product": "P191",
+        "lot": "S329-P191-2-r",
+        "state": "OPEN",
+        "recommended": "tr:S223:R-S329-S223:19:hold",
+        "recommended_label": "Transfer 19 to S223 (R-S329-S223), hold rest",
+        "deciding": {
+          "fact_id": "S329:phantom",
+          "kind": "PHANTOM_STOCK",
+          "branch": "S329",
+          "lot_ids": [
+            "S329-P191-0-r",
+            "S329-P191-2-r"
+          ],
+          "recorded_value": 152.0,
+          "alt_value": 0.0,
+          "decision_regret": 13.45,
+          "best_plan_if_alt": "keep",
+          "min_regret": 0.03
+        }
+      }
+    },
+    "transfer": {
+      "tag": "transfer",
+      "count": 66,
+      "case": {
+        "key": "SUS-13606",
+        "store": "S538",
+        "product": "P267",
+        "lot": "S538-P267-2-r",
+        "state": "OPEN",
+        "recommended": "tr:S892:R-S538-S892:88:hold",
+        "recommended_label": "Transfer 88 to S892 (R-S538-S892), hold rest",
+        "deciding": {
+          "recommended": "tr:S892:R-S538-S892:88:hold"
+        }
+      }
+    },
+    "markdown": {
+      "tag": "markdown",
+      "count": 32,
+      "case": {
+        "key": "SUS-14033",
+        "store": "S678",
+        "product": "P834",
+        "lot": "S678-P834-2-r",
+        "state": "OPEN",
+        "recommended": "md20",
+        "recommended_label": "Markdown 20%",
+        "deciding": {
+          "recommended": "md20"
+        }
+      }
+    },
+    "keep": {
+      "tag": "keep",
+      "count": 102,
+      "case": {
+        "key": "SUS-14283",
+        "store": "S760",
+        "product": "P589",
+        "lot": "S760-P589-2-r",
+        "state": "OPEN",
+        "recommended": "keep",
+        "recommended_label": "Keep",
+        "deciding": {
+          "recommended": "keep"
+        }
+      }
+    },
+    "cold-chain-excluded": {
+      "tag": "cold_chain",
+      "count": 154,
+      "case": {
+        "key": "SUS-13155",
+        "store": "S415",
+        "product": "P267",
+        "lot": "S415-P267-2-r",
+        "state": "OPEN",
+        "recommended": "tr:S568:R-S415-S568:97:hold",
+        "recommended_label": "Transfer 97 to S568 (R-S415-S568), hold rest",
+        "deciding": {
+          "excluded": [
+            {
+              "run_code": "R-S415-S156",
+              "dest": "S156",
+              "reason": "cold chain"
+            },
+            {
+              "run_code": "R-S415-S330",
+              "dest": "S330",
+              "reason": "cold chain"
+            }
+          ],
+          "rejected": []
+        }
+      }
+    },
+    "transfers-unavailable": {
+      "tag": "transfers_unavailable",
+      "count": 0,
+      "case": null
+    },
+    "close-call": {
+      "tag": "close_call",
+      "count": 46,
+      "case": {
+        "key": "SUS-14112",
+        "store": "S705",
+        "product": "P589",
+        "lot": "S705-P589-2-r",
+        "state": "OPEN",
+        "recommended": "tr:S694:R-S705-S694:28:hold",
+        "recommended_label": "Transfer 28 to S694 (R-S705-S694), hold rest",
+        "deciding": {
+          "scenario_wins": {
+            "wins": 2,
+            "by_scenario": {
+              "low": "keep",
+              "base": "tr:S694:R-S705-S694:28:hold",
+              "high": "tr:S694:R-S705-S694:28:hold"
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "verify-before-move",
+    "transfer",
+    "markdown",
+    "keep"
+  ],
+  "missing": [
+    "transfers-unavailable"
+  ],
+  "start_seat": "S329"
+}

@@ -1,0 +1,133 @@
+{
+  "_about": "A contract-shaped public-dataset answer of GET /api/cases (04-API-CONTRACT 'Product mode (06.1)' card keys; 05.2-15 board rows: page, scope, evaluated, at_risk). Codes only, no names. 06.1-31 reruns the tests that use it on 05.2-22's real public fixture.",
+  "day": 0,
+  "version": 1,
+  "cases": [
+    {
+      "tag": null,
+      "origin": "simulated",
+      "state": "OPEN",
+      "column": "New",
+      "zone": "ambient",
+      "dest": null,
+      "due": null,
+      "decide_by": null,
+      "markdown_step": null,
+      "act_before": null,
+      "wait": null,
+      "decisions": {},
+      "hold": null,
+      "badges": [],
+      "waiting_until_day": null,
+      "step": "TRIGGER",
+      "step_number": 1,
+      "stage": "decide",
+      "owner": null,
+      "blocked": false,
+      "blocked_reasons": [],
+      "closed_as": null,
+      "case_id": "SUS-1",
+      "key": "SUS-1",
+      "sku": "P101",
+      "product": null,
+      "source": "S012",
+      "lot_id": "S12-P101-a",
+      "suggested": "Markdown 20%",
+      "suggested_key": "md20",
+      "at_risk_units": 12,
+      "at_risk_value": 30.0,
+      "est_benefit": 4.5,
+      "rec_version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "next_owner": [
+        {
+          "role": "manager",
+          "branch": "S012"
+        }
+      ],
+      "reason": "12 units would expire unsold if nothing changes",
+      "first_stage": "needs_action",
+      "next_action": {
+        "key": "take_ownership",
+        "who": [
+          {
+            "role": "manager",
+            "branch": "S012"
+          }
+        ]
+      }
+    },
+    {
+      "tag": null,
+      "origin": "simulated",
+      "state": "OPEN",
+      "column": "New",
+      "zone": "ambient",
+      "dest": null,
+      "due": null,
+      "decide_by": null,
+      "markdown_step": null,
+      "act_before": null,
+      "wait": null,
+      "decisions": {},
+      "hold": null,
+      "badges": [],
+      "waiting_until_day": null,
+      "step": "TRIGGER",
+      "step_number": 1,
+      "stage": "decide",
+      "owner": null,
+      "blocked": false,
+      "blocked_reasons": [],
+      "closed_as": null,
+      "case_id": "SUS-2",
+      "key": "SUS-2",
+      "sku": "P102",
+      "product": null,
+      "source": "S012",
+      "lot_id": "S12-P102-b",
+      "suggested": null,
+      "suggested_key": null,
+      "at_risk_units": null,
+      "at_risk_value": null,
+      "est_benefit": null,
+      "rec_version": null,
+      "next_owner": [],
+      "reason": null,
+      "first_stage": "needs_evaluation",
+      "next_action": {
+        "key": "evaluate",
+        "who": [
+          {
+            "role": "manager",
+            "branch": "S012"
+          }
+        ]
+      },
+      "needs_evaluation": true,
+      "risk": {
+        "a": true,
+        "b": false,
+        "keep_waste": 7,
+        "stock_at_step": 15.25,
+        "step_day": null
+      }
+    }
+  ],
+  "page": 1,
+  "page_size": 50,
+  "total": 2,
+  "scope": {
+    "branch": "S012",
+    "default": true
+  },
+  "evaluated": 1,
+  "at_risk": 2,
+  "stage_counts": {
+    "decide": 2,
+    "authorise": 0,
+    "do": 0,
+    "check": 0,
+    "closed": 0
+  },
+  "blocked_total": 0
+}

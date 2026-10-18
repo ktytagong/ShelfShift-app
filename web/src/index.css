@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+/* Visual system (spec §9, 05-UI-SPEC; 06.1-UI-SPEC "Color"): navy and gold, soft status tones, 8px grid, 1px borders.
+   Four type sizes (Label 12, Body 14, Title 16, Display 20) and two weights (400, 600); classes read text-label etc. */
+@theme {
+  --font-sans: Inter, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-label: 12px;
+  --text-label--line-height: 1.5;
+  --text-body: 14px;
+  --text-body--line-height: 1.5;
+  --text-title: 16px;
+  --text-title--line-height: 1.3;
+  --text-title--letter-spacing: -0.01em;
+  --text-display: 20px;
+  --text-display--line-height: 1.2;
+  --text-display--letter-spacing: -0.02em;
+
+  /* The role tokens on the 06.1 values (06.1-UI-SPEC "Color"; D-06, C-15): navy replaces the Phase 5 green. */
+  --color-accent: #13207a; /* navy-800: primary buttons, links on white, the active nav item */
+  --color-accent-dark: #020d51; /* navy-950: primary hover */
+  --color-accent-soft: #f3f5fc; /* navy-50 */
+  --color-line: #e3e6ef;
+  --color-line-2: #cfd4e2;
+  --color-page: #f6f7fb;
+  --color-side: #f3f5fc; /* navy-50: hover and read-only fills on white */
+  --color-col: #eef0f6; /* sunken: board columns, bar tracks */
+  --color-tx: #0f1533;
+  --color-tx2: #545b78;
+  --color-tx3: #6b7190; /* on white only: on page and sunken use tx2 */
+  --color-bad: #b42318;
+  --color-bad-soft: #fef1f0;
+  --color-warn: #b54708;
+  --color-warn-soft: #fff4e5;
+  --color-good: #067647;
+  --color-good-soft: #e7f8ef;
+  --color-gray-soft: #eef0f6;
+  --color-gray: #545b78;
+}
+
+/* 06.1 brand tokens (06.1-UI-SPEC "Color"; sketches/themes/default.css; D-06, D-13): navy and gold from the team logo,
+   beside the role tokens above (which 06.1-16 moved onto these values). `static`
+   emits every variable on :root even before a class uses it, so the charts can read their colours from these
+   variables at run time instead of typing them twice. Gold is a fill and highlight only, never text on white. */
+@theme static {
+  --color-navy-950: #020d51;
+  --color-navy-800: #13207a;
+  --color-navy-700: #26359a;
+  --color-navy-100: #e6e9f7;
+  --color-navy-50: #f3f5fc;
+  --color-sunken: #eef0f6;
+  --color-surface: #ffffff;
+  --color-paper: #f6f7fb;
+  --color-gold-600: #c49a52;
+  --color-gold-500: #d4be85;
+  --color-gold-300: #e9d696;
+  --color-gold-100: #f7f0dc;
+  --color-info: #175cd3;
+  --color-info-soft: #eaf4ff;
+  --color-plan-line: #8b93b8; /* planned, simulated, estimated or forecast: never observed */
+  --color-chill: #0b6a93;
+  --color-chill-soft: #e6f7fe;
+  --color-kind-ambient: #5b6487;
+  --color-on-navy: #d6dbf3;
+  --color-on-navy-2: #aab2d8;
+  --color-ink: #0f1533;
+  --color-ink-2: #545b78;
+  --color-ink-3: #6b7190; /* on white only: it fails AA on paper and sunken, use ink-2 there */
+  --color-rule: #e3e6ef;
+  --color-rule-2: #cfd4e2;
+
+  --shadow-card: 0 1px 2px rgba(2, 13, 81, 0.05);
+  --shadow-raise: 0 4px 14px rgba(2, 13, 81, 0.08);
+  --shadow-float: 0 12px 32px rgba(2, 13, 81, 0.14);
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--color-page);
+  color: var(--color-tx);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  -webkit-font-smoothing: antialiased;
+}
+.num { font-variant-numeric: tabular-nums; }
+/* The focus ring is exactly the UI-SPEC's: no border-radius here. This rule sits outside Tailwind's layers, so a radius
+   would override every component's own (round avatars turned square, cards lost their 8px corners when focused); the
+   outline follows each control's own radius instead. */
+:focus-visible { outline: 2px solid var(--color-navy-800); outline-offset: 2px; }
+/* On navy (the sidebar, the top bar, the nav sheet) the ring is gold-500, 9.76:1 on navy-950. */
+.on-navy :focus-visible { outline-color: var(--color-gold-500); }
+.ref { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

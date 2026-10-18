@@ -1,0 +1,146 @@
+{
+ "cases": {
+  "bread-keep": {
+   "decide_by": {
+    "day": 3,
+    "latest_decision_min": 660,
+    "source": "markdown",
+    "text": "mark down by 11:00: from day 4 the schedule already has it at 20%"
+   },
+   "fact_checks": [],
+   "key": "SUS-23",
+   "markdown_step": {
+    "day": 4,
+    "days_until": 1,
+    "pct": 20
+   },
+   "net_base": {
+    "keep": 196.62,
+    "md20": 198.93,
+    "md30": 198.21
+   },
+   "recommended": "md20",
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "md20",
+     "high": "keep",
+     "low": "md20"
+    },
+    "wins": 2
+   }
+  },
+  "milk-close-call": {
+   "decide_by": null,
+   "fact_checks": [],
+   "key": "SUS-24",
+   "markdown_step": {
+    "day": 4,
+    "days_until": 1,
+    "pct": 20
+   },
+   "net_base": {
+    "keep": 233.73,
+    "md20": 222.44,
+    "md30": 208.79,
+    "tr:Rangsit:R-07:50:hold": 220.11,
+    "tr:Rangsit:R-07:50:md20": 208.48,
+    "tr:Rangsit:R-07:60:md30": 201.48
+   },
+   "recommended": "keep",
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "keep",
+     "high": "keep",
+     "low": "keep"
+    },
+    "wins": 3
+   }
+  },
+  "milk-story": {
+   "decide_by": {
+    "day": 3,
+    "latest_decision_min": 600,
+    "source": "run",
+    "text": "transfer becomes impossible after 10:00 (run R-02 loading cutoff 12:00 minus 2 h packing)"
+   },
+   "fact_checks": [
+    {
+     "changes_plan": true,
+     "fact_id": "Lat Phrao:phantom",
+     "kind": "PHANTOM_STOCK",
+     "lot_ids": [
+      "MLK-038"
+     ],
+     "pick_changed": true
+    }
+   ],
+   "key": "SUS-19",
+   "markdown_step": {
+    "day": 4,
+    "days_until": 1,
+    "pct": 20
+   },
+   "net_base": {
+    "keep": 703.51,
+    "md20": 720.1,
+    "md30": 716.55,
+    "tr:Lat Phrao:R-02:110:hold": 783.67,
+    "tr:Lat Phrao:R-02:110:md20": 800.27,
+    "tr:Lat Phrao:R-02:110:md30": 796.71,
+    "tr:Thonburi:R-03:4:hold": 687.86,
+    "tr:Thonburi:R-03:4:md20": 704.46,
+    "tr:Thonburi:R-03:4:md30": 700.9
+   },
+   "recommended": "tr:Lat Phrao:R-02:110:md20",
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "tr:Lat Phrao:R-02:110:md20",
+     "high": "keep",
+     "low": "tr:Lat Phrao:R-02:94:md20"
+    },
+    "wins": 1
+   }
+  },
+  "strawberry-cold-chain": {
+   "decide_by": {
+    "day": 3,
+    "latest_decision_min": 660,
+    "source": "markdown",
+    "text": "mark down by 11:00: from day 4 the schedule already has it at 20%"
+   },
+   "fact_checks": [
+    {
+     "changes_plan": false,
+     "fact_id": "STR-201:expiry",
+     "kind": "ESTIMATED_EXPIRY",
+     "lot_ids": [
+      "STR-201"
+     ],
+     "pick_changed": true
+    }
+   ],
+   "key": "SUS-22",
+   "markdown_step": {
+    "day": 4,
+    "days_until": 1,
+    "pct": 20
+   },
+   "net_base": {
+    "keep": 319.16,
+    "md20": 326.57,
+    "md30": 324.66
+   },
+   "recommended": "md20",
+   "scenario_wins": {
+    "by_scenario": {
+     "base": "md20",
+     "high": "keep",
+     "low": "md20"
+    },
+    "wins": 2
+   }
+  }
+ },
+ "dataset_version": "ds-82f67857f136",
+ "day": 3
+}

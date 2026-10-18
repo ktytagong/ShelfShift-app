@@ -1,0 +1,19 @@
+# What never reaches the Cloud Build upload (06-CONTEXT D-08, D-11). Releases are built from `git archive` of a clean
+# commit (06-07), so only committed files are candidates; this list is the second fence. The git-ignored deploy
+# configuration and the release records never upload.
+.gcloudignore
+# Version control and local environments.
+.git
+.venv
+**/__pycache__
+.pytest_cache
+test-results/
+# Tests stay out of the image; it runs the app and its jobs only.
+tests/
+# Secrets and deploy records: the git-ignored configuration, any .env file and the release manifests.
+deploy/
+.env
+.env.*
+# The web stage installs and builds web/ itself from the lock (npm ci).
+web/node_modules
+web/dist

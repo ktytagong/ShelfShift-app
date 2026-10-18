@@ -1,0 +1,5 @@
+{
+  "waste_price": {"value": {"min": 0, "max": 100}, "unit": "{currency}/kg", "type": "Policy", "source": "02-CONTEXT D-37; 04-CONTEXT D-09, D-23", "note": "inclusive; {currency} is the reference data's currency (seed settings), filled in when a response or a refusal is written (IN-07)"},
+  "min_sellable_days": {"value": {"min": 1, "max": 7}, "unit": "days", "type": "Policy", "source": "02-CONTEXT D-37; 04-CONTEXT D-09, D-23", "note": "inclusive"},
+  "shortlist_step": {"value": {"allowed": [0, 5, 10]}, "type": "Policy", "source": "02-CONTEXT D-37; 04-CONTEXT D-09, D-23"}
+}

@@ -1,0 +1,67 @@
+# Local Postgres 17 and the app in engine-only mode (D-11; 06-CONTEXT D-23).
+# - `make db-up` starts the db service alone; `make test-api` uses the shelfshift_test database it creates.
+# - `docker compose up` runs db, then init (the deploy job's command: migrate, install the reference data, build the
+#   template), then the app on 127.0.0.1 with GCP off, so no Google account is needed. The app itself never migrates or
+#   builds a template (OPS-05). A second `up` is safe: init reruns idempotently and builds a fresh template.
+# The app runs product mode, as the service does (06.1 D-62): DEMO_MODE off. Both passcodes (DEMO_PASSCODE, the store
+# one, and HQ_PASSCODE) come from the shell or the git-ignored .env, never this file. Each is interpolated with a `:-`
+# default so every command (`make db-up` included) works when it is unset; the app refuses to start with a blank
+# store passcode (CR-01), and the product app with a blank, short (under 12 characters) or duplicate HQ one (D-64).
+# Every published port is one-line flow style on loopback; SS_DB_PORT and SS_APP_PORT move the host ports so a check
+# project never collides with a running database (04-SECURITY F-2, WR-04).
+configs:
+  test_db:
+    content: "CREATE DATABASE shelfshift_test;"
+x-app: &app
+  build: .
+  image: shelfshift:local
+services:
+  db:
+    image: postgres:17
+    environment:
+      # Local only: trust auth on a developer machine with synthetic data. Cloud SQL uses IAM login (Phase 6).
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: shelfshift
+    # Loopback only: trust auth is safe only while no other machine can reach the port (04-SECURITY F-2, WR-04).
+    ports: ["127.0.0.1:${SS_DB_PORT:-5432}:5432"]
+    configs:
+      # Runs once, when the data directory is first initialised, so the _test database sits beside shelfshift.
+      - source: test_db
+        target: /docker-entrypoint-initdb.d/test_db.sql
+    healthcheck:
+      # `docker compose up --wait` returns only once the server accepts connections.
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  init:
+    <<: *app
+    # The deploy job's command, once per `up`: migrate, install the reference data, build the template (D-23).
+    command: ["python", "-m", "api.sandbox", "build"]
+    environment:
+      DATABASE_URL: postgresql+pg8000://postgres@db:5432/shelfshift  # the service name, never localhost
+      GCP: "off"
+      ENGINE_WORKER: "on"
+    depends_on:
+      db: {condition: service_healthy}
+    restart: "no"
+  app:
+    <<: *app
+    # Restated in full: a YAML merge replaces the whole environment mapping, it never merges it.
+    environment:
+      DATABASE_URL: postgresql+pg8000://postgres@db:5432/shelfshift
+      GCP: "off"
+      ENGINE_WORKER: "on"
+      DEMO_MODE: "off"
+      DEMO_PASSCODE: ${DEMO_PASSCODE:-}
+      HQ_PASSCODE: ${HQ_PASSCODE:-}
+    ports: ["127.0.0.1:${SS_APP_PORT:-8080}:8080"]
+    depends_on:
+      db: {condition: service_healthy}
+      init: {condition: service_completed_successfully}
+    healthcheck:
+      # Healthy only once readyz answers 200 (the database is reachable), so `up --wait` returns on a working app.
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/api/readyz', timeout=2).status == 200 else 1)"]
+      interval: 2s
+      timeout: 5s
+      retries: 60

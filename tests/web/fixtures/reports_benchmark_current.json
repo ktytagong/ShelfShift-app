@@ -1,0 +1,473 @@
+{
+  "_about": "Illustrative contract-shaped browser data only, never an evaluation result or proof of server authorization. Null receipt sales/waste and decision timing mean not recorded; headline nulls retain their explicit reasons. Immutable published benchmark IDs are illustrative.",
+  "status": "current",
+  "app": {
+    "engine": "illustrative-engine",
+    "dataset": "illustrative-dataset",
+    "policy": "illustrative-policy",
+    "forecast_runs": [
+      "illustrative-forecast-a",
+      "illustrative-forecast-b"
+    ],
+    "evaluator": "illustrative-evaluator",
+    "settings": "es-illustrative-settings"
+  },
+  "current": {
+    "kind": "SIMULATED",
+    "benchmark_id": "illustrative-published-benchmark",
+    "published_at": "2026-10-18T00:00:00Z",
+    "git_commit": "illustrative-commit",
+    "window": {
+      "first_day": 0,
+      "last_day": 6
+    },
+    "versions": {
+      "engine": "illustrative-engine",
+      "dataset": "illustrative-dataset",
+      "policy": "illustrative-policy",
+      "forecast_runs": [
+        "illustrative-forecast-a",
+        "illustrative-forecast-b"
+      ],
+      "evaluator": "illustrative-evaluator",
+      "settings": "es-illustrative-settings"
+    },
+    "differs": [],
+    "summary": {
+      "kind": "SIMULATED",
+      "scenarios": [
+        {
+          "key": "store_rule",
+          "world": "baseline_rule",
+          "label": "Modeled store rule with original records"
+        },
+        {
+          "key": "store_rule_checked",
+          "world": "baseline_checked",
+          "label": "Modeled store rule with equivalent stock checks"
+        },
+        {
+          "key": "shelfshift",
+          "world": "shelfshift",
+          "label": "ShelfShift decisions with those checks"
+        },
+        {
+          "key": "markdowns_only",
+          "world": "do_nothing",
+          "label": "Automatic markdowns only · no transfers or additional intervention"
+        }
+      ],
+      "network": {
+        "stores": 2,
+        "at_risk_lots_by_day": [
+          {
+            "day": 0,
+            "lots": 2
+          },
+          {
+            "day": 1,
+            "lots": 2
+          },
+          {
+            "day": 2,
+            "lots": 2
+          },
+          {
+            "day": 3,
+            "lots": 2
+          },
+          {
+            "day": 4,
+            "lots": 2
+          },
+          {
+            "day": 5,
+            "lots": 2
+          },
+          {
+            "day": 6,
+            "lots": 2
+          }
+        ]
+      },
+      "money": {
+        "by_scenario": {
+          "store_rule": 100,
+          "store_rule_checked": 105,
+          "shelfshift": 107,
+          "markdowns_only": 95
+        },
+        "steps": [
+          {
+            "key": "store_rule",
+            "value": 100
+          },
+          {
+            "key": "store_rule_checked",
+            "value": 5
+          },
+          {
+            "key": "shelfshift",
+            "value": 2
+          },
+          {
+            "key": "markdowns_only",
+            "value": 107
+          }
+        ],
+        "by_day": [
+          {
+            "day": 0,
+            "store_rule": 10,
+            "store_rule_checked": 10,
+            "shelfshift": 10,
+            "markdowns_only": 10
+          },
+          {
+            "day": 1,
+            "store_rule": 10,
+            "store_rule_checked": 10,
+            "shelfshift": 10,
+            "markdowns_only": 10
+          },
+          {
+            "day": 2,
+            "store_rule": 10,
+            "store_rule_checked": 10,
+            "shelfshift": 10,
+            "markdowns_only": 10
+          },
+          {
+            "day": 3,
+            "store_rule": 10,
+            "store_rule_checked": 10,
+            "shelfshift": 10,
+            "markdowns_only": 10
+          },
+          {
+            "day": 4,
+            "store_rule": 10,
+            "store_rule_checked": 10,
+            "shelfshift": 10,
+            "markdowns_only": 10
+          },
+          {
+            "day": 5,
+            "store_rule": 10,
+            "store_rule_checked": 10,
+            "shelfshift": 10,
+            "markdowns_only": 10
+          },
+          {
+            "day": 6,
+            "store_rule": 10,
+            "store_rule_checked": 10,
+            "shelfshift": 10,
+            "markdowns_only": 10
+          }
+        ]
+      },
+      "footnote_x": 7,
+      "waste": {
+        "by_day": [
+          {
+            "day": 0,
+            "store_rule": 1,
+            "store_rule_checked": 1,
+            "shelfshift": 1,
+            "markdowns_only": 1
+          },
+          {
+            "day": 1,
+            "store_rule": 1,
+            "store_rule_checked": 1,
+            "shelfshift": 1,
+            "markdowns_only": 1
+          },
+          {
+            "day": 2,
+            "store_rule": 1,
+            "store_rule_checked": 1,
+            "shelfshift": 1,
+            "markdowns_only": 1
+          },
+          {
+            "day": 3,
+            "store_rule": 1,
+            "store_rule_checked": 1,
+            "shelfshift": 1,
+            "markdowns_only": 1
+          },
+          {
+            "day": 4,
+            "store_rule": 1,
+            "store_rule_checked": 1,
+            "shelfshift": 1,
+            "markdowns_only": 1
+          },
+          {
+            "day": 5,
+            "store_rule": 1,
+            "store_rule_checked": 1,
+            "shelfshift": 1,
+            "markdowns_only": 1
+          },
+          {
+            "day": 6,
+            "store_rule": 1,
+            "store_rule_checked": 1,
+            "shelfshift": 1,
+            "markdowns_only": 1
+          }
+        ],
+        "totals": {
+          "store_rule": {
+            "units": 7,
+            "kg": 3.5
+          },
+          "store_rule_checked": {
+            "units": 7,
+            "kg": 3.5
+          },
+          "shelfshift": {
+            "units": 7,
+            "kg": 3.5
+          },
+          "markdowns_only": {
+            "units": 7,
+            "kg": 3.5
+          }
+        },
+        "change_vs_markdowns_only": {
+          "store_rule": {
+            "units": 0,
+            "kg": 0
+          },
+          "store_rule_checked": {
+            "units": 0,
+            "kg": 0
+          },
+          "shelfshift": {
+            "units": 0,
+            "kg": 0
+          },
+          "markdowns_only": {
+            "units": 0,
+            "kg": 0
+          }
+        }
+      },
+      "headline": {
+        "store_rule": {
+          "net": 100,
+          "full_price_coverage": 0.8,
+          "shortfall_filled": null,
+          "action_adjusted_fulfillment": null,
+          "incremental_units_sold_vs_markdowns_only": 2,
+          "units_wasted": 7,
+          "kg_wasted": 3.5,
+          "sell_through_moved": null,
+          "reasons": {
+            "shortfall_filled": "No shortfall",
+            "action_adjusted_fulfillment": "No shortfall",
+            "sell_through_moved": "No received transfers"
+          }
+        },
+        "store_rule_checked": {
+          "net": 100,
+          "full_price_coverage": 0.8,
+          "shortfall_filled": null,
+          "action_adjusted_fulfillment": null,
+          "incremental_units_sold_vs_markdowns_only": 2,
+          "units_wasted": 7,
+          "kg_wasted": 3.5,
+          "sell_through_moved": null,
+          "reasons": {
+            "shortfall_filled": "No shortfall",
+            "action_adjusted_fulfillment": "No shortfall",
+            "sell_through_moved": "No received transfers"
+          }
+        },
+        "shelfshift": {
+          "net": 100,
+          "full_price_coverage": 0.8,
+          "shortfall_filled": null,
+          "action_adjusted_fulfillment": null,
+          "incremental_units_sold_vs_markdowns_only": 2,
+          "units_wasted": 7,
+          "kg_wasted": 3.5,
+          "sell_through_moved": null,
+          "reasons": {
+            "shortfall_filled": "No shortfall",
+            "action_adjusted_fulfillment": "No shortfall",
+            "sell_through_moved": "No received transfers"
+          }
+        },
+        "markdowns_only": {
+          "net": 100,
+          "full_price_coverage": 0.8,
+          "shortfall_filled": null,
+          "action_adjusted_fulfillment": null,
+          "incremental_units_sold_vs_markdowns_only": 2,
+          "units_wasted": 7,
+          "kg_wasted": 3.5,
+          "sell_through_moved": null,
+          "reasons": {
+            "shortfall_filled": "No shortfall",
+            "action_adjusted_fulfillment": "No shortfall",
+            "sell_through_moved": "No received transfers"
+          }
+        }
+      },
+      "checks": {
+        "store_rule": null,
+        "store_rule_checked": {
+          "requests": 2,
+          "lots_counted": 2,
+          "corrected_up": 1,
+          "corrected_down": 1,
+          "nothing_to_correct": 0
+        },
+        "shelfshift": {
+          "requests": 2,
+          "lots_counted": 2,
+          "corrected_up": 1,
+          "corrected_down": 1,
+          "nothing_to_correct": 0
+        },
+        "markdowns_only": null
+      },
+      "trips": {
+        "store_rule": {
+          "short": 1,
+          "failed": 0,
+          "transport_unshipped": 0
+        },
+        "store_rule_checked": {
+          "short": 1,
+          "failed": 0,
+          "transport_unshipped": 0
+        },
+        "shelfshift": {
+          "short": 1,
+          "failed": 0,
+          "transport_unshipped": 0
+        },
+        "markdowns_only": {
+          "short": 1,
+          "failed": 0,
+          "transport_unshipped": 0
+        }
+      },
+      "closing": {
+        "store_rule": {
+          "on_hand_units": 3,
+          "in_transit_units": 1,
+          "open_transfers": 1,
+          "costs_charged": 2
+        },
+        "store_rule_checked": {
+          "on_hand_units": 3,
+          "in_transit_units": 1,
+          "open_transfers": 1,
+          "costs_charged": 2
+        },
+        "shelfshift": {
+          "on_hand_units": 3,
+          "in_transit_units": 1,
+          "open_transfers": 1,
+          "costs_charged": 2
+        },
+        "markdowns_only": {
+          "on_hand_units": 3,
+          "in_transit_units": 1,
+          "open_transfers": 1,
+          "costs_charged": 2
+        }
+      },
+      "decision_quality": {
+        "limit_breaks": {
+          "store_rule": 0,
+          "store_rule_checked": 0,
+          "shelfshift": 0,
+          "markdowns_only": 0
+        },
+        "opened": 4,
+        "approved": 3,
+        "rejected": 0,
+        "waiting": 1,
+        "left_open": {
+          "needs_input": 1
+        },
+        "retry_limit": 2,
+        "time_to_decision": null
+      },
+      "forecast_quality": {
+        "forecast_run_id": "illustrative-backtest",
+        "window": {
+          "first_day": -7,
+          "last_day": -1
+        },
+        "cutoff_day": -8,
+        "wape": 0.2,
+        "baseline_wape": 0.3,
+        "bias": -0.1,
+        "baseline_bias": -0.2,
+        "coverage_80": 0.75,
+        "scored_days": 7,
+        "excluded_stockout_days": 1,
+        "providers": [
+          "illustrative"
+        ],
+        "input_counts": {
+          "series": 2
+        },
+        "series_without_in_stock_days": 0
+      },
+      "settings": {
+        "forecast_rule": "latest issued before day; reuse day 3 for days 4–6",
+        "closing_rule": "after day 6",
+        "checks": {
+          "evidence": [
+            "PHANTOM_STOCK",
+            "STALE_COUNT"
+          ],
+          "cap_per_version": 2,
+          "lot_once_per_day": true,
+          "answers": "exact, from each world's own physical stock"
+        },
+        "cancel_cost": "decisions and stock outcomes held fixed",
+        "keep_fast_path": true,
+        "price_response": 1,
+        "commits": {
+          "retry_limit": 2,
+          "retry_codes": [
+            "conflict",
+            "hold_expired",
+            "stale_version"
+          ],
+          "leave_open": "any other refusal, recorded by reason",
+          "order": "case_id ascending"
+        },
+        "ordering": {
+          "enabled_stores": [],
+          "rule": "no store enabled"
+        },
+        "sensitivity": null
+      },
+      "assumptions": {
+        "markdown_response": 1,
+        "stock_record_errors": "Illustrative errors"
+      },
+      "categories_without_schedule": [
+        "Illustrative category"
+      ],
+      "policy": {
+        "min_regret": 1
+      }
+    },
+    "breakdown": null
+  },
+  "historical": null,
+  "settings_note": []
+}

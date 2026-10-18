@@ -1,0 +1,31 @@
+{
+ "benchmarks": {
+  "half_day_or_more": 0.175,
+  "label": "FreshRetailNet-50K; benchmarks, never targets",
+  "stockout_days": 0.443
+ },
+ "counts": {
+  "half_day_or_more_series_days": 73,
+  "series_days": 1350,
+  "stockout_series_days": 178
+ },
+ "dataset_version": "ds-82f67857f136",
+ "generator_commit": "31893ff",
+ "half_day_or_more": 0.0541,
+ "history_days": [
+  -90,
+  -1
+ ],
+ "input_version": "in-47626e29b3fa",
+ "label": "The release seed's stockout days and half-day-or-more, reported beside FreshRetailNet-50K's 44.3% and 17.5% as benchmarks; not matched to them (D-11).",
+ "multiplier": [
+  0.9,
+  1.0
+ ],
+ "note": "History days −90..−1 of the release (demo) world, with the designed lots and skips that fall in that window.",
+ "reference_fingerprint": "ref-170363f54824",
+ "scenario": "demo",
+ "seed": 20261012,
+ "stockout_days": 0.1319,
+ "synthetic_label": "Synthetic data · hypothetical scenario"
+}
