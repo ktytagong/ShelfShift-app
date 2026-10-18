@@ -105,12 +105,14 @@ never approves anything: every figure comes from the engine, and people make eve
 **Part 4: Gemini reads field reports.**
 
 1. Sign in as store manager `S223`, open **Business events** and press **Report an observation**.
-2. In **What happened**, type "One chiller at S223 is broken; we can only take half the chilled stock until tomorrow."
-   (or attach a photo or PDF) and press **Submit report**.
-3. Gemini reads the report and fills in **Suggested fields**, each marked **Suggested by Gemini**. Accept each one
-   with **Use suggested value**, or type your own. Where you typed something else, both show.
-4. **Preview impact** shows which open stock decisions would change if the report is confirmed
-   ("Potential impact · unconfirmed"). Gemini never confirms a report; a person does.
+2. On the first step, **Add evidence**, type in **What happened**: "One chiller at S223 is broken; we can only take
+   half the chilled stock until tomorrow." (or attach a photo or PDF). Don't choose a kind yourself.
+3. Press **Next · analyse report**. With no text and no file the button reads **Next · enter details** and skips
+   Gemini.
+4. **Review suggested fields** shows what Gemini read, each field marked **Suggested by Gemini**. Accept each one with
+   **Use suggested value**, or type your own.
+5. **Preview impact** shows which open stock decisions would change if the report is confirmed. Then press
+   **Submit**. Gemini never confirms a report; a person does.
 
 More samples (a local event, a carrier quote as a screenshot and as a PDF, a blurry photo, and a message that tries to
 give instructions) are in [docs/guide](guide/README.md), with the account to use, what to enter and what Gemini
