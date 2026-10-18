@@ -11,9 +11,10 @@ const TZ = "Asia/Bangkok";
 
 test("the kind labels are the UI-SPEC's, and HQ files transport only", () => {
   assert.deepEqual(Object.values(KIND_LABEL), [
-    "Storage capacity", "Demand event", "Transport", "Stock count", "Printed expiry date", "Condition"]);
+    "Storage capacity", "Demand event", "Transport", "Stock count", "Printed expiry date", "Condition", "Not relevant"]);
   assert.deepEqual(kindsFor("hq"), ["TRANSPORT"]);
   assert.equal(kindsFor("manager").length, 6);
+  assert.equal(kindsFor("manager").includes("NOT_RELEVANT"), false);
 });
 
 test("field labels use the store app's terms: no bare 'Run' (G3)", () => {

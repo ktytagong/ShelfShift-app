@@ -769,3 +769,65 @@ export function cancelledLine(by: string | null, at: string, reason: string | nu
   return [by === null ? "Cancelled" : `Cancelled by ${by}`, when === "" ? "" : `${when} ${cityOf(timeZone)} time`, reason ?? ""]
     .filter((x) => x !== "").join(" · ");
 }
+
+ // S7: count-only evaluation copy; server notes and reasons are never rewritten.
+export const EVAL_COPY = {
+  label: "Preliminary evaluation · 10 scenarios × 3 runs",
+  empty: "AI evaluation not yet published",
+  emptyBody: "The evaluation runs on the released app after its scenarios and expected results are locked. Results appear here once a person has reviewed every item.",
+  scope: "Measures the Gemini assistant and report reading on fixed scenarios, separately from the engine's results. Scenarios, expected results and the scoring checklist were written and locked before any run. Each scenario ran 3 times, and every run is shown.",
+  noFailures: "No failed items in this group.",
+  invalid: "Invalid · not scored",
+  mismatch: "Run on an earlier assistant version · not representative of the current app",
+  loading: "Loading the evaluation…",
+  generationFailed: "Generation failed · protection passed",
+  attempted: "Attempted, not executed",
+  safetyPass: "Safety gate passed",
+  safetyFail: "Safety gate failed · not published",
+  pass: "Pass", fail: "Fail", na: "N/A", notScored: "Not scored", notScoredYet: "Not scored yet",
+  safety: "Safety gate", scenario: "Scenario", check: "Check", modelAttempted: "Model attempted",
+  shownExecuted: "Shown or executed", result: "Result",
+  notice: "The latest evaluation run is not published: {reason}.",
+  datedNotice: "The latest evaluation run ({date}) is not published: {reason}.",
+  group: "{p} of {a} applicable items passed across 3 runs · {f} failed · {x} N/A",
+  usage: "{calls} Gemini calls · {tokens} tokens · run under its own limit, separate from reviewers' daily AI allowance",
+} as const;
+export const ANSWER_COPY = {
+  title: "Read by Gemini", pending: "Pending manager check", loading: "Reading evidence…",
+  countConflict: "Differs from the typed count", dateConflict: "Differs from the typed date",
+  confirmedConflict: "Differs from the confirmed count", history: "Read after confirmation · not applied",
+  chooseCount: "Choose which count to confirm.", chooseDate: "Choose which date to confirm.",
+  countChoice: "Count to confirm", dateChoice: "Date to confirm",
+  failed: "Gemini couldn't read this answer. The typed values, reply and photo are kept.",
+  daily: "Today's AI limit is reached. It resets at 00:00 Bangkok time.",
+  instructions: "Possible instructions to the assistant detected · treated as report text.",
+} as const;
+
+// Evidence-first report sheet (10-UI-SPEC S1). Every suggestion remains a person's choice.
+export const REPORT_READING = {
+  evidence: "Add evidence", review: "Review suggested fields", preview: "Preview impact", submit: "Submit",
+  analyse: "Next · analyse report", manual: "Next · enter details", next: "Next · preview impact",
+  helper: "Paste a message or attach a photo or PDF. Gemini suggests the report fields, and you review each one. To fill in the fields yourself, leave both empty.",
+  message: "Message (optional)", reading: "Reading evidence…", back: "Back to evidence",
+  kept: "Your reviewed fields are kept. A new reading only adds suggestions for you to review.",
+  validation: "Review each suggested field: Accept, Edit or Clear.",
+  injection: "Possible instructions to the assistant detected · treated as report text.",
+  irrelevant: "Gemini didn't identify a supported operational fact. You can choose a report kind and enter the details yourself.",
+  keep: "Keep Gemini's suggestion: Not relevant", choose: "Choose a report kind",
+  noImpact: "A Not relevant report changes no facts and runs no impact preview. Its owner can dismiss it.",
+  failed: "Gemini couldn't read this report. Your message and file are kept. Choose a report kind and enter the details yourself.",
+  empty: "Gemini found no fields to suggest. Choose a report kind and enter the details yourself.",
+  limit: "Today's AI limit is reached. It resets at 00:00 Bangkok time.",
+  noRequest: "No AI request is used to read the form.", copyQuestion: "Copy my question into the message",
+  caseTitle: "Report an observation for this case.", hq: "HQ files transport reports only",
+} as const;
+
+export const ASK_DROP = {
+  hint: "Drop a photo or PDF here to report an observation.",
+  dragging: "Drop to report an observation",
+  open: "Report with a file",
+  count: "Drop one file at a time.",
+  type: "Only PNG, JPEG or PDF files can be attached.",
+  size: "This file is larger than 5 MB. Choose a smaller file.",
+  unavailable: "File uploads are unavailable. Reload this page and try again.",
+} as const;

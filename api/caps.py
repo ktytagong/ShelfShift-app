@@ -32,6 +32,8 @@ daily cap across sessions (when the kind has one); a refusal at either rolls bot
 """
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 import hashlib
 from datetime import datetime, timedelta, timezone
 
@@ -43,6 +45,10 @@ GLOBAL = "global"  # the scope of a daily cap across sessions
 WHAT = {"ai": "AI requests", "signal": "field reports", "upload": "uploads", "reset": "resets",
         "sandbox": "new workspaces", "passcode": "wrong passcodes", "preview": "impact previews"}
 PER = {"day": "daily", "hour": "hourly", "minute": "per-minute"}  # a global cap's window in its refusal
+
+
+class DailyCapReached(ApiError):
+    """Internal daily-cap identity; the public error envelope remains unchanged."""
 
 
 def window_start(window: str, now: datetime | None = None) -> datetime:
@@ -114,11 +120,16 @@ def reached(conn, scope: str, kind: str, now: datetime | None = None) -> None:
         raise _refusal(kind, limit, window, whose, start)
 
 
+EVAL_ADMISSION = ContextVar("eval_admission", default=False)
+
+
 def spend(conn, session_id: str | None, kind: str, n: int = 1, now: datetime | None = None) -> int | None:
     """Spend n of `kind`: the session's (or, for a per-client kind, the client scope's) cap first, then the daily cap
     across sessions. Reaching either is 429 cap_reached with the kind and a plain message; the caller's transaction
     then rolls the counts back. Returns the number left under the kind's own cap after this spend (its limit minus the
     new count) when it counted one, else None."""
+    if EVAL_ADMISSION.get():
+        return None
     what = WHAT.get(kind, kind)
     own = _own_cap(kind)
     left = None
@@ -139,6 +150,6 @@ def spend(conn, session_id: str | None, kind: str, n: int = 1, now: datetime | N
         start = window_start(window, moment)
         if _count(conn, GLOBAL, kind, start, n) > config.GLOBAL_CAPS[kind]:
             # (proposed) no "demo" or "today" (06.1 copy rule)
-            raise ApiError(429, "cap_reached", f"The {PER[window]} limit for {what} has been reached; it resets at "
-                                               f"{_resets(window, start)}.", kind=kind)
+            raise DailyCapReached(429, "cap_reached", f"The {PER[window]} limit for {what} has been reached; it "
+                                                       f"resets at {_resets(window, start)}.", kind=kind)
     return left

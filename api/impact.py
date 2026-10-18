@@ -6,9 +6,10 @@ nothing**: no fact, recommendation in force, reservation, approval, decision, fl
 (D-12). It is a what-if, never shown as observed.
 
 - **Which cases** (`preview`): the live cases confirmation re-plans, found by the very matcher it uses (api/scope.py
-  `affected` on `scope.of_adjustments` of the report's adjustments, `reports.adjustments_for`), in case_id order; for
+  `affected` on `scope.of_adjustments` of the report's adjustments, `reports.adjustments_for`); for
   a correction also those of the fact it replaces, since confirmation re-plans both scopes (07-15 review P3). The first
-  `reports.preview_cases` (5, a setting) are re-run as what-ifs; the rest are counted, "and N more affected cases".
+  `reports.preview_cases` (5, a setting) by the plan in force's earliest decide-by, then case key, are re-run as
+  what-ifs; undated cases sort last. `affected` counts every live case, with "Previewing 5 of N affected cases."
   The limit is the display's only: confirmation acts on every affected case (D-17).
 - **The what-if** (`whatif_input`): the input the case's re-plan would read once the report is confirmed, built from
   today's data exactly as confirmation builds it (`cases.current_input`: today's bookings, this case's own left out,
@@ -30,13 +31,16 @@ nothing**: no fact, recommendation in force, reservation, approval, decision, fl
   card's est_benefit), whether the plan changes, and whether the plan in force stays allowed (`check_plan` on the
   what-if input). A case whose what-if is its active version's input (same version label) keeps its version and runs
   nothing; a case without a version, one whose lot is gone, or one the engine refuses, reads null with the reason.
-- **Stored per revision** (`signals.preview`), with a stamp of what it read (`STAMP`, never served): the affected
+- **Stored per revision** (`signals.preview`), with the shared D-23 key over every affected case/version and engine
+  version, and a stamp of what it read (`STAMP`, never served): the affected
   live cases, and for each shown case its state, active version, plan in force and what-if version label. A repeat
-  reads the same again without the engine and returns the stored body while the stamp is unchanged, running no engine
+  reads the same again without the engine or case row locks and returns the stored body while both key and stamp
+  are unchanged, running no engine
   and storing nothing; when any of it changed (a booking, an adopted assumption, a new version, a selection, a case
   in or out of scope) the preview is computed again and stored over it (07-15 review P4). An edit is a new revision
   and previews afresh. The route holds the run FOR UPDATE, so two previews of one revision run once (T-07-56).
-- **No engine run**: a CONDITION report reads "Requires human review · engine impact not calculated" (D-13); a report
+- **No engine run**: a NOT_RELEVANT report reads "Not relevant · no impact preview" (10 D-11); a CONDITION report
+  reads "Requires human review · engine impact not calculated" (D-13); a report
   with blank required fields reads "Complete report details to preview impact.".
 
 It spends no cap and logs nothing: it is a reading of a possible future, not an action.
@@ -44,11 +48,13 @@ It spends no cap and logs nothing: it is a reading of a possible future, not an 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
+import json
 
 from engine import from_dict, rec_version, to_dict
 from engine.adjust import AdjustmentError, InputError
 from engine.limits import check_plan
-from engine.model import EngineInput
+from engine.model import ENGINE_VERSION, EngineInput
 from engine.simulate import HorizonError
 
 from . import caps, cases, config, db, evaluate, inputs, reports, selection
@@ -57,23 +63,41 @@ from .errors import ApiError
 
 LABEL = "Potential impact · unconfirmed"  # D-16, word for word
 INCOMPLETE = "Complete report details to preview impact."  # D-16, word for word
+NO_IMPACT = "Not relevant · no impact preview"  # 10 D-11, word for word
 NO_VERSION = "This case has no recommendation: data is missing"
 GONE = "Lot {lot} is no longer on the record"
 STAMP = "stamp"  # the stored body's record of what it read (P4); stripped from every body served
 ENGINE_ERRORS = (InputError, AdjustmentError, HorizonError)
 
 
-def more_text(n: int) -> str | None:
-    """"and N more affected cases" beyond the rows shown, None when there are none."""
-    if n <= 0:
-        return None
-    return f"and {n} more affected case" + ("" if n == 1 else "s")
+def order(conn, run: dict, case_rows: list[dict]) -> list[dict]:
+    """D-08's shared display order: earliest plan-in-force decide-by, case key; undated cases last.
+
+    Confirmation's separate re-plan order still drives `whatif_inputs` and its hold-release simulation.
+    """
+    def urgency(case):
+        by = selection.decide_by(case, cases.active_rec(conn, case))
+        return (by is None, by["day"] if by else 0, by["latest_decision_min"] if by else 0, case["key"])
+    return sorted(case_rows, key=urgency)
 
 
-def _body(row: dict, complete: bool, message: str | None, rows: list[dict], more: int) -> dict:
+def preview_key(signal_id: str, revision: int, pairs: list[tuple[str, str | None]], engine_version: str) -> str:
+    """D-23: canonical SHA-256 over the report revision, all live affected versions and engine version."""
+    value = {"signal_id": signal_id, "revision": revision, "cases": sorted(pairs), "engine_version": engine_version}
+    body = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def more_text(shown: int, affected: int) -> str | None:
+    """Name the full affected count whenever the display is capped (D-08)."""
+    return f"Previewing {shown} of {affected} affected cases." if affected > shown else None
+
+
+def _body(row: dict, complete: bool, message: str | None, rows: list[dict], more: int, key: str) -> dict:
     return {"signal_id": row["signal_id"], "report_id": row["report_id"], "revision": row["revision"],
             "kind": row["kind"], "label": LABEL, "complete": complete, "message": message, "cases": rows,
-            "more": more, "more_text": more_text(more)}
+            "affected": len(rows) + more, "preview_key": key, "more": more,
+            "more_text": more_text(len(rows), len(rows) + more)}
 
 
 def label_of(inp: EngineInput) -> str:
@@ -115,13 +139,13 @@ def unconfirmed(conn, run: dict, row_: dict) -> tuple[inputs.Unconfirmed, list[s
     return inputs.Unconfirmed(fact=fact, replaced=earlier["fact_id"] if earlier else None, counted=counted), found
 
 
-def live_cases(conn, run: dict, found: list[scopes.FactScope]) -> tuple[list[dict], list[dict]]:
+def live_cases(conn, run: dict, found: list[scopes.FactScope], *, lock: bool = True) -> tuple[list[dict], list[dict]]:
     """(confirmation's re-plan order, the live cases it re-plans): each scope's live cases in case_id order, one scope
     after the other, a case in both scopes twice (`reports._apply`); then each case once, in case_id order (the
-    database's collation). From api/scope.py `affected`, locked FOR UPDATE."""
+    database's collation). From api/scope.py `affected`, locked FOR UPDATE by default; lock=False reads only."""
     order: list[dict] = []
     for one in found:
-        live, _, _ = scopes.affected(conn, run, one)
+        live, _, _ = scopes.affected(conn, run, one, lock=lock)
         order += live
     if len(found) == 1 or not order:
         return order, order
@@ -227,33 +251,39 @@ def _run_case(conn, run: dict, case: dict, rec: dict | None, got: tuple[EngineIn
 
 @dataclass
 class _Reading:
-    """What a preview of one revision reads, before any engine run: a body that needs no engine (a CONDITION report,
-    blank fields), or the shown cases with their active versions and what-if inputs, the count beyond them and the
-    stamp of all of it."""
+    """What a preview reads before any engine run: a body needing no engine (Not relevant, CONDITION, blank fields),
+    or the shown cases with their versions and what-if inputs, the count beyond them, freshness stamp and shared key.
+    Reading this data takes no case row locks."""
     body: dict | None
     shown: list[dict]
     recs: dict
     got: dict
     more: int
     stamp: dict | None
+    key: str
 
 
 def _read(conn, run: dict, row_: dict) -> _Reading:
+    key = preview_key(row_["signal_id"], row_["revision"], [], ENGINE_VERSION)
+    if row_["kind"] == "NOT_RELEVANT":
+        return _Reading(_body(row_, True, NO_IMPACT, [], 0, key), [], {}, {}, 0, None, key)
     if row_["kind"] == "CONDITION":  # human review only: no engine input, so no engine impact (D-13)
-        return _Reading(_body(row_, True, reports.REVIEW_ONLY, [], 0), [], {}, {}, 0, None)
+        return _Reading(_body(row_, True, reports.REVIEW_ONLY, [], 0, key), [], {}, {}, 0, None, key)
     f = reports.clean(run, row_["kind"], row_["fields"], inputs.sandbox_policy(conn, run))  # the bounds again
     if reports.needs_input(row_["kind"], f):
-        return _Reading(_body(row_, False, INCOMPLETE, [], 0), [], {}, {}, 0, None)
+        return _Reading(_body(row_, False, INCOMPLETE, [], 0, key), [], {}, {}, 0, None, key)
     pending, found = unconfirmed(conn, run, {**row_, "fields": f})
-    order, live = live_cases(conn, run, found)
-    shown = live[:config.REPORT_PREVIEW_CASES]
+    confirmation_order, live = live_cases(conn, run, found, lock=False)
+    key = preview_key(row_["signal_id"], row_["revision"],
+                      [(c["case_id"], c["active_rec_version"]) for c in live], ENGINE_VERSION)
+    shown = order(conn, run, live)[:config.REPORT_PREVIEW_CASES]
     recs = {c["case_id"]: cases.active_rec(conn, c) for c in shown}
-    got = whatif_inputs(conn, run, order, shown, pending)
+    got = whatif_inputs(conn, run, confirmation_order, shown, pending)
     stamp = {"live": [c["case_id"] for c in live],
              "cases": [[c["case_id"], c["state"], c["active_rec_version"],
                         selection.plan_in_force(c, recs[c["case_id"]])[0], _label_or_why(got.get(c["case_id"]))]
                        for c in shown]}
-    return _Reading(None, shown, recs, got, len(live) - len(shown), stamp)
+    return _Reading(None, shown, recs, got, len(live) - len(shown), stamp, key)
 
 
 def _computed(conn, run: dict, row_: dict, reading: _Reading) -> dict:
@@ -270,7 +300,7 @@ def _computed(conn, run: dict, row_: dict, reading: _Reading) -> dict:
            and kept[cid] is None for cid, g in got.items()):
         caps.spend(conn, reports.workspace_scope(run), "preview")
     return _body(row_, True, None, [_run_case(conn, run, c, reading.recs[c["case_id"]], got[c["case_id"]],
-                                              kept[c["case_id"]]) for c in reading.shown], reading.more)
+                                              kept[c["case_id"]]) for c in reading.shown], reading.more, reading.key)
 
 
 def _label_or_why(got) -> str | None:
@@ -286,9 +316,9 @@ def _served(stored: dict) -> dict:
 def preview(conn, run: dict, actor: dict, signal_id: str, revision) -> dict:
     """POST /api/signals/{id}/preview (D-16): any seat party to the report (as for reading it), on its current
     revision while it is READ (409 wrong_state otherwise), naming that revision (409 stale_version). The stored
-    preview of the revision while what it read is unchanged (its stamp; no engine run, nothing stored); else computed,
-    stored on the revision's row with its stamp and returned (07-15 review P4). The caller holds the run FOR UPDATE
-    (api/scope.py `affected` locks the live cases)."""
+    preview of the revision while both its shared key and richer stamp match (no engine run, nothing stored); else
+    computed, stored with both and returned (07-15 review P4; 10 D-23). The caller holds the run FOR UPDATE to serialize
+    previews; the key/freshness read itself takes no case row locks."""
     current = reports._current(conn, run["run_id"], signal_id, lock=True)
     reports._party(conn, run, actor, current)
     if current["state"] != reports.OPEN:
@@ -297,7 +327,7 @@ def preview(conn, run: dict, actor: dict, signal_id: str, revision) -> dict:
         raise ApiError(409, "stale_version", "The report changed since you looked at it", revision=current["revision"])
     reading = _read(conn, run, current)
     stored = current.get("preview")
-    if stored is not None and stored.get(STAMP) == reading.stamp:
+    if stored is not None and stored.get(STAMP) == reading.stamp and stored.get("preview_key") == reading.key:
         return _served(stored)
     body = _computed(conn, run, current, reading)
     db.run(conn, "UPDATE signals SET preview = CAST(:p AS jsonb) WHERE run_id = :r AND signal_id = :s",

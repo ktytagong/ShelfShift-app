@@ -71,6 +71,40 @@ def public_dv(schema):
     return refdata.install(TINY, allow_local=True)
 
 
+@pytest.fixture(autouse=True)
+def workspace_budget(request):
+    """Return only this test's own net new workspaces to the daily cap across sessions after it ends.
+
+    One run of the whole API suite opens more workspaces than the real daily cap (settings `caps.sandbox`), so later,
+    unrelated tests would get 429 cap_reached. Each test still spends against the real cap while it runs (a cap test
+    sees the true counter and its own limit); afterwards its net creations in each global 'sandbox' window are taken
+    back out, so they never consume a later test's budget. The cap value itself is never changed. Only tests that
+    use the database (through the session `schema` fixture) are touched; workspaces opened by module- or
+    session-scoped fixtures stay counted. Same pattern as build/reports-int's browser fixture (8d1660e)."""
+    if "schema" not in request.fixturenames:
+        yield
+        return
+    request.getfixturevalue("schema")  # the tables exist before the first snapshot
+    sql = "SELECT window_start, count FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox'"
+    tx = db.tx  # the real one: a test may still have db.tx patched when this tears down (_previews_out_of_reach
+    with tx() as conn:  # takes monkeypatch first, so its undo runs after this fixture's teardown)
+        before = {row["window_start"]: row["count"] for row in db.rows(conn, sql)}
+    yield
+    with tx() as conn:
+        for row in db.rows(conn, sql + " FOR UPDATE"):
+            previous = before.get(row["window_start"])
+            created = row["count"] - (previous or 0)
+            if created <= 0:
+                continue  # nothing this test opened (a lowered counter is left exactly as the test left it)
+            if previous is None:
+                db.run(conn, "DELETE FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox' "
+                             "AND window_start = :w AND count = :n", w=row["window_start"], n=created)
+            else:
+                db.run(conn, "UPDATE usage_counts SET count = count - :n "
+                             "WHERE scope = 'global' AND kind = 'sandbox' AND window_start = :w",
+                       n=created, w=row["window_start"])
+
+
 def drop_runs(conn, run_ids: list[str]) -> None:
     """Delete these runs' per-run rows, their sessions and idempotency keys, then their demo_runs rows (test scratch
     only: a run no workspace of another test reads)."""

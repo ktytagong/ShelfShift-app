@@ -83,8 +83,8 @@ const decisionHref = (c: Pick<Card61, "case_id" | "key" | "needs_evaluation">) =
 
 type Layout = "board" | "table";
 type Filters = { owner: "" | "me"; product: string; deadline: "" | "scenario_date" | "none"; blocked: boolean;
-  branch: string; risk: BoardRisk };
-const FILTER_KEYS = ["owner", "product", "deadline", "blocked", "branch", "risk"] as const;
+  branch: string; risk: BoardRisk; report?: ReportFigure };
+const FILTER_KEYS = ["owner", "product", "deadline", "blocked", "branch", "risk", "report"] as const;
 
 function filtersOf(q: Record<string, string>, hq: boolean): Filters {
   const risk = q.risk === "waste" || q.risk === "stock" ? q.risk : "all";
@@ -95,10 +95,11 @@ function filtersOf(q: Record<string, string>, hq: boolean): Filters {
     blocked: q.blocked === "1",
     branch: hq ? (q.branch ?? "") : "",
     risk: hq ? risk : "all",
+    report: Object.hasOwn(REPORT_FIGURES, q.report ?? "") ? q.report as ReportFigure : undefined,
   };
 }
 const filtering = (f: Filters) =>
-  f.owner !== "" || f.product !== "" || f.deadline !== "" || f.blocked || f.branch !== "" || f.risk !== "all";
+  f.owner !== "" || f.product !== "" || f.deadline !== "" || f.blocked || f.branch !== "" || f.risk !== "all" || f.report !== undefined;
 
 // A new hash for the board with `patch` applied to the query; empty values leave the query, and a filter change goes
 // back to page 1. The hash router (main.tsx) renders the same page again, so its state and the drawer stay.
@@ -113,27 +114,27 @@ function BoardPage({ route }: { route: Route }) {
   const { session } = useSession();
   const me = meOf(session);
   const hq = session.role === "hq";
-  const report = route.query.report;
-  const reportLabel = report !== undefined && Object.hasOwn(REPORT_FIGURES, report)
-    ? REPORT_FIGURES[report as ReportFigure] : null;
-  const layout: Layout = route.query.view === "table" ? "table" : "board";
+  const layout: Layout = route.query.view === "table" || Object.hasOwn(REPORT_FIGURES, route.query.report ?? "") ? "table" : "board";
   const f = filtersOf(route.query, hq);
   const pageNo = Math.max(1, Number.parseInt(route.query.page ?? "1", 10) || 1);
   const go = (patch: Record<string, string>) => {
     window.location.hash = boardHash(route.query, patch);
   };
   const setFilter = (patch: Record<string, string>) => go({ ...patch, page: "1" });
-  const clearFilters = () => go(Object.fromEntries([...FILTER_KEYS.map((k) => [k, ""]), ["report", ""], ["page", "1"]]));
+  const clearFilters = () => go(Object.fromEntries([...FILTER_KEYS.map((k) => [k, ""]), ["page", "1"]]));
 
   const path = boardQuery61(session, {
     store: f.branch, risk: f.risk, owner: f.owner, product: f.product, deadline: f.deadline, blocked: f.blocked,
-    page: pageNo, report: report as ReportFigure | undefined,
+    page: pageNo, report: f.report,
   });
   const wanted = useRef(path);
   const latestLoad = useRef(0);
   wanted.current = path;
-  const [board, setBoard] = useState<Board61 | null>(null);
-  const [failed, setFailed] = useState<ApiError | null>(null);
+  const loadedPath = useRef(path);
+  const [data, setBoard] = useState<Board61 | null>(null);
+  const [failure, setFailed] = useState<{ path: string; error: ApiError } | null>(null);
+  const failed = failure?.path === path ? failure.error : null;
+  const board = loadedPath.current === path && !(f.report && failed?.status === 400) ? data : null;
   const [selected, setSelected] = useState<string | null>(null); // the open drawer's card key
 
   // A failed poll keeps the last answer on screen with the stale banner; an answer for an older query is dropped, and so
@@ -144,6 +145,7 @@ function BoardPage({ route }: { route: Route }) {
     try {
       const b = await get<Board61>(path);
       if (wanted.current !== path || seq !== latestLoad.current) return;
+      loadedPath.current = path;
       setBoard(b);
       setFailed(null);
       const size = b.page_size ?? 0;
@@ -153,7 +155,7 @@ function BoardPage({ route }: { route: Route }) {
       }
     } catch (e) {
       if (wanted.current !== path || seq !== latestLoad.current) return;
-      setFailed(e instanceof ApiError ? e : new ApiError(0, "network", NETWORK));
+      setFailed({ path, error: e instanceof ApiError ? e : new ApiError(0, "network", NETWORK) });
     }
   }, [path, route.query]);
   useBoardPoll(load, 2000);
@@ -177,7 +179,9 @@ function BoardPage({ route }: { route: Route }) {
       <div className="flex min-w-0 flex-col gap-4 p-4 md:p-6">
         <Toolbar layout={layout} f={f} hq={hq} board={board} onLayout={(l) => go({ view: l === "table" ? "table" : "" })}
           onFilter={setFilter} onClear={clearFilters} onPage={(p) => go({ page: String(p) })} />
-        {reportLabel !== null && <p className="m-0 text-body text-ink-2">Reports: {reportLabel} · <a href="#/reports">Back to Reports</a></p>}
+        {f.report && <p className="m-0 flex flex-wrap items-center gap-2 text-label text-ink-2">
+          <Icon name="filter" size={12} /><span>Showing: {REPORT_FIGURES[f.report]} · from Reports</span>
+        </p>}
         <ErrorLine error={refused} />
         <ErrorLine error={moves.error} action={moves.action} />
         {moves.reasons.length > 0 && (
@@ -197,7 +201,7 @@ function BoardPage({ route }: { route: Route }) {
         {board !== null && failed !== null && refused === null && (
           <StaleBanner kind="refresh_failed" onAct={() => void load()} />
         )}
-        {board !== null && board.cases.length === 0 && (filtering(f) || report !== undefined
+        {board !== null && board.cases.length === 0 && (filtering(f)
           ? <Empty action={<Button kind="ghost" onClick={clearFilters}>{CLEAR_FILTERS}</Button>}>{NO_MATCH}</Empty>
           : <Empty heading={EMPTY_HEADING}>{EMPTY_BODY(hq ? ANY_BRANCH : me.account)}</Empty>)}
         {board !== null && board.cases.length > 0 && (layout === "table"

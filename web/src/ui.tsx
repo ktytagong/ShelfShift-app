@@ -9,7 +9,7 @@ import {
 import type { Chart, ChartConfiguration, ChartDataset } from "chart.js";
 import { post, type ApiError, type CaseDetail, type Eligibility, type Session } from "./api.ts";
 import {
-  historyFilter, qtyParts, segmentStates, type ChartSeries, type ChartTable, type HistoryFilter, type QtyInput,
+  historyFilter, qtyParts, scaled, segmentStates, type ChartSeries, type ChartTable, type HistoryFilter, type QtyInput,
   type SegmentState,
 } from "./bars.ts";
 import {
@@ -18,7 +18,8 @@ import {
 } from "./copy.ts";
 import { badgeChip } from "./boardview.ts";
 import { pageInRange } from "./derive.ts";
-import { dateLabel, units, zonedNow } from "./format.ts";
+import { dateLabel, money, signed, units, zonedNow } from "./format.ts";
+import { axisFor, waterfallBars, type WaterfallStep } from "./reportsview.ts";
 import { useAction } from "./hooks.ts";
 import { ASSISTANT_HISTORY_EMPTY, BACK_TO_BOARD, TERMS, historyCount, historySummary } from "./vocab.ts";
 
@@ -56,6 +57,7 @@ export const MISSING_CELL = "—"; // (proposed) a chart table cell the series h
 
 const PATHS = {
   report: <path d="M6 3h9l3 3v15H6z M9 17v-3 M12 17v-6 M15 17v-4" />,
+  scan: <><path d="M7 3H3v4M17 3h4v4M3 17v4h4M21 17v4h-4" /><rect x="7" y="6" width="10" height="12" rx="1" /><path d="M10 10h4M10 14h4" /></>,
   leaf: <><path d="M11 20A7 7 0 0 1 4 13c0-6 7-9 16-9 0 9-3 16-9 16z" /><path d="M4 20c4-4 7.5-6.5 11-8" /></>,
   cases: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15 4v16" /></>,
   inbox: <><path d="M3 13h5l2 3h4l2-3h5" /><path d="M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z" /></>,
@@ -217,6 +219,15 @@ export function Button({ kind = "plain", busy = false, icon, children, className
 
 // --- Section, Table, Kv ------------------------------------------------------------------------------------------------
 
+export function DivergingBar({ value, max }: { value: number; max: number }) {
+  const width = scaled([Math.abs(value)], max)[0] * 50;
+  return <span aria-hidden="true" className="relative inline-block h-2 w-[120px] shrink-0 bg-sunken">
+    <span className={`absolute top-0 h-2 ${value < 0 ? "border border-navy-700 bg-navy-100" : "bg-navy-700"}`}
+      style={{ width: `${width}%`, ...(value < 0 ? { right: "50%" } : { left: "50%" }) }} />
+    <span className="absolute left-1/2 top-0 h-2 w-px bg-navy-950" />
+  </span>;
+}
+
 export function Section({ title, headingId, right, children, className = "" }:
   { title?: ReactNode; headingId?: string; right?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -341,7 +352,14 @@ export function CheckTime({ id, value, onChange, timeZone, error, disabled = fal
 
 // --- Provenance: in Phase 5 only the template summary pill (05-CONTEXT D-14) ----------------------------------------
 
-export function Provenance({ label = "Template summary · from the engine's figures" }: { label?: string }) {
+export function Provenance({ reading, recorded, label = "Template summary · from the engine's figures" }: {
+  reading?: { provenance: string; model_id: string | null }; recorded?: string; label?: string;
+} = {}) {
+  if (reading) return <span className="inline-flex min-h-5 max-w-full items-start gap-1 rounded-md bg-gray-soft px-1 text-label font-semibold">
+    <Icon name={reading.provenance === "PRECOMPUTED" ? "clock" : "scan"} size={12} />
+    <span className="min-w-0 break-all">{reading.provenance === "PRECOMPUTED" ? "Precomputed" : "Live"} · Gemini {reading.model_id}
+      {reading.provenance !== "PRECOMPUTED" && recorded && ` · ${recorded}`}</span>
+  </span>;
   return <Pill tone="gray" wrap icon={label === "Precomputed" ? "clock" : label === "Live" ? "pulse" : "info"}>{label}</Pill>;
 }
 
@@ -815,7 +833,8 @@ const BAND_VAR = "--color-navy-100";
 
 // A chart series: the table's series plus how it is drawn. A band (low/high) fills between its two lines; `axis`
 // "right" puts a series on the second axis (hours out of stock beside daily units).
-export type PlotSeries = ChartSeries & { tone: ChartTone; type?: "line" | "bar"; axis?: "left" | "right" };
+export type PlotSeries = ChartSeries & { tone: ChartTone; type?: "line" | "bar"; axis?: "left" | "right";
+  pointStyle?: "circle" | "rect" | "triangle" | "rectRot" };
 
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 export const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -824,7 +843,7 @@ const BAND_HIGH = " high"; // the band's upper line is not a legend entry of its
 function datasets(series: PlotSeries[], chartType: "line" | "bar"): ChartDataset[] {
   return series.flatMap((s): ChartDataset[] => {
     const yAxisID = s.axis === "right" ? "y2" : "y";
-    const colour = cssVar(TONE_VAR[s.tone]);
+    const colour = s.pointStyle === "rect" ? "#5b6487" : s.pointStyle === "triangle" ? "#8b93b8" : cssVar(TONE_VAR[s.tone]);
     if ("low" in s) {
       const band = cssVar(BAND_VAR);
       const edge = { type: "line" as const, yAxisID, borderWidth: 0, pointRadius: 0, backgroundColor: band, borderColor: band, order: 3 };
@@ -836,7 +855,8 @@ function datasets(series: PlotSeries[], chartType: "line" | "bar"): ChartDataset
     const type = s.type ?? chartType;
     return [type === "line"
       ? { type, label: s.name, data: s.values, yAxisID, borderColor: colour, backgroundColor: colour, borderWidth: 2,
-          borderDash: s.tone === "forecast" ? [6, 4] : [], pointRadius: 0, tension: 0, order: 1 }
+          borderDash: s.tone === "forecast" && !s.pointStyle ? [6, 4] : [], pointRadius: s.pointStyle ? 3 : 0,
+          ...(s.pointStyle ? { pointStyle: s.pointStyle } : {}), tension: 0, order: 1 }
       : { type, label: s.name, data: s.values, yAxisID, backgroundColor: colour, borderWidth: 0, order: 2 }];
   });
 }
@@ -866,8 +886,9 @@ function ChartCanvas({ type, labels, series, horizontal = false, rightAxisTitle 
         indexAxis: h ? "y" : "x",
         plugins: {
           legend: {
-            display: ss.length > 1,
-            labels: { color: ink2, filter: (item: { text: string }) => !item.text.endsWith(BAND_HIGH) },
+            display: ss.length > 1 && !ss.some((s) => s.pointStyle), // point-style callers provide a wrapping text legend
+            labels: { color: ink2, ...(ss.some((s) => s.pointStyle) ? { usePointStyle: true } : {}),
+              filter: (item: { text: string }) => !item.text.endsWith(BAND_HIGH) },
           },
         },
         scales: {
@@ -909,13 +930,116 @@ export function BarChart({ labels, series, horizontal = false }: { labels: strin
   return <ChartCanvas type="bar" labels={labels} series={series} horizontal={horizontal} />;
 }
 
+// Saved money values, floating bar placement only. Match ChartCanvas's lazy load and lifetime.
+export function WaterfallChart({ steps, labels, currency, horizontal }: {
+  steps: WaterfallStep[]; labels: string[]; currency: string; horizontal?: boolean;
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => setNarrow((el.closest("section") ?? el).getBoundingClientRect().width < 560);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const h = horizontal ?? narrow;
+  const data = JSON.stringify({ steps, labels, currency, h });
+  useEffect(() => {
+    const { steps: ss, labels: ls, currency: c, h: horizontal } = JSON.parse(data) as {
+      steps: WaterfallStep[]; labels: string[]; currency: string; h: boolean;
+    };
+    const axis = axisFor(ss), bars = waterfallBars(ss, axis.min);
+    const navy = cssVar("--color-navy-700"), ink = cssVar("--color-ink");
+    const wrap = (label: string) => {
+      const lines: string[] = [];
+      for (const word of label.split(" ")) {
+        if (lines.length && lines[lines.length - 1].length + word.length < (horizontal ? 19 : 23))
+          lines[lines.length - 1] += ` ${word}`;
+        else lines.push(word);
+      }
+      return lines;
+    };
+    const scale = { min: axis.min, beginAtZero: false, grace: "15%", grid: { color: cssVar("--color-rule") },
+      ticks: { color: cssVar("--color-ink-2"), maxTicksLimit: horizontal ? 2 : 5, maxRotation: 0, precision: 0, includeBounds: false,
+        callback: (value: string | number) => money(Number(value), c, true) } };
+    const config: ChartConfiguration<"bar"> = {
+      type: "bar",
+      data: { labels: ls.map(wrap), datasets: [{ data: bars, borderSkipped: false,
+        backgroundColor: ss.map((s) => s.kind === "total" ? cssVar("--color-navy-800")
+          : s.value < 0 ? cssVar("--color-navy-100") : navy),
+        borderColor: navy, borderWidth: ss.map((s) => s.kind === "change" && s.value <= 0 ? 2 : 0),
+        barPercentage: 0.6, categoryPercentage: 0.8 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: reducedMotion() ? false : undefined,
+        indexAxis: horizontal ? "y" : "x", layout: { padding: { top: 24, right: horizontal ? 8 : 16, bottom: 16, left: 8 } },
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: horizontal ? { x: scale, y: { grid: { display: false }, ticks: { color: cssVar("--color-ink-2"), font: { size: 12 }, autoSkip: false } } }
+          : { y: scale, x: { grid: { display: false }, ticks: { color: cssVar("--color-ink-2"), font: { size: 12 }, autoSkip: false, maxRotation: 0 } } },
+      },
+      plugins: [{ id: "waterfallLabels", afterDatasetsDraw(chart) {
+        const { ctx, chartArea } = chart;
+        const elements = chart.getDatasetMeta(0).data;
+        const valueScale = chart.scales[horizontal ? "x" : "y"];
+        ctx.save();
+        ctx.font = `600 12px ${cssVar("--font-sans")}`;
+        elements.forEach((element, i) => {
+          const { x, y, width, height } = element.getProps(["x", "y", "width", "height"], true);
+          const end = valueScale.getPixelForValue(bars[i][1]);
+          const text = ss[i].kind === "total" ? money(ss[i].value, c, true) : signed(ss[i].value, c, true);
+          ctx.fillStyle = ink;
+          const negative = ss[i].kind === "change" && ss[i].value < 0;
+          if (horizontal) {
+            // Keep labels in the plot at phone widths, on a white backing above their own row.
+            const w = ctx.measureText(text).width;
+            const left = Math.max(chartArea.left, Math.min(chartArea.right - w, negative ? end - w - 4 : end + 4));
+            ctx.fillStyle = cssVar("--color-surface");
+            ctx.fillRect(left - 2, y - height / 2 - 17, w + 4, 16);
+            ctx.fillStyle = ink; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+            ctx.fillText(text, left, y - height / 2 - 2);
+          } else {
+            ctx.textAlign = "center"; ctx.textBaseline = negative ? "top" : "bottom";
+            ctx.fillText(text, x, end + (negative ? 4 : -4));
+          }
+          if (ss[i].kind === "change" && ss[i].value === 0) {
+            ctx.strokeStyle = navy; ctx.lineWidth = 2; ctx.beginPath();
+            if (horizontal) { ctx.moveTo(end, y - height / 2); ctx.lineTo(end, y + height / 2); }
+            else { ctx.moveTo(x - width / 2, end); ctx.lineTo(x + width / 2, end); }
+            ctx.stroke();
+          }
+          if (i + 1 < elements.length) {
+            const next = elements[i + 1].getProps(["x", "y", "width", "height"], true);
+            ctx.strokeStyle = "#98a0c2"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath();
+            if (horizontal) { ctx.moveTo(end, y + height / 2); ctx.lineTo(end, next.y - next.height / 2); }
+            else { ctx.moveTo(x + width / 2, end); ctx.lineTo(next.x - next.width / 2, end); }
+            ctx.stroke(); ctx.setLineDash([]);
+          }
+        });
+        ctx.restore();
+      } }],
+    };
+    let chart: Chart<"bar"> | null = null, gone = false;
+    loadChart().then((ChartJs) => {
+      if (gone || !canvas.current) return;
+      ChartJs.defaults.font.family = cssVar("--font-sans");
+      chart = new ChartJs(canvas.current, config);
+    }).catch(() => {});
+    return () => { gone = true; chart?.destroy(); };
+  }, [data]);
+  return <div ref={box} className={`relative min-w-0 ${h ? "h-80" : "h-48"}`} data-orientation={h ? "horizontal" : "vertical"}>
+    <canvas ref={canvas} aria-hidden="true" />
+  </div>;
+}
+
 // Title, the kind chip, the period, the chart (or its table) and a one-line summary the card is described by. The
 // toggle "Show as table" / "Show as chart" (aria-pressed) swaps the chart for `table` (bars.tableRows), which scrolls
 // inside its own box; a value the series lacks shows as missing, never zero.
 // `actions` (optional) sits beside the title: a control that drives this card only (Analytics' Product code).
-export function ChartCard({ title, kind, period, summary, table, children, actions }: {
+export function ChartCard({ title, kind, period, summary, table, children, status, actions, notes }: {
   title: ReactNode; kind?: ValueKind; period?: ReactNode; summary: ReactNode; table: ChartTable; children: ReactNode;
-  actions?: ReactNode;
+  status?: ReactNode; actions?: ReactNode; notes?: ReactNode;
 }) {
   const [asTable, setAsTable] = useState(false);
   const titleId = useId();
@@ -927,17 +1051,21 @@ export function ChartCard({ title, kind, period, summary, table, children, actio
       <div className="flex flex-wrap items-center gap-2">
         <h2 id={titleId} className="m-0 text-title font-semibold text-ink">{title}</h2>
         {kind && <KindChip kind={kind} />}
+        {status}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
         {actions}
         <button type="button" aria-pressed={asTable} onClick={() => setAsTable((x) => !x)}
-          className="ml-auto inline-flex h-7 items-center rounded-lg border border-rule-2 bg-surface px-2 text-body font-semibold text-ink hover:bg-navy-50 max-md:h-11">
+          className="inline-flex h-7 items-center rounded-lg border border-rule-2 bg-surface px-2 text-body font-semibold text-ink hover:bg-navy-50 max-md:h-11">
           {asTable ? SHOW_CHART : SHOW_TABLE}
         </button>
+        </div>
       </div>
       {period && <p className="num m-0 text-label text-ink-3">{period}</p>}
       {asTable
         ? <div className="min-w-0"><Table head={table.head} rows={rows} numeric={table.head.map((_, i) => i > 0)} /></div>
         : children}
       <p id={summaryId} className="m-0 text-label text-ink-2">{summary}</p>
+      {notes}
     </section>
   );
 }
@@ -949,6 +1077,22 @@ export function ChartCard({ title, kind, period, summary, table, children, actio
 // when everything fits on one page. Each press asks the server for that page; nothing is sorted or cut here. A page
 // past the last (the list shrank since it was read) asks the server once for the last page with records, or page 1
 // when none is left, so a shrinking list never strands the reader on an empty page (D-17).
+export function Disclosure({ name, result, chip, children }: {
+  name: ReactNode; result: ReactNode; chip: ReactNode; children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return <section className="min-w-0 rounded-[10px] border border-line bg-white">
+    <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)}
+      className="flex min-h-14 w-full flex-wrap items-center gap-2 p-4 text-left">
+      <span className={open ? "rotate-90" : ""}><Icon name="right" size={16} /></span>
+      <span className="min-w-0 text-title font-semibold">{name}</span>{chip}
+      <span className="text-label text-ink-2 max-md:basis-full md:ml-auto">{result}</span>
+    </button>
+    {open && <div id={id} className="min-w-0 border-t border-line p-4">{children}</div>}
+  </section>;
+}
+
 export function Pager({ page, pageSize, total, onPage }: {
   page: number; pageSize: number; total: number; onPage: (page: number) => void;
 }) {

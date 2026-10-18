@@ -155,8 +155,12 @@ def test_caps_use_one_database_clock_sample_and_reset_at_bangkok_midnight(client
     monkeypatch.setattr(db, "one", database_clock)
     monkeypatch.setitem(config.GLOBAL_CAPS, "ai", 1)
     db.in_tx(lambda conn: caps.spend(conn, session["session_id"], "ai"))
-    with pytest.raises(ApiError, match="today's limit|daily limit"):
+    with pytest.raises(ApiError) as refused:
         db.in_tx(lambda conn: caps.spend(conn, session["session_id"], "ai"))
+    assert (refused.value.status, refused.value.code, refused.value.extra) == (
+        429, "cap_reached", {"kind": "ai"})
+    assert refused.value.message == (
+        "The daily limit for AI requests has been reached; it resets at midnight Bangkok time.")
     moment = datetime.fromisoformat("2032-05-02T00:00:00+07:00")
     db.in_tx(lambda conn: caps.spend(conn, session["session_id"], "ai"))
     assert len(sampled) == 3, "Both cap windows must use one database-clock sample per spend"
@@ -451,7 +455,12 @@ def test_readme_records_fake_measurements_pending_live_and_release_order():
     assert "2 passed, 2 failed" in readme and "16,959" in readme
     assert "user-run" in readme.lower() and "09-23" in readme
     assert "--measurement-source" in readme and "-m agent.usage" in readme
-    assert not re.search(r"https?://|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:US)?\$\s?\d|\bThai\b|\.run\.app", readme, re.I)
+    # Required public-data attribution is the only section allowed to contain links.
+    # It precedes Assistant in the integrated README, so retaining only a prefix
+    # would accidentally omit the assistant and evaluation instructions entirely.
+    guide = re.sub(r"^## Data\n.*?(?=^## |\Z)", "", readme, count=1, flags=re.M | re.S)
+    assert "## Assistant" in guide and "## AI evaluation (user-run)" in guide
+    assert not re.search(r"https?://|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:US)?\$\s?\d|\bThai\b|\.run\.app", guide, re.I)
 
 
 def test_usage_report_cli_reads_retained_rows_without_generation_or_private_exports(

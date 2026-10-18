@@ -68,6 +68,8 @@ async def run(run_id):
                 label=final["label"] if final else jobs.GENERATING,
                 reason=final.get("reason") if final else "Another baseline generation is in progress.",
                 first_open="Live first-open exception; normal AI admission applies." if outcome == "failure" else None)
+    from . import preloaded
+    preloaded_counts = await preloaded.precompute(run_id)
     with db.tx() as conn:
         attempts = db.rows(conn, "SELECT * FROM ai_usage WHERE run_id = :r AND kind = 'BRIEF' "
                                 "AND precomputed IS TRUE ORDER BY started_at, attempt_id", r=run_id)
@@ -75,6 +77,7 @@ async def run(run_id):
             model_id=settings.model_id, location=settings.location, assistant_version=config.ASSISTANT_VERSION,
             usage=usage.summary([row for row in attempts if row["attempt_id"] in attempt_ids]),
             baseline_attempts=len(attempts), baseline_usage=usage.summary(attempts),
+            preloaded=preloaded_counts,
             cost=None, cost_reason="Billed cost is not recorded here; retain provider usage for the release record.")
     # Provider failures are release-nonfatal. They remain Fallback, never successful Precomputed rows.
     return 0

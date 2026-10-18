@@ -31,6 +31,7 @@ advance-day and the template checks call `refdata.truth` (spec §5).
 """
 from __future__ import annotations
 
+import copy
 import csv
 import functools
 import gzip
@@ -345,8 +346,7 @@ class PublicRef:
                 for r in _read("SELECT * FROM ref_forecast_run WHERE dataset_version = :v ORDER BY job", v=v)]
         self.forecast_runs = {r["demo_day"]: r for r in runs if r["job"] != F.BACKTEST}
         self._run_of_day = {day: r["forecast_run_id"] for day, r in self.forecast_runs.items()}
-        self.forecast = Called({**manifest["forecast"], "provider_summary": _provider_summary(runs)},
-                               self._forecast_point_rows)
+        forecast_payload = {**manifest["forecast"], "provider_summary": _provider_summary(runs)}
         md = self.settings["markdown_response"]
         self.markdown = MarkdownResponse(tuple(md["m20"]), tuple(md["m30"]))
         self.policy = Policy(**self.settings["policy"])
@@ -354,12 +354,31 @@ class PublicRef:
         self.label = self.settings["mark"]["text"]
         # the case counter's start: a manifest that names none numbers its keys from SUS-1 (the template build reads it)
         self.calendar = {"case_no_start": 1, **self.settings["calendar"], "horizon_end": self.settings["horizon_end"]}
+        self._bind_readers(forecast_payload)
+
+    def _bind_readers(self, forecast_payload: dict) -> None:
+        """Every instance owns its bound callables and caches, including evaluation views."""
+        self.forecast = Called(forecast_payload, self._forecast_point_rows)
         self._points = _cached(self._load_points)
         self._runs = _cached(self._load_runs)
         self.run_on = _cached(self._run_on)
         self.free_totes = _cached(self._free_totes)
         self.sale = _cached(self._sale)
         self._carried = _cached(self._load_carried)
+
+    def fresh_view(self, *, forecast_runs: dict, ref_type=None):
+        """An isolated view of this reference, with fresh loaders bound to the new instance.
+
+        Copy data together to preserve aliases within the view, never closures bound to the original.
+        Bulk loaders are class methods and bind to the view too; they retain their per-call memo policy.
+        """
+        readers = {'forecast', '_points', '_runs', 'run_on', 'free_totes', 'sale', '_carried'}
+        view = object.__new__(ref_type or type(self))
+        view.__dict__.update(copy.deepcopy({k: v for k, v in vars(self).items() if k not in readers}))
+        view.forecast_runs = copy.deepcopy(forecast_runs)
+        view._run_of_day = {day: r['forecast_run_id'] for day, r in view.forecast_runs.items()}
+        view._bind_readers(copy.deepcopy(dict(self.forecast)))
+        return view
 
     @property
     def last_review_day(self) -> int:

@@ -100,19 +100,27 @@
         "steps": [
           {
             "key": "store_rule",
-            "value": 100
+            "label": "Modeled store rule",
+            "kind": "total",
+            "value": 498120
           },
           {
-            "key": "store_rule_checked",
-            "value": 5
+            "key": "checks_change",
+            "label": "Change from equivalent stock checks",
+            "kind": "change",
+            "value": 9870
+          },
+          {
+            "key": "decisions_change",
+            "label": "Change from ShelfShift decisions vs modeled rule",
+            "kind": "change",
+            "value": 4350
           },
           {
             "key": "shelfshift",
-            "value": 2
-          },
-          {
-            "key": "markdowns_only",
-            "value": 107
+            "label": "ShelfShift total",
+            "kind": "total",
+            "value": 512340
           }
         ],
         "by_day": [
@@ -167,7 +175,7 @@
           }
         ]
       },
-      "footnote_x": 7,
+      "footnote_x": 15555,
       "waste": {
         "by_day": [
           {
@@ -289,14 +297,14 @@
           }
         },
         "shelfshift": {
-          "net": 100,
-          "full_price_coverage": 0.8,
-          "shortfall_filled": null,
-          "action_adjusted_fulfillment": null,
+          "net": 512340,
+          "full_price_coverage": 0.964,
+          "shortfall_filled": 1240,
+          "action_adjusted_fulfillment": 0.98,
           "incremental_units_sold_vs_markdowns_only": 2,
           "units_wasted": 7,
           "kg_wasted": 3.5,
-          "sell_through_moved": null,
+          "sell_through_moved": 0.882,
           "reasons": {
             "shortfall_filled": "No shortfall",
             "action_adjusted_fulfillment": "No shortfall",
@@ -409,20 +417,21 @@
           "last_day": -1
         },
         "cutoff_day": -8,
-        "wape": 0.2,
+        "wape": null,
         "baseline_wape": 0.3,
-        "bias": -0.1,
+        "bias": null,
         "baseline_bias": -0.2,
         "coverage_80": 0.75,
         "scored_days": 7,
         "excluded_stockout_days": 1,
-        "providers": [
-          "illustrative"
-        ],
-        "input_counts": {
-          "series": 2
+        "providers": {
+          "illustrative": 2
         },
-        "series_without_in_stock_days": 0
+        "input_counts": {
+          "series": 2,
+          "imputed_days": 3
+        },
+        "series_without_in_stock_days": 1
       },
       "settings": {
         "forecast_rule": "latest issued before day; reuse day 3 for days 4–6",

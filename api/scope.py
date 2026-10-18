@@ -128,15 +128,17 @@ def _prefilter(scope: FactScope) -> tuple[str, dict]:
     return "", {}
 
 
-def affected(conn, run: dict, scope: FactScope) -> tuple[list[dict], list[dict], list[dict]]:
+def affected(conn, run: dict, scope: FactScope, lock: bool = True) -> tuple[list[dict], list[dict], list[dict]]:
     """(live, committed, closed): the cases in scope by state, each list in case_id order, the live ones locked FOR
-    UPDATE (the caller holds the run FOR UPDATE). Each item is the cases row."""
+    UPDATE by default (the caller holds the run FOR UPDATE). A key read uses lock=False without case row locks.
+    Each item is the cases row."""
     ref = refdata.get(run["dataset_version"])
     extra, p = _prefilter(scope)
     sql = ("SELECT c.*, r.engine_input AS scope_input FROM cases c LEFT JOIN recommendations r ON r.run_id = c.run_id "
            "AND r.case_id = c.case_id AND r.rec_version = c.active_rec_version WHERE c.run_id = :r AND c.state = ANY(:s)"
            + extra + " ORDER BY c.case_id")
-    live = db.rows(conn, sql + " FOR UPDATE OF c", r=run["run_id"], s=list(cases.LIVE_STATES), **p)
+    live = db.rows(conn, sql + (" FOR UPDATE OF c" if lock else ""),
+                   r=run["run_id"], s=list(cases.LIVE_STATES), **p)
     rest = db.rows(conn, sql.replace(" ORDER BY c.case_id", CLOSED_AS_CANCELLED + " ORDER BY c.case_id"),
                    r=run["run_id"], s=[*COMMITTED, *CLOSED], **p)
     out = {"live": [], "committed": [], "closed": []}

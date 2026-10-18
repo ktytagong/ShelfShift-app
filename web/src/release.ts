@@ -18,10 +18,10 @@ export const SHIPPED: Surface[] = [
   {id:"events", name:"Business events", path:"/events"},
   {id:"verification", name:"Count and expiry checks with lot holds and what-ifs", path:null},
   {id:"assistant", name:"Gemini decision briefs and Ask", path:null}, // the full version ships Phase 9 (deploy session, 2026-10-18)
+  {id:"reading", name:"Gemini field-report reading", path:null}, // Phase 10 ships in release C (deploy session, 2026-10-18)
 ];
 export const NOT_IN_RELEASE: Surface[] = [
   {id:"orders", name:"Branch orders", path:null},
   {id:"task-detail", name:"Task detail", path:"/tasks/:id"},
-  {id:"reading", name:"Gemini field-report reading", path:null},
 ];
 export const isShipped = (id: string): boolean => SHIPPED.some(surface => surface.id === id);

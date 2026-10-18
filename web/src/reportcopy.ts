@@ -13,7 +13,7 @@ import { cityOf } from "./vocab.ts";
 
 // --- the shapes (04-API-CONTRACT Shapes → Report; the 07-15 and 07-20 rows) ------------------------------------------
 
-export type ReportKind = "CAPACITY" | "DEMAND_EVENT" | "TRANSPORT" | "STOCK_COUNT" | "EXPIRY" | "CONDITION";
+export type ReportKind = "CAPACITY" | "DEMAND_EVENT" | "TRANSPORT" | "STOCK_COUNT" | "EXPIRY" | "CONDITION" | "NOT_RELEVANT";
 export type ReportState = "READ" | "CONFIRMED" | "DISMISSED" | "WITHDRAWN" | "REPLACED";
 export type FieldValue = string | number | boolean | null;
 export type ReportFields = Record<string, FieldValue>;
@@ -55,6 +55,10 @@ export type Report = {
   day: number;
   affects_count: number;
   sku: string | null;
+  reading?: {reading_id: string; provenance: string; model_id: string; recorded_at: string; note: boolean; kind: string | null; suggestions: import("./api.ts").Suggestion[]} | null;
+  field_sources?: Record<string, string>;
+  field_corrections?: Record<string, {role: "manager" | "hq"; branch: string | null; revision: number}>;
+  impact_summary?: import("./summaryview.ts").ImpactSummaryData | null;
 };
 
 export type Allowance = {
@@ -69,6 +73,7 @@ export type PreviewRow = {
   benefit_now: number | null; benefit_if: number | null; changed: boolean; allowed: boolean | null; error: string | null;
 };
 export type Preview = {
+  preview_key?: string;
   signal_id: string | null; report_id: string | null; revision: number | null; kind: ReportKind; label: string;
   complete: boolean; message: string | null; cases: PreviewRow[]; more: number; more_text: string | null;
 };
@@ -110,14 +115,14 @@ export const confirmReport = (id: string, body: { revision: number; checked_both
   post<ReportConfirmed>(`${at(id)}/confirm`, body, key);
 export const dismissReport = (id: string, key: string) => post<Report>(`${at(id)}/dismiss`, {}, key);
 export const withdrawReport = (id: string, key: string) => post<Report>(`${at(id)}/withdraw`, {}, key);
-export const correctReport = (id: string, body: { revision: number; fields: ReportFields }, key: string) =>
+export const correctReport = (id: string, body: { revision: number; fields: ReportFields; kind?: ReportKind; observed?: string }, key: string) =>
   patch<Report>(at(id), body, key);
 export const holdLot = (lotId: string, body: { reason: string; signal_id: string }, key: string) =>
   post<unknown>(`/api/lots/${encodeURIComponent(lotId)}/holds`, body, key);
 
 // --- the kinds (07-UI-SPEC "Kind labels", Step 1 hints; HQ files transport only, spec §9) ---------------------------
 
-export const KINDS: readonly ReportKind[] = ["CAPACITY", "DEMAND_EVENT", "TRANSPORT", "STOCK_COUNT", "EXPIRY", "CONDITION"];
+export const KINDS: readonly ReportKind[] = ["CAPACITY", "DEMAND_EVENT", "TRANSPORT", "STOCK_COUNT", "EXPIRY", "CONDITION", "NOT_RELEVANT"];
 export const KIND_LABEL: Readonly<Record<ReportKind, string>> = {
   CAPACITY: "Storage capacity",
   DEMAND_EVENT: "Demand event",
@@ -125,6 +130,7 @@ export const KIND_LABEL: Readonly<Record<ReportKind, string>> = {
   STOCK_COUNT: "Stock count",
   EXPIRY: "Printed expiry date",
   CONDITION: "Condition",
+  NOT_RELEVANT: "Not relevant",
 };
 export const KIND_HINT: Readonly<Record<ReportKind, string>> = {
   CAPACITY: "A chiller or shelf space change",
@@ -133,12 +139,14 @@ export const KIND_HINT: Readonly<Record<ReportKind, string>> = {
   STOCK_COUNT: "Units on the shelf and in the backroom",
   EXPIRY: "Dates on the packs",
   CONDITION: "Damage, a possible safety issue, or display",
+  NOT_RELEVANT: "No operational fact",
 };
 // The kind marker's icon (no new icon is drawn in ui.tsx: the parallel lanes add theirs there).
 export const KIND_ICON: Readonly<Record<ReportKind, IconName>> = {
   CAPACITY: "snow", DEMAND_EVENT: "trend", TRANSPORT: "truck", STOCK_COUNT: "box", EXPIRY: "today", CONDITION: "alert",
+  NOT_RELEVANT: "info",
 };
-export const kindsFor = (role: "manager" | "hq"): readonly ReportKind[] => (role === "hq" ? ["TRANSPORT"] : KINDS);
+export const kindsFor = (role: "manager" | "hq"): readonly ReportKind[] => (role === "hq" ? ["TRANSPORT"] : KINDS.filter(k => k !== "NOT_RELEVANT"));
 export const LOT_KINDS: readonly ReportKind[] = ["STOCK_COUNT", "EXPIRY", "CONDITION"];
 export const CHECKED_KINDS: readonly ReportKind[] = ["STOCK_COUNT", "EXPIRY"]; // "When did you check?" (D-22)
 
@@ -200,6 +208,7 @@ export function fieldsOf(kind: ReportKind, f: ReportFields): string[] {
     case "STOCK_COUNT": return ["lot_id", "shelf_units", "backroom_units"];
     case "EXPIRY": return ["lot_id", "printed_date"];
     case "CONDITION": return ["lot_id", "condition"];
+    case "NOT_RELEVANT": return [];
   }
 }
 
@@ -358,6 +367,9 @@ export function summaryLine(r: Pick<Report, "kind" | "fields">, currency: string
   const f = r.fields;
   let s: string;
   switch (r.kind) {
+    case "NOT_RELEVANT":
+      s = "Not relevant · no impact preview";
+      break;
     case "CAPACITY":
       s = `Available ${f.zone === null || f.zone === undefined ? "" : `${String(f.zone)} `}totes: ${val(f.free_totes)} · ${day(f.valid_from)} – ${day(f.valid_to)}`;
       break;

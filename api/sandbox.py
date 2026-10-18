@@ -100,15 +100,15 @@ def clear_cache() -> None:
     _columns.clear()
 
 
-def init_worlds(conn, run_id: str, ref: refdata.Ref, truth: dict) -> None:
+def init_worlds(conn, run_id: str, ref: refdata.Ref, truth: dict, worlds=advance.WORLDS) -> None:
     """The seed's day-0 lots (record, plus physical from truth) and its inbound, in every world. A public set's are
     copied inside the database from its shared tables, set-based, never through memory (05.2 D-08, D-11)."""
     if ref.kind == "public":
-        ref.copy_worlds(conn, run_id, advance.WORLDS)
+        ref.copy_worlds(conn, run_id, worlds)
         return
     lots, deliveries = ref.lots0(), ref.inbound0()
     physical = truth.physical_of([l["lot_id"] for l in lots])
-    for world in advance.WORLDS:
+    for world in worlds:
         for l in lots:
             advance.insert_lot(conn, run_id, world, {**l, "moved_from": None}, physical.get(l["lot_id"], l["qty"]))
         for i in deliveries:
@@ -120,7 +120,7 @@ def init_worlds(conn, run_id: str, ref: refdata.Ref, truth: dict) -> None:
                    o=i["origin"])
 
 
-def network_check(conn, run: dict, ref: refdata.Ref, truth: dict) -> None:
+def network_check(conn, run: dict, ref: refdata.Ref, truth: dict, worlds=advance.WORLDS) -> None:
     """initial + external inbound = sold + wasted + on hand, on PHYSICAL stock, in every world (spec §6).
 
     Inbound counts once it has arrived: arrival_day <= the run day, because the day start has already moved the
@@ -135,7 +135,7 @@ def network_check(conn, run: dict, ref: refdata.Ref, truth: dict) -> None:
         physical = truth.physical_of([l["lot_id"] for l in lots] + [i["inbound_id"] for i in arrived])
         seeded[sku] = (sum(physical.get(l["lot_id"], l["qty"]) for l in lots),
                        sum(physical.get(i["inbound_id"], i["qty"]) for i in arrived))
-    for world in advance.WORLDS:
+    for world in worlds:
         for sku in sorted(ref.products):
             initial, inbound = seeded[sku]
             o = db.one(conn, "SELECT coalesce(sum(sold), 0) AS sold, coalesce(sum(wasted), 0) AS wasted FROM outcomes "
@@ -406,6 +406,9 @@ def activate_template(conn, run_id: str) -> str | None:
         raise TemplateError(f"{run_id} is not a completed inactive template (READY)")
     if db.one(conn, "SELECT 1 AS busy FROM ai_outputs WHERE run_id = :r AND status = 'GENERATING' LIMIT 1", r=run_id):
         raise TemplateError(f"{run_id} has an unfinished baseline attempt")
+    if db.one(conn, "SELECT 1 AS busy FROM readings WHERE run_id = :r AND purpose = 'ANSWER' "
+                   "AND provenance = 'PRECOMPUTED' AND status = 'GENERATING' LIMIT 1", r=run_id):
+        raise TemplateError(f"{run_id} has an unfinished precomputed answer")
     previous = active_template(conn)
     previous_id = previous["run_id"] if previous else None
     db.run(conn, "UPDATE demo_runs SET status = 'RETIRED', retired_at = now() "

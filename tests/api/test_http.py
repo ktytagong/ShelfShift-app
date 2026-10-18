@@ -33,7 +33,8 @@ from tests.api.verify_helpers import ack
 LABEL = "Synthetic data · hypothetical scenario"  # the contract's label (D-16)
 
 
-PUBLIC = {("GET", "/api/about"), ("GET", "/api/healthz"), ("GET", "/api/readyz"), ("POST", "/api/session")}
+PUBLIC = {("GET", "/api/about"), ("GET", "/api/healthz"), ("GET", "/api/readyz"), ("POST", "/api/session"),
+          ("GET", "/api/eval/summary")}  # 10-04: the public evaluation summary
 LATER = ("samples", "inventory", "metrics", "fact-checks", "upload")  # Phases 8, 10 (06.1 serves GET /api/transfers
 # and /api/forecasts; 07-07 the file read; 07-13 dismiss and withdraw a field report; 09-07 serves /brief and /chat;
 # 11 serves the public About)
@@ -565,6 +566,35 @@ def test_the_session_names_the_request_deadline_and_limit(client):
     assert s["requests"] == {"response_min": config.REQUEST_RESPONSE_MIN,
                              "max_per_version": config.MAX_REQUESTS_PER_VERSION}
     assert (s["requests"]["response_min"], s["requests"]["max_per_version"]) == (60, 2)  # settings.json today
+@pytest.mark.parametrize("hq", [False, True], ids=["manager", "hq"])
+def test_session_exposes_only_the_public_upload_bound_without_writes(client, monkeypatch, hq):
+    """The browser's file precheck uses the API policy; reading it spends nothing and changes no sandbox state."""
+    if hq:
+        as_seat(client, None)
+    session_id = client.cookies.get(COOKIE)
+    run_id = client.get("/api/session").json()["run_id"]
+
+    def snapshot():
+        with db.tx() as conn:
+            return {
+                "session": db.one(conn, "SELECT * FROM sessions WHERE session_id = :s", s=session_id),
+                "run": db.one(conn, "SELECT * FROM demo_runs WHERE run_id = :r", r=run_id),
+                "usage": db.rows(conn, "SELECT * FROM usage_counts WHERE scope = :s ORDER BY kind, window_start",
+                                 s=session_id),
+                "ai_usage": db.rows(conn, "SELECT * FROM ai_usage WHERE run_id = :r ORDER BY attempt_id", r=run_id),
+            }
+
+    before = snapshot()
+    supplied_bound = 123456
+    assert supplied_bound != config.UPLOAD_MAX_BYTES
+    monkeypatch.setattr(config, "UPLOAD_MAX_BYTES", supplied_bound)
+    response = client.get("/api/session")
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("upload_max_bytes") == supplied_bound
+    assert body["role"] == ("hq" if hq else "manager")
+    assert not {"settings", "uploads", "credentials", "bucket", "path", "DATABASE_URL", "CLOUD_SQL_INSTANCE"} & body.keys()
+    assert snapshot() == before
 
 
 def test_after_the_last_demo_day_the_session_shows_demo_complete(client):
@@ -861,12 +891,20 @@ def test_every_write_route_needs_an_idempotency_key(client):
     """FLOW-06 over every write route (from app.routes, never a hand list): a keyless request from a logged-in client
     is 400 idempotency_key, writes no key row and changes neither the session's seat nor its run, day or version."""
     routes = [r for r in app.routes if isinstance(r, APIRoute) and r.path != "/api/session"]
-    writes = sorted((m, r.path) for r in routes for m in r.methods if m in ("POST", "PATCH"))
+    # 10-CONTEXT D-01/D-22 and the dated 04-API-CONTRACT reading rows:
+    # suggestion-only readings deduplicate by content/context and, for saved
+    # answers, revision. They do not use an Idempotency-Key. Keep this an exact
+    # allowlist: the impact summary and every business write still need a key.
+    reading_routes = {"/api/readings", "/api/signals/{signal_id}/reading"}
+    assert reading_routes <= {r.path for r in routes if "POST" in r.methods}
+    writes = sorted((m, r.path) for r in routes for m in r.methods
+                    if m in ("POST", "PATCH") and r.path not in reading_routes)
     core = [r for r in routes if r.endpoint.__module__ == "api.app" and r.methods & {"POST", "PATCH"}]
     assert len(core) == 28, writes  # app.py's 29 POST/PATCH routes, less /api/session (06.1: sign-out in; seat
     # switch and Wait retired, 06.1-06; Phase 7: Can't check, 07-05; place and release a lot hold, 07-08;
     # Reviewed · keep plan, 07-09; Select another plan, 07-10; Cancel approved plan, 07-11; Reassess, 07-12;
-    # file, withdraw and dismiss a field report, 07-13; Mark done and edit a report, 07-14; the impact preview, 07-15)
+    # file, withdraw and dismiss a field report, 07-13; Mark done and edit a report, 07-14; the impact preview, 07-15;
+    # the unfiled preview, 07-20)
     assert ("POST", "/api/requests/{request_id}/cant-check") in writes
     assert ("POST", "/api/lots/{lot_id}/holds") in writes and ("POST", "/api/holds/{hold_id}/release") in writes
     assert ("POST", "/api/cases/{case_id}/review") in writes  # 07-09: Reviewed · keep plan
@@ -911,6 +949,7 @@ def test_every_write_route_needs_an_idempotency_key(client):
         "/api/signals/{signal_id}/done": {},  # 07-14: Mark done
         "/api/signals/{signal_id}": {"revision": 1},  # 07-14: edit a report
         "/api/signals/{signal_id}/preview": {"revision": 1},  # 07-15: the impact preview
+        "/api/signals/{signal_id}/summary": {"revision": ans.json()["revision"]},  # 10-14: the checked summary
         "/api/signals/preview": {"kind": "CAPACITY", "fields": {}},  # 07-20: the preview before filing
     }
     with db.tx() as conn:

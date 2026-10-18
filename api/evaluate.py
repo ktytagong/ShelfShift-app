@@ -10,11 +10,19 @@ The case page's three-way comparison (06.1 D-27, D-43; api/simplerule.py) is com
 cached in `engine_cache.simple_rule` under the same key and copied to the version row (`recommendations.simple_rule`).
 A cache row stored before 06.1 has none: the next write that reaches it (an evaluation, an adopt, a what-if) computes
 it through the worker and fills the row; a read never does (OPS-06). `evaluate()`'s result gains no key.
+
+The benchmark's long day transactions (08-14; 08-CONTEXT D-21) write their cache rows under a context-local namespace
+(`cache_namespace`, the benchmark's simulation id): an uncommitted benchmark row never holds up an app request that
+evaluates the same input, because the two keys differ. Outside that context the key is exactly the app's key above,
+byte for byte. The namespace only separates cache rows: it is no input to the engine, its result or `rec_version`, and
+no currentness check reads it.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from engine import evaluate, fact_checks, from_dict, rec_version, to_dict
 from engine.model import EngineInput
@@ -34,10 +42,28 @@ def compute(inp: EngineInput) -> tuple[dict, list[dict], dict]:
     return worker.run(_compute, inp)
 
 
+_NAMESPACE: ContextVar[str | None] = ContextVar("engine_cache_namespace", default=None)
+
+
+@contextmanager
+def cache_namespace(name: str):
+    """Within this context (this thread or task only), cache rows are keyed under `name` (the benchmark's simulation
+    id), so they never share a key with the app's rows; the previous namespace is restored on every exit."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("a cache namespace is a non-empty name")
+    token = _NAMESPACE.set(name)
+    try:
+        yield
+    finally:
+        _NAMESPACE.reset(token)
+
+
 def cache_key(inp: EngineInput) -> str:
-    """sha256 of the full-precision to_dict (engine/canonical.py); rec_version stays the label."""
+    """sha256 of the full-precision to_dict (engine/canonical.py); rec_version stays the label. Inside
+    `cache_namespace` the namespace and a separator precede the body, so the key differs from the app's."""
     body = json.dumps(to_dict(inp), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+    space = _NAMESPACE.get()
+    return hashlib.sha256((body if space is None else f"{space}\n{body}").encode("utf-8")).hexdigest()
 
 
 def _require_raw(inp: EngineInput) -> None:

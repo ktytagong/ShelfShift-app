@@ -21,9 +21,10 @@ REQUIRED_SHIPPED = {
     'reports':'/reports', 'policies':'/policies', 'about':'/about',
     'events':'/events', 'verification':None,  # Phase 7 ships with the full version (07-19..07-22)
     'assistant':None,  # Phase 9's briefs and Ask ship with the full version (deploy session, 2026-10-18)
+    'reading':None,  # Phase 10's field-report reading ships in release C (deploy session, 2026-10-18)
 }
 REQUIRED_NOT_IN_RELEASE = {
-    'orders':None, 'task-detail':'/tasks/:id', 'reading':None,
+    'orders':None, 'task-detail':'/tasks/:id',
 }
 PLACEHOLDERS = re.compile(r'coming soon|not implemented|\bTODO\b|\bTBD\b|placeholder|\blorem\b|Next day', re.I)
 
@@ -295,24 +296,31 @@ def test_ai_provenance_when_shipped(visitor, surface):
         page.set_viewport_size({'width':360,'height':844})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     else:
-        # Phase 10's evidence-first UI: use the real report controls and capture its own stored reading.
+        # Phase 10's evidence-first UI: the real "Report an observation" sheet reads the message through
+        # POST /api/readings (the suite's offline model script), and the filed report shows that stored reading's
+        # own provenance in its Source column.
+        from tests.web.test_detail_summary import submit_chiller
+        from tests.web.test_events import open_report
+        from tests.web.test_report_sheet import open_sheet
         readings=[]
         def capture(response):
-            if response.request.method=='POST' and response.status==200 and '/read' in response.url:
-                readings.append(response.json())
+            if response.request.method=='POST' and response.url.endswith('/api/readings'):
+                readings.append((response.status,response.json()))
         page.on('response',capture)
-        page.goto('/#/events')
-        page.get_by_role('button',name='Report a fact',exact=True).click()
-        page.get_by_label('Message (optional)',exact=True).fill('Please check the printed expiry on this lot.')
-        page.get_by_role('button',name='Next · analyse report',exact=True).click()
-        expect(page.get_by_role('heading',name='Review suggested fields',exact=True)).to_be_visible()
-        assert readings, 'the reading UI did not use a stored API reading'
-        stored=readings[-1];model=stored['model_id']
-        label=('Precomputed' if stored.get('provenance')=='PRECOMPUTED' else 'Live')+' · Gemini '+model
-        expect(page.get_by_text(label,exact=True)).to_be_visible()
-        page.get_by_role('button',name='Close without submitting',exact=True).click()
-        page.route(re.compile(r'.*/api/.*read.*'),lambda route:route.fulfill(status=503,json={'error':'ai_unavailable','message':'AI reading unavailable — enter or confirm fields manually'}))
-        page.get_by_role('button',name='Report a fact',exact=True).click()
-        page.get_by_label('Message (optional)',exact=True).fill('A different note to avoid reusing the previous reading.')
-        page.get_by_role('button',name='Next · analyse report',exact=True).click()
-        expect(page.get_by_text('AI reading unavailable — enter or confirm fields manually',exact=True)).to_be_visible()
+        report=submit_chiller(page)
+        assert len(readings)==1, 'the reading UI did not use one API reading'
+        status,stored=readings[0]
+        assert status==200 and stored['status']=='DONE' and stored['model_id'], stored
+        assert report['reading']['reading_id']==stored['reading_id']  # the report keeps the stored reading
+        label=('Precomputed' if stored['provenance']=='PRECOMPUTED' else 'Live')+' · Gemini '+stored['model_id']
+        open_report(page,report)
+        source=page.get_by_role('heading',name='Source',exact=True).locator('xpath=..')
+        expect(source.get_by_text(re.compile('^'+re.escape(label)+'( · Recorded .+ Bangkok time)?$'))).to_be_visible()
+        # A reading Gemini can't produce (the offline model returns nothing) falls back to manual entry.
+        dialog=open_sheet(page,evidence=True)
+        dialog.get_by_label('Message (optional)',exact=True).fill('A note the model cannot read.')
+        dialog.get_by_role('button',name='Next · analyse report',exact=True).click()
+        expect(dialog.get_by_text("Gemini couldn't read this report. Your message and file are kept. Choose a report kind and enter the details yourself.",exact=True)).to_be_visible()
+        expect(dialog.get_by_role('radio',name='Storage capacity',exact=True)).to_be_visible()
+        assert len(readings)==2 and readings[1][1]['status']=='FAILED', readings[1:]
+        expect(dialog.get_by_text(re.compile(r'(Precomputed|Live) · Gemini'))).to_have_count(0)

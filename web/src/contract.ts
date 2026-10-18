@@ -637,7 +637,7 @@ export type BenchmarkSummary = {
     waiting: number; left_open: Record<string, number>; retry_limit: number; time_to_decision: number | null };
   forecast_quality: { forecast_run_id: string; window: { first_day: number; last_day: number }; cutoff_day: number;
     wape: number | null; baseline_wape: number | null; bias: number | null; baseline_bias: number | null;
-    coverage_80: number | null; scored_days: number; excluded_stockout_days: number; providers: string[];
+    coverage_80: number | null; scored_days: number; excluded_stockout_days: number; providers: Record<string, number>;
     input_counts: Record<string, number>; series_without_in_stock_days: number };
   settings: Record<string, unknown>; assumptions: { markdown_response: unknown; stock_record_errors: unknown };
   categories_without_schedule: string[]; policy: Record<string, unknown>;

@@ -409,13 +409,13 @@ def test_unsaved_counts_survive_a_refetch(visitor):
     card = request_card(page, q)
     shelf = count_input(card, q, q["lot_ids"][0], "shelf")
     shelf.fill("7")
-    card.get_by_label("Reply").fill("Half counted")
+    card.get_by_role("textbox", name="Reply", exact=True).fill("Half counted")
     checked_just_now(card)
     just_now = card.get_by_role("group", name=WHEN).get_by_role("radio", name=JUST_NOW, exact=True)
 
     refocus(page)  # a background refetch never wipes what was typed, the check time included
     expect(shelf).to_have_value("7")
-    expect(card.get_by_label("Reply")).to_have_value("Half counted")
+    expect(card.get_by_role("textbox", name="Reply", exact=True)).to_have_value("Half counted")
     expect(just_now).to_be_checked()
     expect(card).not_to_contain_text("The answer changed since you looked at it")
 
@@ -428,7 +428,7 @@ def test_unsaved_counts_survive_a_refetch(visitor):
     expect(card).to_contain_text("Answered elsewhere")
     expect(card).to_contain_text("The answer changed since you looked at it")
     expect(shelf).to_have_value("7")
-    expect(card.get_by_label("Reply")).to_have_value("Half counted")
+    expect(card.get_by_role("textbox", name="Reply", exact=True)).to_have_value("Half counted")
     expect(just_now).to_be_checked()
 
 
@@ -1065,7 +1065,7 @@ def test_a_combined_request_is_one_row_with_two_lanes(visitor):
     expect(tile_count(page, "to_answer")).to_have_text("1")
 
 
-def test_a_photo_alone_cant_check_and_the_simulated_chip(visitor):
+def test_a_photo_alone_cant_check_and_the_simulated_chip(visitor, request):
     """VER-04, D-07, D-18: a photo with no counts reads "Photo received · count missing" and its photo is labelled
     "Photo · not a count"; Can't check goes through its confirm step ("Keep request open" dismisses) and moves the
     request to Closed with "Can't check", the fact's exposure line still there; a preloaded request carries
@@ -1079,10 +1079,18 @@ def test_a_photo_alone_cant_check_and_the_simulated_chip(visitor):
     switch_seat(page, q["to_branch"])
     open_tasks_page(page)
     page.set_viewport_size({"width": 375, "height": 812})  # the phone top bar hides the nav: open Tasks first
+    expect(page.get_by_role("button", name="Open menu", exact=True)).to_be_visible()
     card = page.locator(f"main#content article[data-request-id='{q['request_id']}']")
     expect(card.get_by_text("Simulated request", exact=True)).to_be_visible()
     bar = card.get_by_test_id("deadline-bar")
-    box, text = bar.locator("span[aria-hidden='true']").first.bounding_box(), bar.get_by_test_id("deadline-text").bounding_box()
+    geometry = bar.evaluate("""element => ({
+        viewport: window.innerWidth,
+        box: element.querySelector("span[aria-hidden='true']").getBoundingClientRect().toJSON(),
+        text: element.querySelector('[data-testid="deadline-text"]').getBoundingClientRect().toJSON()
+    })""")
+    request.node.user_properties.append(("deadline_geometry", json.dumps(geometry)))
+    assert geometry["viewport"] == 375
+    box, text = geometry["box"], geometry["text"]
     assert box and text and (text["x"] >= box["x"] + box["width"] or text["y"] >= box["y"] + box["height"]), (box, text)
     page.set_viewport_size({"width": 1280, "height": 800})
     card = request_card(page, q)

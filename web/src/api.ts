@@ -4,6 +4,8 @@
 // Erasable syntax only (no enums, namespaces or parameter properties), so `node --test` runs this file as it is.
 
 // (proposed; 06.1-UI-SPEC "Interaction states", replaces the demo-server wording, D-03)
+import { parseSse, type ImpactSummaryData, type SummaryEvent } from "./summaryview.ts";
+export type ImpactSummary = ImpactSummaryData;
 export const NETWORK = "Could not reach ShelfShift. Check your connection and try again.";
 
 // A failed call: the envelope's code and message word for word, with every other envelope key kept in `extra`.
@@ -72,10 +74,68 @@ export async function get<T>(path: string): Promise<T> {
   return (await send(path, {})).json() as Promise<T>;
 }
 
+// Public projection from agent/eval/store.py: private evidence and reviewer identity never enter the view.
+export type EvalCounts = { p: number; a: number; f: number; x: number };
+export type EvalCell = EvalCounts & { run: number; result: "PASS" | "FAIL" | "NA" | "NOT_SCORED" | "INVALID" };
+export type EvalFailure = { run: number; scenario: number; item_id: string; item: string; note: string | null; context: string | null };
+export type EvalGroup = EvalCounts & {
+  name: string;
+  scenarios: { scenario: number; title: string; runs: EvalCell[] }[];
+  failures: EvalFailure[];
+};
+export type EvalReport = {
+  label: string; model_id: string; assistant_version: string; build: string; fingerprint: string;
+  date: string; reviewed_at: string | null;
+  safety: { gate: string; label: string; attempted: number; shown?: number; executed?: number; exposed?: number;
+    result: "PASS" | "FAIL"; note: string | null }[];
+  groups: EvalGroup[];
+  usage: { calls: number; tokens: number };
+};
+export type EvalSummaryPayload = {
+  published: EvalReport | null;
+  latest_unpublished: { date: string; reason: string } | null;
+  current: { model_id: string | null; assistant_version: string | null } | null;
+  version_mismatch: boolean;
+};
+export function getEvalSummary(): Promise<EvalSummaryPayload> {
+  return get<EvalSummaryPayload>("/api/eval/summary");
+}
+
 // A file download (the case export): the response body exactly as the API sent it, never parsed or re-serialised, so
 // the saved file is the API's own. A failure is the same ApiError as any read.
 export async function getBlob(path: string): Promise<Blob> {
   return (await send(path, {})).blob();
+}
+
+export async function startSummary(id: string, revision: number, key: string,
+  onEvent: (event: SummaryEvent) => void = () => {}, signal?: AbortSignal): Promise<ImpactSummaryData> {
+  const response = await send(`/api/signals/${encodeURIComponent(id)}/summary`, { method: "POST", signal,
+    headers: { "Content-Type": "application/json", "Accept": "text/event-stream", "Idempotency-Key": key },
+    body: JSON.stringify({ revision }) });
+  if (!response.body || !response.headers.get("Content-Type")?.includes("text/event-stream"))
+    throw new ApiError(0, "interrupted", "AI summary unavailable.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let pending = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      const parsed = parseSse(pending); pending = parsed.rest;
+      for (const frame of parsed.events) {
+        if (signal?.aborted) throw new ApiError(0, "interrupted", "AI summary unavailable.");
+        if (frame.event === "error") throw new ApiError(500, String(frame.data.error ?? "error"), String(frame.data.message ?? "AI summary unavailable."));
+        onEvent(frame);
+        if (frame.event === "summary") {
+          if (typeof frame.data.output_id !== "string" || typeof frame.data.text !== "string"
+            || !Array.isArray(frame.data.refs) || typeof frame.data.status !== "string")
+            throw new ApiError(0, "interrupted", "AI summary unavailable.");
+          return frame.data as unknown as ImpactSummaryData;
+        }
+      }
+      if (done) throw new ApiError(0, "interrupted", "AI summary unavailable.");
+    }
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
 export async function post<T>(path: string, body: unknown, key: string): Promise<T> {
@@ -196,6 +256,14 @@ export async function form<T>(path: string, data: FormData, key: string): Promis
   return (await send(path, { method: "POST", headers: { "Idempotency-Key": key }, body: data })).json() as Promise<T>;
 }
 
+export type Suggestion = {field: string; value: string | number | boolean | null; state: string; source: string | null; excerpt: string | null};
+export type Reading = {reading_id: string; status: string; served: string; kind: string | null; suggestions: Suggestion[];
+  needs_input: unknown[]; note: boolean; provenance: string; model_id: string; reason: string | null};
+// Reading admission is content-keyed by the server, not an idempotent business write.
+export async function readReport(data: FormData): Promise<Reading> {
+  return (await send("/api/readings", {method: "POST", body: data})).json() as Promise<Reading>;
+}
+
 // The closed set of `error` codes the API returns (api/errors.py CODES; contract "Errors"). ApiError.code may also
 // be "network" (no answer) or "error" (an answer that was not the API's envelope).
 export type ErrorCode =
@@ -245,6 +313,7 @@ export type Session = {
   // The IANA zone every recorded time is shown in ("Asia/Bangkok", settings caps.time_zone; spec rev 6.7 §5), never a
   // client constant and never the browser's own zone (contract row 2026-10-16, Request recount; plan 05-17).
   time_zone: string;
+  upload_max_bytes: number; // public server policy; drop validation never substitutes a client constant
 };
 
 export type Due = { day: number; min: number; date: string; weekday: string; label: string };
@@ -397,6 +466,7 @@ export type NeedsInput = { lot_id: string; field: "shelf_units" | "backroom_unit
 // `reporter_role` and `reporter_branch` the seat that answered, as recorded, and `created_at` the server time this
 // revision was written (the recorded answer time, ISO-8601 UTC; one per revision) (contract row 2026-10-16).
 export type AnswerSignal = {
+  reading?: AnswerReading | null;
   signal_id: string;
   revision: number;
   kind: "STOCK_COUNT";
@@ -410,6 +480,21 @@ export type AnswerSignal = {
   reporter_branch: string | null;
   created_at: string;
 };
+
+// Saved ANSWER projection; null means missing, undefined means the server did not report it.
+export type AnswerReading = {
+  reading_id: string; status: "DONE" | "GENERATING" | "FAILED" | "REFUSED" | "INTERRUPTED";
+  attempt: number; served: string; kind: string | null; provenance: string; model_id: string | null;
+  recorded_at: string; reason: string | null; observations: string[]; note: boolean;
+  pending_counts: Record<string, LotCount> | null; printed_dates: Record<string, string> | null;
+  not_checked: string | null; conflicts: { field: string; typed: string | number; read: string | number }[];
+  after_confirmation: boolean; differs_from_confirmed: boolean;
+};
+export async function readAnswer(signalId: string, revision: number): Promise<AnswerReading> {
+  return (await send(`/api/signals/${encodeURIComponent(signalId)}/reading`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision }),
+  })).json() as Promise<AnswerReading>;
+}
 
 export type Request = {
   request_id: string;

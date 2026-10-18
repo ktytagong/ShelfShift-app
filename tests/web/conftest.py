@@ -2,9 +2,8 @@
 to a real API child on the browser suite's own _test database, opened by headless Chromium. Assistant-only scripted
 transport is opt-in from tests/web/test_assistant.py; no product setting enables it. All other API paths stay real.
 
-Order: `web_database` refuses any database whose name does not end in _web_test first (review WR-09: a bare
-`pytest` collects tests/api first, whose conftest points DATABASE_URL at Phase 4's shelfshift_test), then Phase 4's
-`schema` fixture runs
+Order: `web_database` refuses any database not matching [a-z0-9_]+_web_test first (review WR-09: a bare `pytest` collects
+tests/api first, whose conftest points DATABASE_URL at Phase 4's shelfshift_test), then Phase 4's `schema` fixture runs
 (it refuses a database whose name does not end in _test and refuses Cloud SQL before anything is dropped), then `template` builds the Day-3 template, then the API child and the preview child
 start on controlled ports (an occupied port fails setup naming it), each polled until it is ready. Both children stop
 before the session's fixtures are torn down. Both credentials (the store passcode and HQ's own, 06.1 D-47) are random
@@ -21,6 +20,7 @@ once per run.
 from __future__ import annotations
 
 import os
+import re
 
 # Before anything imports api.config: a bare `pytest tests/web` must never fall back to Phase 4's shelfshift_test.
 os.environ.setdefault("DATABASE_URL", "postgresql+pg8000://postgres@localhost:5432/shelfshift_web_test")
@@ -183,10 +183,12 @@ def _stop(child: subprocess.Popen | None) -> None:
         child.wait(STOP_S)
 
 
-def _json_is(expected: dict):
+def _json_is(expected: dict, *, allow_extra: bool = False):
     def ready(r: httpx.Response) -> bool:
         try:
-            return r.status_code == 200 and r.json() == expected
+            body = r.json()
+            return r.status_code == 200 and (body == expected or
+                (allow_extra and isinstance(body, dict) and all(body.get(k) == v for k, v in expected.items())))
         except ValueError:
             return False
     return ready
@@ -318,7 +320,8 @@ def web(web_template, tmp_path_factory, assistant_api_binding, assistant_api_com
                 cwd=assistant_api_binding.root, stdout=out, stderr=err,
                 env=_child_env(DATABASE_URL=config.DATABASE_URL, DEMO_PASSCODE=passcode, HQ_PASSCODE=hq_passcode,
                                GCP="off", GEMINI_MODEL=TEST_MODEL, VERTEX_LOCATION="offline-test-location",
-                               DEMO_MODE="on", ENGINE_WORKER="on"))
+                               DEMO_MODE="on", ENGINE_WORKER="on", SS_FAKE_AI="1",
+                               PYTHONPATH=os.pathsep.join((str(ROOT / "tests/web/fake_ai"), str(assistant_api_binding.root)))))
         _wait_ready("the API child", f"{api_url}/api/readyz", _api_readiness(assistant_api_binding),
                     api, logs / "api.err")
 
@@ -428,6 +431,11 @@ def open_visitor(browser: Browser, web: Web):
 
     yield open_one
     for context in made:
+        # Only teardown discards unfinished handlers: tests can deliberately hold routes, so waiting could hang.
+        # Remove them before close disposes the request context; failures during the test still propagate normally.
+        for page in context.pages:
+            page.unroute_all(behavior="ignoreErrors")
+        context.unroute_all(behavior="ignoreErrors")
         context.close()
     with db_tx() as conn:
         for row in db.rows(conn, count + " FOR UPDATE"):
@@ -464,6 +472,25 @@ def db_tx():
 
     require_test_database(config.DATABASE_URL)
     return db.tx()
+
+
+def clear_browser_sandbox_budget(conn) -> None:
+    """Isolate cases, retaining the real shared budget inside each case and every other counter."""
+    from api import caps
+
+    now = conn.execute(sa.text("SELECT clock_timestamp()")).scalar_one()
+    conn.execute(sa.text("DELETE FROM usage_counts WHERE scope=:scope AND kind=:kind AND window_start=:start"),
+                 {"scope": caps.GLOBAL, "kind": "sandbox", "start": caps.window_start("day", now)})
+
+
+@pytest.fixture(autouse=True)
+def isolated_browser_sandbox_budget(request):
+    # Do not make static web checks depend on Postgres, the API or a browser.
+    if "web" not in request.fixturenames:
+        return
+    request.getfixturevalue("web")  # database/schema/template must exist before cleanup
+    with db_tx() as conn:
+        clear_browser_sandbox_budget(conn)
 
 
 def run_id(page: Page) -> str:
@@ -584,11 +611,14 @@ CHECKED_NOW = {"observed": "now"}  # "When did you check?" → "Checked just now
 
 @pytest.fixture(autouse=True)
 def workspace_budget(request):
-    """Return each browser test's workspace usage after its browser contexts close (was test_reports.py's own, 08).
+    """Return each browser test's workspace and impact-preview usage after its browser contexts close (was
+    test_reports.py's own, 08).
 
-    Each test still spends against the real cap; its successful workspace creations must not consume the budget of
-    later, unrelated browser tests. The merged suite (freeze + Phase 7 + Phase 9) opens more workspaces in one run than
-    the daily global cap (settings caps.global.sandbox), so every test that drives the app gives its own back.
+    Each test still spends against the real caps; its successful workspace creations and engine previews must not
+    consume the budget of later, unrelated browser tests. The merged suite (freeze + Phase 7 + Phase 9) opens more
+    workspaces in one run than the daily global cap (settings caps.global.sandbox), and Phase 10's report details
+    preview on open (the impact summary's admission), so back-to-back tests pass the per-minute global preview cap
+    (caps.global.preview, 07-20 review); every test that drives the app gives its own of both back.
     """
     if "web" not in request.fixturenames:  # the static checks (make web-check) open no database
         yield
@@ -596,22 +626,24 @@ def workspace_budget(request):
     request.getfixturevalue("web")
     from api import db
 
+    kinds = ("sandbox", "preview")
     with db.tx() as conn:
-        before = {row["window_start"]: row["count"] for row in db.rows(
-            conn, "SELECT window_start, count FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox'")}
+        before = {(row["kind"], row["window_start"]): row["count"] for row in db.rows(
+            conn, "SELECT kind, window_start, count FROM usage_counts WHERE scope = 'global' AND kind = ANY(:k)",
+            k=list(kinds))}
     yield
     with db.tx() as conn:
-        for row in db.rows(conn, "SELECT window_start, count FROM usage_counts "
-                                "WHERE scope = 'global' AND kind = 'sandbox' FOR UPDATE"):
-            previous = before.get(row["window_start"])
+        for row in db.rows(conn, "SELECT kind, window_start, count FROM usage_counts "
+                                "WHERE scope = 'global' AND kind = ANY(:k) FOR UPDATE", k=list(kinds)):
+            previous = before.get((row["kind"], row["window_start"]))
             created = row["count"] - (previous or 0)
-            assert created >= 0, "another test changed the workspace counter"
+            assert created >= 0, f"another test changed the {row['kind']} counter"
             if not created:
                 continue
             if previous is None:
-                db.run(conn, "DELETE FROM usage_counts WHERE scope = 'global' AND kind = 'sandbox' "
-                             "AND window_start = :w AND count = :n", w=row["window_start"], n=created)
+                db.run(conn, "DELETE FROM usage_counts WHERE scope = 'global' AND kind = :k "
+                             "AND window_start = :w AND count = :n", k=row["kind"], w=row["window_start"], n=created)
             else:
                 db.run(conn, "UPDATE usage_counts SET count = count - :n "
-                             "WHERE scope = 'global' AND kind = 'sandbox' AND window_start = :w",
-                       n=created, w=row["window_start"])
+                             "WHERE scope = 'global' AND kind = :k AND window_start = :w",
+                       n=created, k=row["kind"], w=row["window_start"])

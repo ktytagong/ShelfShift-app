@@ -1018,8 +1018,8 @@ def test_preview_texts(client, monkeypatch):
 
 def test_preview_counts_the_rest(client):
     """Edge SIG-03 (D-16): with seven live cases in the report's scope (six twins of the story lot added, each input
-    holding the counted lot), the preview re-runs the first five by case_id and counts the rest: more = 2, "and 2
-    more affected cases". The limit is reports.preview_cases."""
+    holding the counted lot), the preview re-runs the five earliest decisions (10 D-08) and counts the rest:
+    more = 2, "Previewing 5 of 7 affected cases.". The limit is reports.preview_cases."""
     card = test_http.story(client)
     run = session_run(client)
     lot_id = case_lot(run["run_id"], card["case_id"])
@@ -1032,7 +1032,7 @@ def test_preview_counts_the_rest(client):
     assert len(expected) == 7 and card["case_id"] in expected
     out = preview(client, rep["signal_id"]).json()
     assert [c["case_id"] for c in out["cases"]] == expected[:5] and len(out["cases"]) == 5
-    assert (out["more"], out["more_text"]) == (2, "and 2 more affected cases"), out
+    assert (out["more"], out["more_text"]) == (2, "Previewing 5 of 7 affected cases."), out
 
 
 def test_preview_is_single_flight(client, monkeypatch):

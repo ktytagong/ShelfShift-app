@@ -2,7 +2,7 @@
   "_about": "Illustrative contract-shaped browser data only, never an evaluation result or proof of server authorization. Null receipt sales/waste and decision timing mean not recorded; headline nulls retain their explicit reasons. Immutable published benchmark IDs are illustrative.",
   "status": "historical",
   "app": {
-    "engine": "illustrative-older-engine",
+    "engine": "illustrative-current-engine",
     "dataset": "illustrative-dataset",
     "policy": "illustrative-policy",
     "forecast_runs": [
@@ -419,9 +419,9 @@
         "coverage_80": 0.75,
         "scored_days": 7,
         "excluded_stockout_days": 1,
-        "providers": [
-          "illustrative"
-        ],
+        "providers": {
+          "illustrative": 2
+        },
         "input_counts": {
           "series": 2
         },

@@ -128,9 +128,8 @@ def test_real_now_and_not_in_release_signed_out(browser, web):
         block = page.locator('[data-about-section="real-now"]')
         expect(block).to_contain_text(ENGINE_VERSION)
         expect(block).to_contain_text("Demand forecasts precomputed through Google Cloud BigQuery ML: Fixture provider mix.")
-        if "assistant" in REQUIRED_SHIPPED:  # Gemini briefs and Ask ship; field-report reading does not (release.ts)
-            expect(block).to_contain_text("writes decision briefs · answers questions.")
-            expect(block).not_to_contain_text("reads field reports")
+        if "assistant" in REQUIRED_SHIPPED:  # Gemini briefs and Ask ship; release C adds field-report reading (release.ts)
+            expect(block).to_contain_text("writes decision briefs · answers questions · reads field reports.")
         else:
             expect(block).not_to_contain_text("Gemini on Google Cloud")
         expect(page.get_by_text("Branch orders is not part of this release.", exact=True)).to_be_visible()
@@ -216,6 +215,16 @@ def test_about_shows_the_published_benchmark(visitor, matches):
         expect(block).not_to_contain_text('Evaluation not yet available')
 
 
+PHASE10_SUMMARY={'label':'Preliminary evaluation · 10 scenarios × 3 runs','model_id':'fixture-model',
+  'assistant_version':'fixture-assistant','build':'different-bui','fingerprint':'fixture-fing','date':'2026-10-18',
+  'reviewed_at':'2026-10-18','usage':{'calls':0,'tokens':0},
+  'safety':[{'gate':'unsourced','label':'Unsourced numbers','attempted':0,'shown':0,'result':'PASS','note':None}],
+  'groups':[{'name':name,'p':1 if runs else 0,'a':1 if runs else 0,'f':0,'x':0,'failures':[],
+             'scenarios':[{'scenario':1,'title':'Scenario 1','runs':runs}] if runs else []}
+            for name,runs in (('Safety',None),('Assistant',[{'run':r,'p':1 if r==1 else 0,'a':1 if r==1 else 0,'f':0,'x':0,
+                                                             'result':'PASS' if r==1 else 'NA'} for r in (1,2,3)]),('Reading',None))]}
+
+
 @pytest.mark.parametrize('with_publication',[False,True])
 def test_about_ai_evaluation_states(visitor, with_publication):
     import pathlib
@@ -223,24 +232,29 @@ def test_about_ai_evaluation_states(visitor, with_publication):
     from tests.api.test_about import eval_tables, seed_eval
     page=visitor.page
     reason='Safety gate failed · not published'
+    optional=pathlib.Path(__file__).resolve().parents[2]/'web/src/evalsummary.tsx'
+    rendered=optional.is_file() and with_publication
     with eval_tables():
         with db.tx() as conn:
             tpl=about.sandbox.active_template(conn)
-            if with_publication: seed_eval(conn,tpl['dataset_version'])
+            # With Phase 10's EvalSummary present, the publication carries the summary shape it renders.
+            if with_publication: seed_eval(conn,tpl['dataset_version'],summary=PHASE10_SUMMARY if rendered else None)
             seed_eval(conn,tpl['dataset_version'],ident='p11-later',published=False,reason=reason,started='2026-10-18T05:00:00Z')
         page.goto('/#/about')
         block=about_card(page,'ai-evaluation')
+        if rendered:
+            expect(block).to_contain_text('Preliminary evaluation · 10 scenarios × 3 runs')
         notice=block.get_by_role('status')
         expect(notice).to_have_text('The latest evaluation run (18 Oct 2026) is not published: '+reason+'.')
         if with_publication:
             expect(block.get_by_text('Different version · not representative of the current app',exact=True)).to_be_visible()
-        optional=pathlib.Path(__file__).resolve().parents[2]/'web/src/evalsummary.tsx'
-        if not optional.is_file() or not with_publication:
+        if not rendered:
             # This is an explicit, skip-free absent-module assertion, not a claimed report render.
             empty=block.get_by_role('heading',name='AI evaluation not yet published.',exact=True)
             expect(empty).to_be_visible()
             expect(block.locator('table')).to_have_count(0)
             assert notice.evaluate('(el) => el.getBoundingClientRect().top') < empty.evaluate('(el)=>el.getBoundingClientRect().top')
         else:
-            expect(block).to_contain_text('Preliminary evaluation · 10 scenarios × 3 runs')
+            expect(block.get_by_role('heading',name='Safety gate',exact=True)).to_be_visible()
+            expect(block.get_by_role('table',name='Assistant results')).to_be_visible()
         assert 'accuracy' not in block.inner_text().lower() and '%' not in block.inner_text()

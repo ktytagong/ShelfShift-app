@@ -78,6 +78,7 @@ def session_info(conn, session: dict, run: dict | None = None) -> dict:
         "time_zone": config.CAP_TZ.key,  # recorded times are shown in this zone (spec rev 6.7 §5; caps.time_zone)
         # the request panel's deadline and the per-version limit, from settings (07-CONTEXT D-05, D-07; 07-21)
         "requests": {"response_min": config.REQUEST_RESPONSE_MIN, "max_per_version": config.MAX_REQUESTS_PER_VERSION},
+        "upload_max_bytes": config.UPLOAD_MAX_BYTES,  # public file precheck policy; never export storage settings
         "nav_counts": planning.nav_counts(conn, run, session),  # Today's cards, open decisions, tasks (06.1-13)
     }
 

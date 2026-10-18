@@ -32,8 +32,9 @@ OUTSIDE_INDEX = b"OUTSIDE-INDEX-MARKER"
 # (tests/api/test_http.py counts them) + healthz, readyz, session, the 15 of the 06.1 route modules (api/routes_*.py)
 # and Phase 11's three (/api/about, /api/reports/workspace, /api/reports/benchmark) = 43; then Phase 7's 17 in
 # api.app (requests, holds, reports, file, select, review, cancel), Phase 9's 6 (api/routes_assistant.py)
-# and 07-20's preview before a report is filed (POST /api/signals/preview)
-API_ROUTES_AT_PHASE6_BASE = 67
+# and 07-20's preview before a report is filed (POST /api/signals/preview) = 67; then Phase 10's 4 (GET
+# /api/eval/summary, POST /api/readings, POST /api/signals/{id}/reading and /summary; release C)
+API_ROUTES_AT_PHASE6_BASE = 71
 
 
 @pytest.fixture

@@ -669,7 +669,9 @@ def confirm_count(request: Request, signal_id: str, s: dict = Session, body: dic
     def work(conn, run, actor, s):  # a field report goes to its owner's confirmation (07-13; 07-CONTEXT D-15)
         if reports.is_report(conn, run, signal_id):  # a STOCK_COUNT report takes the tick as an answer does (07-14)
             return reports.confirm(conn, run, actor, signal_id, revision, body.get("checked_both"))
-        return signals.confirm(conn, run, actor, signal_id, revision, body.get("checked_both"))
+        return signals.confirm(conn, run, actor, signal_id, revision, body.get("checked_both"),
+                               reading_id=body.get("reading_id"), value_source=body.get("value_source"),
+                               checked_date=body.get("checked_date"))
     return _write(request, s, f"confirm:{signal_id}", body, work, mode="UPDATE")
 
 
@@ -740,16 +742,16 @@ async def _report_parts(request: Request, names: tuple[str, ...]) -> tuple[dict,
     return {n: form.get(n) for n in names}, data
 
 
-def _report_fields(raw: str | None) -> dict | None:
+def _report_fields(raw: str | None, name: str = "fields") -> dict | None:
     """A form's `fields` part as the kind's JSON object; None when blank (PATCH: no field to correct)."""
     if raw is None or not raw.strip():
         return None
     try:
         fields = json.loads(raw)
     except (ValueError, RecursionError):
-        raise ApiError(400, "bad_request", "fields must be a JSON object of the report's fields") from None
+        raise ApiError(400, "bad_request", f"{name} must be a JSON object of the report's fields") from None
     if not isinstance(fields, dict):
-        raise ApiError(400, "bad_request", "fields must be a JSON object of the report's fields")
+        raise ApiError(400, "bad_request", f"{name} must be a JSON object of the report's fields")
     return fields
 
 
@@ -765,10 +767,12 @@ async def report_form(request: Request) -> dict:
     object), `text` (may be empty), `case_id` and `corrects` (blank is none), `observed` ("When did you check?" for
     STOCK_COUNT and EXPIRY: "now" or an ISO-8601 time with its offset; absent is None, never a default, D-22) and one
     optional `file` part (PNG, JPEG or PDF by content, at most `uploads.max_bytes`; 07-14), read by `_report_parts`."""
-    parts, data = await _report_parts(request, ("kind", "fields", "text", "case_id", "corrects", "observed"))
+    parts, data = await _report_parts(request, ("kind", "fields", "text", "case_id", "corrects", "observed",
+                                                  "reading_id", "field_sources"))
     return {"kind": parts["kind"], "fields": _report_fields(parts["fields"]) or {}, "text": parts["text"] or "",
             "case_id": parts["case_id"] or None, "corrects": parts["corrects"] or None,
-            "observed": parts["observed"], **_file_keys(data)}
+            "observed": parts["observed"], "reading_id": parts["reading_id"] or None,
+            "field_sources": _report_fields(parts["field_sources"], "field_sources"), **_file_keys(data)}
 
 
 async def patch_form(request: Request) -> dict:
@@ -777,19 +781,19 @@ async def patch_form(request: Request) -> dict:
     optional `file` part, read by `_report_parts`. Anything malformed is 400."""
     if request.headers.get("content-type", "").startswith("application/json"):
         body = await json_body(request)
-        for name in ("text", "observed"):
+        for name in ("text", "observed", "kind"):
             if body.get(name) is not None and not isinstance(body[name], str):
                 raise ApiError(400, "bad_request", f"{name} must be text")
         if body.get("fields") is not None and not isinstance(body["fields"], dict):
             raise ApiError(400, "bad_request", "fields must be a JSON object of the report's fields")
         return {"revision": _whole(body, "revision"), "fields": body.get("fields"), "text": body.get("text"),
-                "observed": body.get("observed"), **_file_keys(b"")}
-    parts, data = await _report_parts(request, ("revision", "fields", "text", "observed"))
+                "observed": body.get("observed"), "kind": body.get("kind"), **_file_keys(b"")}
+    parts, data = await _report_parts(request, ("revision", "fields", "text", "observed", "kind"))
     raw = (parts["revision"] or "").strip()
     if not re.fullmatch(r"[0-9]{1,9}", raw):
         raise ApiError(400, "bad_request", "revision is required as a whole number")
     return {"revision": int(raw), "fields": _report_fields(parts["fields"]), "text": parts["text"],
-            "observed": parts["observed"], **_file_keys(data)}
+            "observed": parts["observed"], "kind": parts["kind"] or None, **_file_keys(data)}
 
 
 @app.post("/api/signals")
@@ -801,7 +805,8 @@ def file_report(request: Request, s: dict = Session, form: dict = Depends(report
     def work(conn, run, actor, s):
         caps.spend(conn, reports.workspace_scope(run), "signal")
         return reports.create(conn, run, actor, form["kind"], form["fields"], form["text"], form["case_id"],
-                              form["corrects"], form["observed"], form["file"])
+                              form["corrects"], form["observed"], form["file"],
+                              reading_id=form["reading_id"], field_sources=form["field_sources"])
     body = {k: v for k, v in form.items() if k != "file"}  # the file's sha256 and size stand in for its bytes
     return _write(request, s, "report", body, work, mode="UPDATE")
 
@@ -854,7 +859,7 @@ def edit_report(request: Request, signal_id: str, s: dict = Session, form: dict 
     body = {k: v for k, v in form.items() if k != "file"}
     return _write(request, s, f"edit:{signal_id}", body, lambda conn, run, actor, s: reports.patch(
         conn, run, actor, signal_id, form["revision"], form["fields"], form["text"], form["observed"],
-        form["file"]), mode="UPDATE")
+        form["file"], kind=form["kind"]), mode="UPDATE")
 
 
 @app.post("/api/signals/{signal_id}/preview")

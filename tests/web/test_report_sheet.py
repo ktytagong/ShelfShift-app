@@ -37,12 +37,15 @@ def sheet(page: Page):
     return page.get_by_role("dialog", name=SHEET)
 
 
-def open_sheet(page: Page):
+def open_sheet(page: Page, *, evidence=False):
     page.goto("/#/events")
     expect(page.get_by_role("heading", level=1, name="Business events")).to_be_visible()
     page.get_by_role("button", name=SHEET, exact=True).first.click()
     dialog = sheet(page)
     expect(dialog).to_be_visible()
+    # Phase 10 adds evidence before the unchanged manual form.
+    if not evidence:
+        dialog.get_by_role("button", name="Next · enter details", exact=True).click()
     return dialog
 
 
@@ -233,6 +236,19 @@ def test_the_previews_texts_and_the_dirty_close(visitor):
     expect(dialog).to_have_count(0)
 
 
+def test_manual_next_keeps_usable_focus_and_escape_closes(visitor):
+    """Manual entry must keep keyboard focus in the sheet when Next becomes disabled Submit."""
+    page = visitor.page
+    d = story(page)
+    switch_seat(page, d["dest"])
+    dialog = open_sheet(page, evidence=True)
+    dialog.get_by_role("button", name="Next · enter details", exact=True).click()
+    expect(dialog.get_by_role("button", name="Submit report", exact=True)).to_be_disabled()
+    expect(dialog.locator(":focus:not(:disabled)")).to_have_count(1)
+    page.keyboard.press("Escape")
+    expect(dialog).to_have_count(0)
+
+
 def test_the_allowance_states(visitor):
     """D-20, FLOW-11: none left disables Submit with "0 of {limit} reports left today for this workspace · resets at
     00:00 Bangkok time"; no file left disables the file control with its text; a cap refusal arriving on Submit shows
@@ -240,14 +256,17 @@ def test_the_allowance_states(visitor):
     page = visitor.page
     d = story(page)
     switch_seat(page, d["dest"])
-    limit = int(ALLOWANCE.match(open_sheet(page).get_by_test_id("allowance").inner_text().strip()).group(2))
-    page.keyboard.press("Escape")
-    use_up(page, "upload")
     dialog = open_sheet(page)
-    dialog.get_by_role("radio", name="Storage capacity", exact=True).check()
+    limit = int(ALLOWANCE.match(dialog.get_by_test_id("allowance").inner_text().strip()).group(2))
+    page.keyboard.press("Escape")
+    expect(dialog).to_have_count(0)
+    use_up(page, "upload")
+    dialog = open_sheet(page, evidence=True)
     expect(dialog.get_by_role("button", name="Add file")).to_be_disabled()
     expect(dialog.get_by_text("No file attachments left today · you can still send the report without a file",
                               exact=True)).to_be_visible()
+    dialog.get_by_role("button", name="Next · enter details", exact=True).click()
+    dialog.get_by_role("radio", name="Storage capacity", exact=True).check()
     fill_capacity(page, dialog, d["zone"], "2")
     use_up(page, "signal")  # spent elsewhere in the workspace while this sheet was open
     dialog.get_by_role("button", name="Submit report", exact=True).click()
@@ -270,9 +289,8 @@ def test_long_text_and_a_long_file_name_fit_a_phone(visitor):
     d = story(page)
     switch_seat(page, d["dest"])
     page.set_viewport_size({"width": 375, "height": 812})
-    dialog = open_sheet(page)
-    dialog.get_by_role("radio", name="Storage capacity", exact=True).check()
-    dialog.get_by_label("What happened (optional)", exact=True).fill("Chiller " * 50)
+    dialog = open_sheet(page, evidence=True)
+    dialog.get_by_label("Message (optional)", exact=True).fill("Chiller " * 50)
     name = "p" * 116 + ".png"
     dialog.locator("input[type=file]").set_input_files(
         {"name": name, "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n" + b"0" * 64})

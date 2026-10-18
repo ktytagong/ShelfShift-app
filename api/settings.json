@@ -64,6 +64,29 @@
     "max_output_tokens": {"value": 8192, "unit": "tokens per model response", "type": "Policy", "source": "09-23 observed user-run paid checks at b224c7f, 2026-10-18: accepted Ask output 1,372 plus thinking 1,754 = 3,126 tokens", "note": "Conservative per-response bound from the entire accepted request generation: twice 3,126, rounded up to the next power of two = 8,192; below documented model output ceiling 65,536. Small-sample safety margin, rerun pending."},
     "max_request_tokens": {"value": 65536, "unit": "cumulative reported tokens per request", "type": "Policy", "source": "09-23 observed user-run paid checks at b224c7f, 2026-10-18: brief with 5 tools used 16,959 total tokens; the 6-tool question timed out before its second turn, so its full use is unobserved", "note": "supervisor margin: about 4x the observed maximum, so an 8-tool question is not cut by the token bound before the 40 s deadline; well inside the model context window"}
   },
+  "reading": {
+    "timeout_s": {"value": 25, "unit": "seconds", "type": "Policy", "source": "10-CONTEXT Claude's Discretion; 10-RESEARCH Pattern 1 (start values, tuned from the 10-20 live measurement)"},
+    "low_confidence": {"value": 0.5, "unit": "confidence share", "type": "Policy", "source": "10-CONTEXT Claude's Discretion; 10-RESEARCH Pattern 1 (start values, tuned from the 10-20 live measurement)"},
+    "max_input_tokens": {"value": 32000, "unit": "tokens", "type": "Policy", "source": "10-CONTEXT Claude's Discretion; 10-RESEARCH Pattern 1 (start values, tuned from the 10-20 live measurement)"},
+    "max_output_tokens": {"value": 4096, "unit": "tokens", "type": "Policy", "source": "10-CONTEXT Claude's Discretion; 10-RESEARCH Pattern 1 (start values, tuned from the 10-20 live measurement)"},
+    "max_text_chars": {"value": 4000, "unit": "characters", "type": "Policy", "source": "10-CONTEXT Claude's Discretion; 10-RESEARCH Pattern 1 (start values, tuned from the 10-20 live measurement)"},
+    "lease_s": {"value": 40, "unit": "seconds", "type": "Policy", "source": "10-CONTEXT Claude's Discretion; 10-RESEARCH Pattern 1 (start values, tuned from the 10-20 live measurement)"},
+    "thinking_level": {"value": "LOW", "unit": "thinking level", "type": "Policy", "source": "10-CONTEXT Claude's Discretion; 10-RESEARCH Pattern 1 (start values, tuned from the 10-20 live measurement)"}
+  },
+  "impact": {
+    "summary_max_words": {"value": 60, "unit": "words", "type": "Policy", "source": "spec §7 Field signals step 4; 10-CONTEXT D-09; SIG-02"},
+    "max_tool_calls": {"value": 12, "unit": "tool invocations per summary", "type": "Policy", "source": "spec §7 Field signals step 4; 10-CONTEXT D-09; SIG-02"},
+    "timeout_s": {"value": 60, "unit": "seconds", "type": "Policy", "source": "spec §7 Field signals step 4; 10-CONTEXT D-09; SIG-02"},
+    "max_output_tokens": {"value": 2048, "unit": "tokens per model response", "type": "Policy", "source": "spec §7 Field signals step 4; 10-CONTEXT D-09; SIG-02"}
+  },
+  "eval": {
+    "runs_per_scenario": {"value": 3, "type": "Policy", "source": "10-CONTEXT D-18; user default 6: the user approves the caps before each run; prices from CLAUDE.md Technology Stack (LOW confidence) and confirmed by the user"},
+    "max_calls": {"value": 150, "type": "Policy", "source": "10-CONTEXT D-18; user default 6: the user approves the caps before each run; prices from CLAUDE.md Technology Stack (LOW confidence) and confirmed by the user"},
+    "max_tokens": {"value": 3000000, "type": "Policy", "source": "10-CONTEXT D-18; user default 6: the user approves the caps before each run; prices from CLAUDE.md Technology Stack (LOW confidence) and confirmed by the user"},
+    "max_cost_usd": {"value": 5, "type": "Policy", "source": "10-CONTEXT D-18; user default 6: the user approves the caps before each run; prices from CLAUDE.md Technology Stack (LOW confidence) and confirmed by the user"},
+    "price_input_usd_per_mtok": {"value": 1.5, "type": "Policy", "source": "10-CONTEXT D-18; user default 6: the user approves the caps before each run; prices from CLAUDE.md Technology Stack (LOW confidence) and confirmed by the user"},
+    "price_output_usd_per_mtok": {"value": 9.0, "type": "Policy", "source": "10-CONTEXT D-18; user default 6: the user approves the caps before each run; prices from CLAUDE.md Technology Stack (LOW confidence) and confirmed by the user"}
+  },
   "execution": {
     "conditions": {"value": [{"key": "as_expected", "label": "As expected"}, {"key": "damaged", "label": "Damaged"}, {"key": "temperature_concern", "label": "Temperature concern"}], "type": "Policy", "source": "06.1-UI-SPEC open questions 2 and 5 (recommended defaults, pending the user)", "note": "the condition a dispatch or receipt records (06.1 D-48)"},
     "resolutions": {"value": [{"key": "found_at_destination", "label": "Found at the destination"}, {"key": "lost_or_written_off", "label": "Lost or written off"}, {"key": "source_count_error", "label": "Counting error at the source"}], "type": "Policy", "source": "06.1-UI-SPEC open questions 2 and 5 (recommended defaults, pending the user)", "note": "how a receipt discrepancy is reconciled (06.1 D-65)"}

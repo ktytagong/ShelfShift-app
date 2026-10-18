@@ -18,6 +18,37 @@ import {
 } from "./copy.ts";
 import { readFileSync } from "node:fs";
 import { money } from "./format.ts";
+import * as copy from "./copy.ts";
+
+test("answer readings keep source, pending and failure vocabulary separate", () => {
+  assert.equal(copy.ANSWER_COPY.title, "Read by Gemini");
+  assert.equal(copy.ANSWER_COPY.pending, "Pending manager check");
+  assert.equal(copy.ANSWER_COPY.chooseCount, "Choose which count to confirm.");
+  assert.equal(copy.ANSWER_COPY.history, "Read after confirmation · not applied");
+  assert.equal(copy.ANSWER_COPY.daily, "Today's AI limit is reached. It resets at 00:00 Bangkok time.");
+});
+
+test("Ask file drop copy names the report path and exact refusals", () => {
+  assert.deepEqual(copy.ASK_DROP, {
+    hint: "Drop a photo or PDF here to report an observation.",
+    dragging: "Drop to report an observation",
+    open: "Report with a file",
+    count: "Drop one file at a time.",
+    type: "Only PNG, JPEG or PDF files can be attached.",
+    size: "This file is larger than 5 MB. Choose a smaller file.",
+    unavailable: "File uploads are unavailable. Reload this page and try again.",
+  });
+  assert.equal(copy.REPORT_READING.caseTitle, "Report an observation for this case.");
+  assert.equal(copy.REPORT_READING.copyQuestion, "Copy my question into the message");
+});
+
+test("S7 vocabulary is locked and counts only", () => {
+  const words = (copy as unknown as { EVAL_COPY: Record<string, string> }).EVAL_COPY;
+  assert.equal(words?.label, "Preliminary evaluation · 10 scenarios × 3 runs");
+  assert.equal(words?.empty, "AI evaluation not yet published");
+  for (const value of Object.values(words)) assert.doesNotMatch(value, /%|accuracy/i);
+  assert.equal(new Set(Object.values(words)).size, Object.values(words).length);
+});
 
 test("NETWORK is the adapter's own sentence", () => {
   assert.equal(NETWORK, API_NETWORK);

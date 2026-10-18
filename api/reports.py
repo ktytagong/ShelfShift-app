@@ -58,6 +58,7 @@ is keyed by run_id, so two workspaces never see each other's reports.
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import uuid
 from datetime import timedelta
@@ -90,6 +91,7 @@ LOT_KINDS = (*CHECKED, "CONDITION")  # the kinds about one lot at the reporter's
 CONDITIONS = ("DAMAGE", "SAFETY", "DISPLAY")  # what a person saw on the shelf (D-13)
 CONDITION_LABEL = {"DAMAGE": "Damage", "SAFETY": "Possible safety issue", "DISPLAY": "Display issue"}
 HOLDABLE = ("DAMAGE", "SAFETY")  # "Hold this lot for review" is offered on these only; a display issue is a task
+NOT_RELEVANT_LABEL = "Not relevant · no impact preview"
 REVIEW_ONLY = "Requires human review · engine impact not calculated"  # a condition's impact label (D-13)
 TICK = "Tick 'I checked the shelf and the backroom for this lot'"
 # kind -> its owner role and its typed fields: name -> (type, the engine adjustment field that bounds a number, or the
@@ -115,11 +117,83 @@ KINDS: dict[str, dict] = {
     # 07-14: a person's observation for human review only, never an engine input (D-13)
     "CONDITION": {"owner": "manager", "fields": {"lot_id": ("lot", None), "condition": ("choice", CONDITIONS),
                                                  "hold": ("bool", None)}},
+    "NOT_RELEVANT": {"owner": "reporter", "fields": {}, "reading_only": True},
 }
+MANUAL_KINDS = tuple(kind for kind, spec in KINDS.items() if not spec.get("reading_only"))
 OPTIONAL = {"DEMAND_EVENT": {"sku"}, "CONDITION": {"hold"}}  # DEMAND_EVENT blank: every product at the store
 # what a transport report needs besides run_code, what and applies_on; any other filled field is refused
 TRANSPORT_NEEDS = {"QUOTE": ("amount", "pricing_basis", "includes_handling", "valid_until"),
                    "RUN_NOT_AVAILABLE": (), "DELAY": ("delay_hours",)}
+
+
+FIELD_SOURCES = ("typed", "gemini_accepted", "gemini_edited", "cleared")
+
+
+def _reading_view(conn, run_id: str, row: dict) -> dict | None:
+    if not row.get("reading_id"):
+        return None
+    saved = db.one(conn, "SELECT reading_id, provenance, model_id, finished_at, created_at, note, kind, suggestions "
+                   "FROM readings WHERE run_id=:r AND reading_id=:id", r=run_id, id=row["reading_id"])
+    if saved is None:
+        return None
+    return {"reading_id": saved["reading_id"], "provenance": saved["provenance"], "model_id": saved["model_id"],
+            "recorded_at": realtime.iso(saved["finished_at"] or saved["created_at"]), "note": saved["note"],
+            "kind": saved["kind"],
+            "suggestions": [{name: suggestion[name] for name in ("field", "value", "source", "excerpt", "state")}
+                            for suggestion in saved["suggestions"]]}
+
+
+def _field_origins(conn, run: dict, actor: dict, kind: str, f: dict, text: str, reading_id, field_sources,
+                   case_id=None, file: bytes | None = None) -> dict:
+    """Verify client claims before any file/report write (T-10-35, T-10-37)."""
+    from agent import reading, readings_job
+
+    names = ("kind", *KINDS[kind]["fields"])
+    if field_sources is not None and (not isinstance(field_sources, dict)
+            or any(not isinstance(name, str) for name in field_sources)):
+        raise ApiError(400, "bad_request", "field_sources must be a JSON object of field origins")
+    sources = {name: "typed" for name in names}
+    for name, source in (field_sources or {}).items():
+        if name not in names or source not in FIELD_SOURCES:
+            raise ApiError(400, "bad_request", "Choose a supported origin for each field", field=name)
+        sources[name] = source
+    saved = None
+    if reading_id is not None:
+        if not isinstance(reading_id, str) or not reading_id or len(reading_id) > 128:
+            raise ApiError(400, "bad_request", "reading_id must name the report's reading")
+        saved = db.one(conn, "SELECT * FROM readings WHERE run_id=:r AND reading_id=:id",
+                       r=run["run_id"], id=reading_id)
+        if (saved is None or saved["status"] != "DONE" or saved["purpose"] != "REPORT"
+                or saved["signal_id"] is not None or saved["signal_revision"] is not None
+                or saved["request_id"] is not None or saved["after_confirmation"]):
+            raise ApiError(400, "bad_request", "Use a completed reading for this report")
+        ctx = readings_job.context(conn, run, actor, case_id=case_id, purpose="report")
+        expected = reading.reuse_key(ctx, text, hashlib.sha256(file).hexdigest() if file else None)
+        if saved["input_key"] != expected:
+            raise ApiError(400, "bad_request", "The reading does not match this report's evidence and context")
+    if kind == "NOT_RELEVANT" and (saved is None or saved["kind"] != "NOT_RELEVANT"):
+        raise ApiError(400, "bad_request", "Not relevant requires a completed reading of that kind")
+    if kind == "CONDITION" and any(source in ("gemini_accepted", "gemini_edited")
+                                    for source in sources.values()):
+        raise ApiError(400, "bad_request", "Condition reports must be entered by hand")
+    suggested = {row["field"]: row["value"] for row in saved["suggestions"]
+                 if row["value"] is not None and row["state"] in ("suggested", "calculated")} if saved else {}
+    if saved and saved["kind"] == "NOT_RELEVANT":
+        suggested["kind"] = saved["kind"]
+    values = {"kind": kind, **f}
+    for name, source in sources.items():
+        value = values[name]
+        if source == "cleared" and value is not None:
+            raise ApiError(400, "bad_request", "A cleared field must be blank", field=name)
+        if source in ("gemini_accepted", "gemini_edited"):
+            if name not in suggested:
+                raise ApiError(400, "bad_request", "There is no stored suggestion for this field", field=name)
+            equal = value == suggested[name]
+            if source == "gemini_accepted" and not equal:
+                raise ApiError(400, "bad_request", "The accepted value differs from the stored reading.", field=name)
+            if source == "gemini_edited" and equal:
+                raise ApiError(400, "bad_request", "An edited value must differ from the stored reading.", field=name)
+    return sources
 
 
 def _required(kind: str, fields: dict) -> list[str]:
@@ -138,6 +212,9 @@ def needs_input(kind: str, fields: dict) -> list[dict]:
 
 def owner(row: dict) -> dict:
     """Who confirms: {"role": "manager", "branch": the report's store} or {"role": "hq", "branch": None}."""
+    if row["kind"] == "NOT_RELEVANT":
+        return {"role": "hq", "branch": None} if row["reporter_role"] == "hq" else {
+            "role": "manager", "branch": row["reporter_branch"]}
     if KINDS[row["kind"]]["owner"] == "hq":
         return {"role": "hq", "branch": None}
     return {"role": "manager", "branch": row["branch"]}
@@ -194,7 +271,7 @@ def clean(run: dict, kind: str, fields, policy) -> dict:
     naming a branch is refused: the store comes from the seat), numbers inside the engine's bounds (400
     out_of_bounds), dates real business dates "YYYY-MM-DD" (400) with the range not ending before the business day."""
     if kind not in KINDS:
-        raise ApiError(400, "bad_request", f"kind must be one of {', '.join(KINDS)}")
+        raise ApiError(400, "bad_request", f"kind must be one of {', '.join(MANUAL_KINDS)}")
     if not isinstance(fields, dict):
         raise ApiError(400, "bad_request", "fields must be a JSON object")
     spec = KINDS[kind]["fields"]
@@ -379,6 +456,25 @@ def is_report(conn, run: dict, signal_id: str) -> bool:
     return bool(row and row["report_id"])
 
 
+def _field_corrections(conn, run_id: str, row: dict) -> dict:
+    """Only this report's audited edits up to this revision can label a value."""
+    if row["revision"] <= 1:
+        return {}
+    edits = db.rows(conn, "SELECT payload FROM activity_log WHERE run_id=:r AND type='report_edited' "
+        "AND payload->>'report_id'=:p ORDER BY seq", r=run_id, p=row["report_id"])
+    result = {}
+    for event in edits:
+        edit = event["payload"]
+        revision = edit.get("revision")
+        actor = edit.get("actor") or {}
+        if not isinstance(revision, int) or revision > row["revision"] or actor.get("role") not in ("manager", "hq"):
+            continue
+        for name in edit.get("corrected_fields", []):
+            if name in ("kind", *row["fields"]):
+                result[name] = {"role": actor["role"], "branch": actor.get("branch"), "revision": revision}
+    return result
+
+
 def report_view(conn, run_id: str, row: dict) -> dict:
     """The Report shape (04-API-CONTRACT Shapes): the row with its owner, needs_input, the fact's label and the report
     whose fact replaced this one's."""
@@ -390,6 +486,10 @@ def report_view(conn, run_id: str, row: dict) -> dict:
                        f=fact["replaced_by"])
         replaced = later["report_id"] if later else None
     simulated = row.get("provenance") == "simulated"
+    # Local import keeps report creation independent from the agent's import
+    # graph. This view is read-only: it checks freshness without engine/model.
+    from agent.impact import summary_view
+    run = db.one(conn, "SELECT * FROM demo_runs WHERE run_id = :r", r=run_id)
     return {
         "signal_id": row["signal_id"], "report_id": row["report_id"], "revision": row["revision"],
         "kind": row["kind"], "state": row["state"], "branch": row["branch"],
@@ -397,7 +497,10 @@ def report_view(conn, run_id: str, row: dict) -> dict:
         "reporter_branch": row["reporter_branch"], "owner": owner(row), "text": row["text"], "fields": row["fields"],
         "needs_input": needs_input(row["kind"], row["fields"]), "observed_at": realtime.iso(row.get("observed_at")),
         "created_at": realtime.iso(row["created_at"]), "case_id": row["case_id"], "corrects": row["corrects"],
-        "file": _file_of(row),
+        "file": _file_of(row), "reading": _reading_view(conn, run_id, row),
+        "field_sources": row.get("field_sources") or {name: "typed"
+            for name in ("kind", *KINDS[row["kind"]]["fields"])},
+        "field_corrections": _field_corrections(conn, run_id, row),
         "provenance": "simulated" if simulated else "person",
         "simulated_label": SIMULATED_SOURCE if simulated else None,
         "confirmed_at": realtime.iso(row["confirmed_at"]), "confirmed_by": row["confirmed_by"],
@@ -405,7 +508,9 @@ def report_view(conn, run_id: str, row: dict) -> dict:
         "dismiss_reason": row["dismiss_reason"], "withdrawn_at": realtime.iso(row["withdrawn_at"]),
         "fact_id": row["fact_id"], "fact_label": fact["label"] if fact else None, "replaced_by": replaced,
         "hold_id": _hold_of(conn, run_id, row), "task": _task_of(row),
-        "impact_label": REVIEW_ONLY if row["kind"] == "CONDITION" else None, "day": row["created_day"],
+        "impact_label": (NOT_RELEVANT_LABEL if row["kind"] == "NOT_RELEVANT" else
+                         REVIEW_ONLY if row["kind"] == "CONDITION" else None), "day": row["created_day"],
+        "impact_summary": summary_view(conn, run, row),
         "affects_count": len(row.get("affects") or []),  # the live cases its scope held when filed (07-20)
         "sku": row.get("sku"),  # the product it is about (a lot's record, or a demand event's), else null (07-20)
     }
@@ -592,17 +697,19 @@ def workspace_scope(run: dict) -> str:
 
 def may_file(actor: dict, kind) -> None:
     """Who may file (or preview before filing, api/impact.py `draft`) a report of this kind (D-15): a store's manager
-    any kind for their store, HQ transport only; 400 for an unknown kind, 403 for another seat."""
+    any kind for their store, HQ transport or a Not relevant reading; 400 for an unknown kind, 403 for another seat."""
     if not isinstance(kind, str) or kind not in KINDS:
-        raise ApiError(400, "bad_request", f"kind must be one of {', '.join(KINDS)}")
-    if actor.get("role") == "hq" and KINDS[kind]["owner"] != "hq":
+        raise ApiError(400, "bad_request", f"kind must be one of {', '.join(MANUAL_KINDS)}")
+    if kind == "NOT_RELEVANT" and actor.get("role") not in ("manager", "hq"):
+        raise ApiError(403, "forbidden", "Only a manager or HQ files reports")
+    if actor.get("role") == "hq" and kind != "NOT_RELEVANT" and KINDS[kind]["owner"] != "hq":
         raise ApiError(403, "forbidden", "HQ reports transport only; a store's manager reports for their store")
     if actor.get("role") != "manager" and KINDS[kind]["owner"] == "manager":
         raise ApiError(403, "forbidden", "Only a store's manager reports for their store")
 
 
 def create(conn, run: dict, actor: dict, kind, fields, text, case_id=None, corrects=None, observed=None,
-           file: bytes | None = None) -> dict:
+           file: bytes | None = None, reading_id=None, field_sources=None) -> dict:
     """File a report as READ (revision 1, report_id its own signal_id): the seat's store from the session only, HQ
     transport only; values checked, blanks listed as needs_input; the live cases in scope recorded in `affects`.
     Applies nothing (D-16). The caller spends the workspace allowance in the same transaction (D-20).
@@ -638,6 +745,7 @@ def create(conn, run: dict, actor: dict, kind, fields, text, case_id=None, corre
         if not isinstance(case_id, str) or db.one(conn, "SELECT 1 AS x FROM cases WHERE run_id = :r AND case_id = :c",
                                                   r=run["run_id"], c=case_id) is None:
             raise ApiError(404, "not_found", f"No case {case_id}")
+    sources = _field_origins(conn, run, actor, kind, f, text or "", reading_id, field_sources, case_id, file)
     stored = _spend_file(conn, run, None, file) if file else None
     sid = f"SIG-{uuid.uuid4().hex[:8]}"
     sku = lot["sku"] if lot is not None else f.get("sku")
@@ -645,17 +753,18 @@ def create(conn, run: dict, actor: dict, kind, fields, text, case_id=None, corre
     affects = _affects(conn, run, row)
     db.run(conn, "INSERT INTO signals (run_id, signal_id, report_id, revision, reporter_role, reporter_branch, branch, "
                  "text, kind, fields, state, provenance, created_day, case_id, sku, run_code, corrects, affects, "
-                 "lot_id, observed_at) "
+                 "lot_id, observed_at, reading_id, field_sources) "
                  "VALUES (:r, :s, :s, 1, :role, :rb, :b, :t, :k, CAST(:f AS jsonb), :st, 'person', :d, :c, :sku, :run, "
-                 ":fix, CAST(:a AS jsonb), :lot, :o)", r=run["run_id"], s=sid, role=actor["role"],
+                 ":fix, CAST(:a AS jsonb), :lot, :o, :reading, CAST(:sources AS jsonb))", r=run["run_id"], s=sid, role=actor["role"],
            rb=actor.get("branch"), b=branch, t=(text or "").strip(), k=kind, f=db.js(f), st=OPEN, d=run["day"],
            c=case_id, sku=sku, run=f.get("run_code"), fix=corrects, a=db.js(affects), lot=f.get("lot_id"),
-           o=observed_at)
+           o=observed_at, reading=reading_id, sources=db.js(sources))
     if stored is not None:
         _set_file(conn, run, sid, stored)
     saved = _row(conn, run["run_id"], sid)
     db.log(conn, run["run_id"], run["day"], "report_filed", case_id, signal_id=sid, kind=kind, fields=f,
            needs_input=needs_input(kind, f), affects=affects, corrects=corrects,
+           reading_id=reading_id, field_sources=sources,
            observed_at=realtime.iso(observed_at), file=_file_of(saved), file_counted=saved["file_counted"],
            actor=accounts.logged_actor(actor))
     _place_holds(conn, run, actor, saved)  # each a separate, logged action after the report (D-13)
@@ -786,7 +895,7 @@ def _correctable(conn, run: dict, kind: str, branch: str | None, corrects) -> di
 
 
 def patch(conn, run: dict, actor: dict, signal_id: str, revision, fields=None, text=None, observed=None,
-          file: bytes | None = None) -> dict:
+          file: bytes | None = None, *, kind=None) -> dict:
     """Edit a report before confirmation (D-15, research F-26; T-07-54): the reporter or the owner, on the report's
     current revision while it is READ (else 409 wrong_state), naming that revision (else 409 stale_version). The edit
     is a new revision of the same report (same report_id, revision + 1, the reporter unchanged) and the earlier one
@@ -815,17 +924,37 @@ def patch(conn, run: dict, actor: dict, signal_id: str, revision, fields=None, t
         raise ApiError(400, "bad_request", "text must be a string")
     if fields is None and text is None and _blank(observed) and not file:
         raise ApiError(400, "bad_request", "Nothing to change: send fields, text, observed or a file")
-    kind = row["kind"]
+    if kind is not None and kind != row["kind"]:
+        if row["kind"] != "NOT_RELEVANT":
+            raise ApiError(400, "bad_request", "Only a Not relevant report can change its kind")
+        # Creation's identical checks are inline on the API-only source lane.
+        if not isinstance(kind, str) or kind not in KINDS:
+            raise ApiError(400, "bad_request", f"kind must be one of {', '.join(MANUAL_KINDS)}")
+        if actor.get("role") == "hq" and KINDS[kind]["owner"] != "hq":
+            raise ApiError(403, "forbidden", "HQ reports transport only; a store's manager reports for their store")
+        if actor.get("role") not in ("manager", "hq"):
+            raise ApiError(403, "forbidden", "Only a manager or HQ files reports")
+    kind = row["kind"] if kind is None else kind
     f = clean(run, kind, {**(row["fields"] or {}), **(fields or {})}, inputs.sandbox_policy(conn, run))
     branch = _branch(run, actor, kind, f) if kind == "TRANSPORT" else row["branch"]
     lot = _lot_at(conn, run, branch, f) if kind in LOT_KINDS else None
     observed_at, created = row["observed_at"], row["created_day"] if kind in CHECKED else run["day"]
-    if kind in CHECKED and not _blank(observed):
+    if kind in CHECKED and (kind != row["kind"] or not _blank(observed)):
         observed_at, created = realtime.parse_observed(observed, realtime.db_now(conn)), run["day"]
     elif kind not in CHECKED and not _blank(observed):
         raise ApiError(400, "bad_request", "Only a count or a printed date states when it was checked")
     if kind == "EXPIRY" and lot is not None and f["printed_date"] not in (None, MIXED):
         _printed_ok(conn, run, branch, f)
+    sources = row.get("field_sources") or {name: "typed" for name in ("kind", *KINDS[kind]["fields"])}
+    sources = dict(sources)
+    corrected_fields = []
+    if kind != row["kind"]:
+        sources = {name: "typed" for name in ("kind", *KINDS[kind]["fields"])}
+        corrected_fields.append("kind")
+    for name in fields or {}:
+        if f[name] != (row["fields"] or {}).get(name):
+            sources[name] = "cleared" if f[name] is None else "typed"
+            corrected_fields.append(name)
     stored = _spend_file(conn, run, row["report_id"], file) if file else {c: row[c] for c in FILE_COLUMNS}
     sid, n = f"SIG-{uuid.uuid4().hex[:8]}", row["revision"] + 1
     sku = lot["sku"] if lot is not None else f.get("sku")
@@ -834,17 +963,20 @@ def patch(conn, run: dict, actor: dict, signal_id: str, revision, fields=None, t
            s=row["signal_id"])
     db.run(conn, "INSERT INTO signals (run_id, signal_id, report_id, revision, reporter_role, reporter_branch, branch, "
                  "text, kind, fields, state, provenance, created_day, case_id, sku, run_code, corrects, affects, "
-                 "lot_id, observed_at) VALUES (:r, :s, :p, :n, :role, :rb, :b, :t, :k, CAST(:f AS jsonb), :st, :prov, "
-                 ":d, :c, :sku, :run, :fix, CAST(:a AS jsonb), :lot, :o)", r=run["run_id"], s=sid, p=row["report_id"],
+                 "lot_id, observed_at, reading_id, field_sources) VALUES (:r, :s, :p, :n, :role, :rb, :b, :t, :k, "
+                 "CAST(:f AS jsonb), :st, :prov, "
+                 ":d, :c, :sku, :run, :fix, CAST(:a AS jsonb), :lot, :o, :reading, CAST(:sources AS jsonb))", r=run["run_id"], s=sid, p=row["report_id"],
            n=n, role=row["reporter_role"], rb=row["reporter_branch"], b=branch,
            t=row["text"] if text is None else text.strip(), k=kind, f=db.js(f), st=OPEN, prov=row["provenance"],
            d=created, c=row["case_id"], sku=sku, run=f.get("run_code"), fix=row["corrects"], a=db.js(affects),
-           lot=f.get("lot_id"), o=observed_at)
+           lot=f.get("lot_id"), o=observed_at, reading=row.get("reading_id"), sources=db.js(sources))
     if stored["file_uri"]:
         _set_file(conn, run, sid, stored)
     saved = _row(conn, run["run_id"], sid)
     db.log(conn, run["run_id"], run["day"], "report_edited", row["case_id"], signal_id=sid,
            replaces=row["signal_id"], report_id=row["report_id"], revision=n, kind=kind, fields=f,
+           corrected_fields=corrected_fields,
+           reading_id=row.get("reading_id"), field_sources=sources,
            needs_input=needs_input(kind, f), affects=affects, observed_at=realtime.iso(observed_at),
            file=_file_of(saved), file_spent=("workspace" if stored["file_counted"] else "global") if file else None,
            actor=accounts.logged_actor(actor))
@@ -888,6 +1020,8 @@ def confirm(conn, run: dict, actor: dict, signal_id: str, revision, checked_both
         raise ApiError(409, "wrong_state", f"Report is {row['state']}", state=row["state"])
     if isinstance(revision, bool) or revision != row["revision"]:
         raise ApiError(409, "stale_version", "The report changed since you looked at it", revision=row["revision"])
+    if row["kind"] == "NOT_RELEVANT":
+        raise ApiError(409, "wrong_state", "A Not relevant report can be dismissed, never confirmed")
     _refuse_expired(run, row)  # before the range checks: an expired quote's day has passed too (07-13 review T2)
     f = clean(run, row["kind"], row["fields"], inputs.sandbox_policy(conn, run))  # the bounds again (T-07-47)
     missing = needs_input(row["kind"], f)

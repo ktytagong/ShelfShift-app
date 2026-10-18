@@ -249,9 +249,12 @@ function Tasks() {
   const drafts = useDrafts();
   const latest = useRef(0);
   const sent = useRef<Record<string, string>>({});
+  const loadIdentity = `${session.run_id}:${session.role}:${session.branch}:${view}:${tile}:${page}`;
+  const currentIdentity = useRef(loadIdentity);
+  currentIdentity.current = loadIdentity;
 
   const load = useCallback(async () => {
-    if (hq) return;
+    if (hq || currentIdentity.current !== loadIdentity) return;
     const n = ++latest.current;
     try {
       const v = await get<TasksView>(tasksPath(view, tile, page));
@@ -260,15 +263,17 @@ function Tasks() {
         blockedCaseStates(v.list.items),
         dispatchTimes(v.list.items.flatMap((i) => (i.transfer !== null && i.transfer.movement_state !== "planned" ? [i.transfer] : [])), sent.current),
       ]);
-      if (n !== latest.current) return;
+      if (n !== latest.current || currentIdentity.current !== loadIdentity) return;
       sent.current = dispatchedAt;
       setData({ view: v, receivedAt, caseStates, dispatchedAt });
       setError(null);
     } catch (e) {
-      if (n !== latest.current) return;
+      if (n !== latest.current || currentIdentity.current !== loadIdentity) return;
       setError(asError(e));
     }
-  }, [hq, view, tile, page]);
+  }, [hq, view, tile, page, loadIdentity]);
+  const currentLoad = useRef(load);
+  currentLoad.current = load;
 
   useEffect(() => {
     void load();
@@ -276,10 +281,11 @@ function Tasks() {
   useRefetchOnVisible(() => void load());
 
   // After the visitor's own write: the page and the session (its menu count) refetch.
+  // A pending read/write may finish after a filter change while its request row stays mounted.
   const after = useCallback(async () => {
-    await load();
+    await currentLoad.current();
     await refresh().catch(() => {});
-  }, [load, refresh]);
+  }, [refresh]);
   // One refetch when a visible deadline reaches 0 (the server applies the deadline on read, D-05).
   const onZero = useCallback(() => void load(), [load]);
 

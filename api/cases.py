@@ -214,7 +214,7 @@ def screen_candidates(conn, run: dict) -> list[dict]:
     return sorted(inside, key=lambda l: (l["expiry_day"], order[l["branch"]], l["sku"], l["lot_id"]))
 
 
-def open_cases(conn, run: dict) -> list[str]:
+def open_cases(conn, run: dict, *, eager=None) -> list[str]:
     """Screen every candidate lot and open a case, with a full search, for each one that qualifies.
 
     On a public set whose reference settings say `evaluation.on_demand`, each qualifying lot is flagged instead
@@ -222,10 +222,13 @@ def open_cases(conn, run: dict) -> list[str]:
     screen cannot judge for lack of data is flagged with its reason, never skipped (D-28). A lot a person closed that
     `screen_candidates` lets back (07-CONTEXT D-24, D-28) opens through `closing.open_successor` on either set: a
     counter key, its predecessor, the reasons, the morning's state and the trigger ("next_day" on the synthetic set)
-    logged. Returns the opened case ids (no new lot's when the set flags)."""
+    logged. Returns the opened case ids (no new lot's when the set flags).
+
+    `eager=True` (the benchmark only, 08-CONTEXT D-07: every at-risk lot) opens and evaluates every qualifying lot
+    even on an on-demand set; the default None keeps the set's own rule. No route passes it."""
     from . import flags  # flags reads this module's views
     ref = refdata.get(run["dataset_version"])
-    deferred = flags.on_demand(ref)
+    deferred = not eager and flags.on_demand(ref)
     from . import closing  # it reads this module at import
     opened, flagged = [], []
     reads = inputs.ScreenReads(conn, run)  # safe: this loop writes nothing build_input reads (inputs.ScreenReads)

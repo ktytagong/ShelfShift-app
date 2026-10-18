@@ -1,0 +1,109 @@
+{
+  "_about": "Illustrative contract-shaped browser data only; extracted unchanged from the 08-07 tracer, never an evaluation result or proof of server authorization.",
+  "scope": {
+    "branch": null,
+    "role": "manager"
+  },
+  "activity": {
+    "open": {
+      "count": 5,
+      "need_action": 1
+    },
+    "pending_approval": {
+      "count": 2,
+      "waiting_for_you": 1
+    },
+    "unanswered_check": {
+      "count": 3,
+      "past_due": 1,
+      "addressed_to_you": 2
+    },
+    "committed": {
+      "count": 4,
+      "dispatched": 2,
+      "received": 1
+    },
+    "cancelled": {
+      "count": 0
+    }
+  },
+  "expected": {
+    "kind": "SIMULATED",
+    "plans": [
+      {
+        "case_id": "illustrative-case-1",
+        "key": "illustrative-stock-decision-1",
+        "sku": "product-1",
+        "plan_key": "exact-stored-plan-1",
+        "plan_label": "Transfer 1 units · S042 → S017",
+        "plan_kind": "transfer",
+        "source_branch": "S042",
+        "dest_branch": "S017",
+        "horizon": {
+          "first_day": 3,
+          "last_day": 6
+        },
+        "net_change": 23.45,
+        "waste_change_units": -42,
+        "waste_change_kg": -43.1,
+        "transport_and_handling": 8.12,
+        "computed": true
+      },
+      {
+        "case_id": "illustrative-case-2",
+        "key": "illustrative-stock-decision-2",
+        "sku": "product-2",
+        "plan_key": "exact-stored-plan-2",
+        "plan_label": "Transfer 2 units · S042 → S017",
+        "plan_kind": "transfer",
+        "source_branch": "S042",
+        "dest_branch": "S017",
+        "horizon": {
+          "first_day": 3,
+          "last_day": 6
+        },
+        "net_change": -11.11,
+        "waste_change_units": -42,
+        "waste_change_kg": -43.1,
+        "transport_and_handling": 0,
+        "computed": true
+      },
+      {
+        "case_id": "illustrative-case-3",
+        "key": "illustrative-stock-decision-3",
+        "sku": "product-3",
+        "plan_key": "exact-stored-plan-3",
+        "plan_label": "Transfer 3 units · S042 → S017",
+        "plan_kind": "transfer",
+        "source_branch": "S042",
+        "dest_branch": "S017",
+        "horizon": {
+          "first_day": 3,
+          "last_day": 6
+        },
+        "net_change": 0,
+        "waste_change_units": -42,
+        "waste_change_kg": -43.1,
+        "transport_and_handling": 4.5,
+        "computed": true
+      }
+    ],
+    "page": 1,
+    "page_size": 20,
+    "total": 3,
+    "combined": {
+      "additive": false,
+      "plans": 3,
+      "reason": "overlap"
+    }
+  },
+  "actual": {
+    "kind": "RECORDED",
+    "dispatched_units": 12,
+    "dispatched_transfers": 2,
+    "received_units": 10,
+    "discrepancies_open": 1,
+    "sales_after_receipt": null,
+    "waste_after_receipt": null
+  }
+}

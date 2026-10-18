@@ -78,6 +78,15 @@ class ConnectionGuard:
 
 
 @pytest.fixture(autouse=True)
+def _previews_out_of_reach(monkeypatch):
+    """Phase 10's preview tests preview many times a minute, so the release's `preview` cap (api/settings.json; 07-20
+    review) is out of reach here, as in tests/api/conftest.py; tests/api/test_signals tests the cap itself."""
+    from api import config
+    monkeypatch.setitem(config.WORKSPACE_CAPS, "preview", (10**6, "minute"))
+    monkeypatch.setitem(config.GLOBAL_CAPS, "preview", 10**6)
+
+
+@pytest.fixture(autouse=True)
 def no_paid_calls(monkeypatch):
     """GCP-off tests may use local DB/HTTP, but cannot initialize a paid client."""
     if os.environ.get("GCP", "off") != "off":

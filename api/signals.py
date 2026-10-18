@@ -289,6 +289,15 @@ def request_view(conn, run: dict, r: dict, case_key: str, now=None) -> dict:
     status = _status(r, s, now)
     draft = db.one(conn, "SELECT original_text FROM evidence_drafts WHERE run_id = :r AND draft_id = :d",
                    r=run_id, d=r["draft_id"]) if r.get("draft_id") else None
+    answer = _signal_view(s)
+    if answer is not None:
+        from agent import readings_job  # read-only public projection; it imports signals at module load
+        row = readings_job.answer_latest(conn, run, s)
+        answer["reading"] = None
+        if row is not None:
+            served = ("generating" if readings_job.state_of(row) == "GENERATING" else
+                      "precomputed" if row["provenance"] == "PRECOMPUTED" else "reuse")
+            answer["reading"] = readings_job.answer_response(conn, run, row, served)
     return {"request_id": r["request_id"], "case_id": r["case_id"], "case_key": case_key,
             "rec_version": r["rec_version"], "fact_id": r["replaced_fact_id"] or r["fact_id"],
             "fact_kind": r["fact_kind"],
@@ -296,7 +305,7 @@ def request_view(conn, run: dict, r: dict, case_key: str, now=None) -> dict:
             "due_min": r["due_min"], "state": r["state"], "partial_note": r["partial_note"],
             "answer_signal_id": r["answer_signal_id"], "replaced_by": r["replaced_by"],
             "case_source": case["source_branch"], "recountable": askable, "confirmable": confirmable,
-            "answerable": answerable, "answer": _signal_view(s),
+            "answerable": answerable, "answer": answer,
             "asked_at": realtime.iso(r["created_at"]), "due_at": realtime.iso(r.get("due_at")),
             "server_now": realtime.iso(now), "minutes_left": realtime.minutes_left(r.get("due_at"), now),
             "overdue": status["overdue"], "status_kind": status["kind"], "status": status["sentence"],
@@ -888,7 +897,7 @@ def count_newer(conn, run: dict, lot_ids: list[str], units: dict[str, float], ob
 
 
 def count_apply(conn, run: dict, changed: list[str], units: dict[str, float], *, sku: str, branch: str, observed,
-                label: str, source: str, signal_id: str, note: str) -> tuple[str, int, dict]:
+                label: str, source: str, signal_id: str, note: str, reading_id=None) -> tuple[str, int, dict]:
     """The count's effects for the changed lots: one STOCK_COUNT reported fact (one stock_count adjustment per lot,
     `counted_day` the business day, D-21), each lot's record corrected (`facts.correct_record`, spec §8), the caller's
     activity seq reserved before what the fact causes, then `facts.apply` (D-17). Returns (fact_id, seq, applied)."""
@@ -897,6 +906,7 @@ def count_apply(conn, run: dict, changed: list[str], units: dict[str, float], *,
     fact_id = facts.write(conn, run, kind="STOCK_COUNT", adjustments=adjustments, sku=sku, branch=branch, zone=None,
                           valid_from=day, valid_to=day, label=label, confirmed_by=f"manager:{branch}",
                           observed_at=observed, source=source, signal_id=signal_id)
+    _fact_reading(conn, run, fact_id, reading_id)
     for l in changed:  # the record comes into line from now on (spec §8 Corrected records), through one helper
         facts.correct_record(conn, run, l, units[l], day)
     # the count is logged before the new versions and flags it causes, so Activity reads flag, count, new version
@@ -917,7 +927,7 @@ def expiry_newer(conn, run: dict, branch: str, days: dict[str, int], observed) -
 
 def expiry_apply(conn, run: dict, actor: dict, changed: list[str], days: dict[str, int], lot_ids: list[str], *,
                  sku: str, branch: str, observed, label: str, source: str, signal_id: str, note: str,
-                 case_id: str | None) -> tuple[str, int, dict, list]:
+                 case_id: str | None, reading_id=None) -> tuple[str, int, dict, list]:
     """The printed date's effects: one EXPIRY reported fact (one `expiry` adjustment per changed lot) valid from the
     business day to the later of the printed and recorded dates; lots.expiry_day is read, never written (F-23). The
     caller's activity seq is reserved, the MIXED_DATES holds the date resolves are resolved (`resolve_holds`, every
@@ -929,6 +939,7 @@ def expiry_apply(conn, run: dict, actor: dict, changed: list[str], days: dict[st
     fact_id = facts.write(conn, run, kind="EXPIRY", adjustments=adjustments, sku=sku, branch=branch, zone=None,
                           valid_from=day, valid_to=valid_to, label=label, confirmed_by=f"manager:{branch}",
                           observed_at=observed, source=source, signal_id=signal_id)
+    _fact_reading(conn, run, fact_id, reading_id)
     seq = db.one(conn, "SELECT nextval('activity_seq') AS n")["n"]  # logged before the versions and flags it causes
     resolved = resolve_holds(conn, run, actor, lot_ids, observed, fact_id, case_id)
     fact_scope = scope.of_adjustments(adjustments, sku=sku, branch=branch, zone=None, valid_from=day,
@@ -936,7 +947,8 @@ def expiry_apply(conn, run: dict, actor: dict, changed: list[str], days: dict[st
     return fact_id, seq, facts.apply(conn, run, fact_id, fact_scope, note=f"{note} ({fact_id})"), resolved
 
 
-def confirm(conn, run: dict, actor: dict, signal_id: str, revision, checked_both) -> dict:
+def confirm(conn, run: dict, actor: dict, signal_id: str, revision, checked_both, *, statuses=("ACTIVE",),
+            reading_id=None, value_source=None, checked_date=None) -> dict:
     """The addressed manager confirms a complete, applicable count that is not older than the evidence in force: one
     reported fact, the record corrected, the request CONFIRMED, every live case in scope re-evaluated and every
     committed one flagged (`facts.apply`). Approves, sends and holds nothing; returns {fact_id, labels, cases,
@@ -946,7 +958,7 @@ def confirm(conn, run: dict, actor: dict, signal_id: str, revision, checked_both
     prepare rechecking on the record either finishes before the count (the contract's order: confirm re-evaluates
     live cases only) or starts after it and sees the counted record, never in between. Two confirms for one lot
     serialise on the same lock, so the second is judged against the first one's fact (D-22)."""
-    run = db.lock_run(conn, run["run_id"], mode="UPDATE")
+    run = db.lock_run(conn, run["run_id"], mode="UPDATE", statuses=statuses)
     s = _signal(conn, run["run_id"], signal_id)
     if s is None or s["kind"] not in ("STOCK_COUNT", "EXPIRY") or not s["request_id"]:  # field reports: 07-13
         raise ApiError(404, "not_found", f"No signal {signal_id}")
@@ -960,8 +972,11 @@ def confirm(conn, run: dict, actor: dict, signal_id: str, revision, checked_both
         raise ApiError(409, "wrong_state", f"Request is {q['state']}", state=q["state"])
     if isinstance(revision, bool) or revision != s["revision"]:
         raise ApiError(409, "stale_version", "The answer changed since you looked at it", revision=s["revision"])
+    s, selected = _confirm_reading(conn, run, s, q, reading_id, value_source, checked_date)
+    selected_id = selected["reading_id"] if selected else None
     if s["kind"] == "EXPIRY":
-        return _confirm_expiry(conn, run, actor, s, q)
+        return _confirm_expiry(conn, run, actor, s, q, reading_id=selected_id,
+                               value_source="reading" if selected else "typed")
     if s["created_day"] != run["day"]:  # the record moved since this count was taken (CR-02; see CONFIRMABLE)
         raise ApiError(409, "stale_version", EARLIER_DAY, answer_day=s["created_day"])
     if checked_both is not True:
@@ -983,7 +998,8 @@ def confirm(conn, run: dict, actor: dict, signal_id: str, revision, checked_both
                  "AND request_id = :q", r=run["run_id"], q=q["request_id"])
     entry = {"request_id": q["request_id"], "signal_id": signal_id, "revision": s["revision"], "counts": counts,
              "units": units, "counted_day": day, "observed_at": realtime.iso(observed),
-             "actor": accounts.logged_actor(actor)}
+             "actor": accounts.logged_actor(actor), "value_source": "reading" if selected else "typed",
+             "reading_id": selected_id}
     changed = [l for l in lot_ids if l not in same]
     if not changed:  # the same check time and value as the evidence in force: nothing changes (D-22)
         db.log(conn, run["run_id"], day, "count_confirmed", q["case_id"], fact_id=None, labels=[], cases=[],
@@ -991,9 +1007,12 @@ def confirm(conn, run: dict, actor: dict, signal_id: str, revision, checked_both
         return {"fact_id": None, "labels": [], "cases": [], "flagged": [], "unchanged": True}
     at = realtime.db_now(conn)  # the confirmation time the fact row stores (now(), fixed in the transaction)
     labels = [facts.label_count(q["to_branch"], at, counts[l], photo=bool(s["file_uri"])) for l in changed]
+    if selected:
+        labels = [label + " · count stated in the reply, checked by " + q["to_branch"] + " manager"
+                  for label in labels]
     fact_id, seq, done = count_apply(conn, run, changed, units, sku=q["sku"], branch=q["to_branch"],
-                                     observed=observed, label="; ".join(labels), source="request",
-                                     signal_id=signal_id, note="count confirmed")
+                                     observed=observed, label="; ".join(labels), source="reading" if selected else "request",
+                                     signal_id=signal_id, note="count confirmed", reading_id=selected_id)
     db.run(conn, "INSERT INTO activity_log (run_id, seq, day, type, case_id, payload) VALUES (:r, :n, :d, "
                  "'count_confirmed', :c, CAST(:p AS jsonb))", r=run["run_id"], n=seq, d=day, c=q["case_id"],
            p=db.js({**entry, "fact_id": fact_id, "labels": labels, "cases": done["cases"],
@@ -1003,7 +1022,7 @@ def confirm(conn, run: dict, actor: dict, signal_id: str, revision, checked_both
                       for c in done["cases"]]}
 
 
-def _confirm_expiry(conn, run: dict, actor: dict, s: dict, q: dict) -> dict:
+def _confirm_expiry(conn, run: dict, actor: dict, s: dict, q: dict, *, reading_id=None, value_source=None) -> dict:
     """confirm() for an expiry part (07-CONTEXT D-11; research F-23), after the shared seat, state and revision checks:
     the tick and a printed date for every lot (409 scope_tick, 409 needs_input), applicability (409 count_mismatch),
     each date inside the engine's bound on today's input (400 out_of_bounds, T-07-27), then the newer-evidence rule
@@ -1031,7 +1050,8 @@ def _confirm_expiry(conn, run: dict, actor: dict, s: dict, q: dict) -> dict:
     db.run(conn, "UPDATE evidence_requests SET state = 'CONFIRMED', partial_note = NULL WHERE run_id = :r "
                  "AND request_id = :q", r=run_id, q=q["request_id"])
     entry = {"request_id": q["request_id"], "signal_id": s["signal_id"], "revision": s["revision"], "dates": dates,
-             "expiry_days": days, "observed_at": realtime.iso(observed), "actor": accounts.logged_actor(actor)}
+             "expiry_days": days, "observed_at": realtime.iso(observed), "actor": accounts.logged_actor(actor),
+             "value_source": value_source or "typed", "reading_id": reading_id}
     changed = [l for l in lot_ids if l not in same]
     if not changed:  # the same check time and date as the evidence in force: nothing changes (D-22)
         resolved = resolve_holds(conn, run, actor, lot_ids, observed, None, q["case_id"])
@@ -1042,10 +1062,14 @@ def _confirm_expiry(conn, run: dict, actor: dict, s: dict, q: dict) -> dict:
     ref = refdata.get(run["dataset_version"])
     labels = [facts.label_expiry(q["to_branch"], at, cases.date_label(days[l], ref), photo=bool(s["file_uri"]))
               for l in changed]
+    if reading_id:
+        labels = [label + " · printed date read from the answer, checked by " + q["to_branch"] + " manager"
+                  for label in labels]
     fact_id, seq, done, resolved = expiry_apply(conn, run, actor, changed, days, lot_ids, sku=q["sku"],
                                                 branch=q["to_branch"], observed=observed, label="; ".join(labels),
-                                                source="request", signal_id=s["signal_id"],
-                                                note="printed date confirmed", case_id=q["case_id"])
+                                                source="reading" if reading_id else "request", signal_id=s["signal_id"],
+                                                note="printed date confirmed", case_id=q["case_id"],
+                                                reading_id=reading_id)
     db.run(conn, "INSERT INTO activity_log (run_id, seq, day, type, case_id, payload) VALUES (:r, :n, :d, "
                  "'expiry_confirmed', :c, CAST(:p AS jsonb))", r=run_id, n=seq, d=day, c=q["case_id"],
            p=db.js({**entry, "fact_id": fact_id, "labels": labels, "cases": done["cases"],
@@ -1065,3 +1089,43 @@ def resolve_holds(conn, run: dict, actor: dict, lot_ids: list[str], observed, fa
         held = fact_id or (facts.in_force(conn, run["run_id"], l, "expiry") or {}).get("fact_id")
         out += lotholds.resolve_by_fact(conn, run, actor, l, observed, held, case_id=case_id)
     return out
+
+
+def _confirm_reading(conn, run, signal, request, reading_id, value_source, checked_date):
+    """Choose one source under confirm's existing run lock; never edit the answer."""
+    if value_source not in (None, "typed", "reading"):
+        raise ApiError(400, "bad_request", "value_source must be typed or reading")
+    latest = db.one(conn, "SELECT * FROM readings WHERE run_id=:r AND purpose='ANSWER' AND signal_id=:s "
+        "AND signal_revision=:v AND status='DONE' ORDER BY created_at DESC, reading_id DESC LIMIT 1",
+        r=run["run_id"], s=signal["signal_id"], v=signal["revision"])
+    if value_source == "reading":
+        if (not isinstance(reading_id, str) or latest is None or latest["reading_id"] != reading_id
+                or latest["after_confirmation"] or latest["request_id"] != request["request_id"]
+                or request["answer_signal_id"] != signal["signal_id"]):
+            raise ApiError(409, "stale_version", "The reading changed since you looked at it")
+    elif latest is None or latest["after_confirmation"]:
+        return signal, None
+    from agent.reading import answer_values
+    suggested = answer_values(latest["suggestions"], signal["fields"]["lot_ids"])
+    lot_ids = signal["fields"]["lot_ids"]
+    if signal["kind"] == "STOCK_COUNT":
+        counts = _clean_counts(suggested["pending_counts"], lot_ids)
+        typed = signal["fields"]["counts"]
+        if (value_source is None and not _missing(typed, lot_ids) and not _missing(counts, lot_ids)
+                and typed != counts):
+            raise ApiError(400, "bad_request", "Choose which count to confirm.")
+        if value_source == "reading":
+            return {**signal, "fields": {**signal["fields"], "counts": counts,
+                    "needs_input": _missing(counts, lot_ids)}}, latest
+    elif value_source == "reading":
+        dates = _clean_dates(conn, run, request, suggested["printed_dates"])
+        missing = [{"lot_id": lot, "field": "date"} for lot in lot_ids if dates[lot] is None]
+        return {**signal, "fields": {**signal["fields"], "dates": dates,
+                "needs_input": missing, "checked_lot": checked_date is True}}, latest
+    return signal, None
+
+
+def _fact_reading(conn, run, fact_id, reading_id):
+    if reading_id is not None:
+        db.run(conn, "UPDATE reported_facts SET reading_id=:id WHERE run_id=:r AND fact_id=:f",
+               r=run["run_id"], f=fact_id, id=reading_id)

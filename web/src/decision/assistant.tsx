@@ -4,12 +4,14 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, get, post } from "../api.ts";
 import { askAssistant, getAssistantHistory, getAssistantToolResult, getEvidenceDrafts, readBrief, sendEvidenceDraft, type AssistantBinding, type AssistantHistory, type AssistantOutput, type AssistantRef, type AssistantSource, type AssistantToolProgress, type AssistantToolResult, type AssistantUsage, type AssistantWhatIf, type CaseDetail61, type EvidenceDraft, type EvidenceDrafts, type EvidenceRequest, type SendEvidenceDraft } from "../contract.ts";
-import { errorAction } from "../copy.ts";
+import { ASK_DROP, errorAction } from "../copy.ts";
+import { checkDrop } from "../dropview.ts";
 import { expected, money, units } from "../format.ts";
 import { useAction } from "../hooks.ts";
 import { useSession } from "../shell.tsx";
 import { Button, Drawer, ErrorLine, Icon, Kv, Provenance, Table } from "../ui.tsx";
 import { recordedLine, RELOAD_DECISION } from "../vocab.ts";
+import { decisionStart, ReportSheet, type SheetStart } from "../report.tsx";
 
 export const BRIEF_TITLE = "Decision brief";
 export const GENERATING = "Template summary · AI brief being written";
@@ -656,6 +658,52 @@ function AnswerGroup({ turn, current, d, reload }: { turn: PersonalTurn; current
   </article>;
 }
 
+const fileDrag = (transfer: DataTransfer) => Array.from(transfer.types).includes("Files")
+  || Array.from(transfer.items).some(item => item.kind === "file");
+
+export function AskDropZone({ children, maxBytes, onReport }: {
+  children: ReactNode; maxBytes: number; onReport: (file: File | null, focusFile: boolean) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const depth = useRef(0);
+  const clearDrag = () => { depth.current = 0; setDragging(false); };
+  useEffect(() => {
+    if (!dragging) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); depth.current = 0; setDragging(false); }
+    };
+    document.addEventListener("keydown", escape, true);
+    return () => document.removeEventListener("keydown", escape, true);
+  }, [dragging]);
+  return <>
+    <div className="relative min-w-0" onDragEnter={event => {
+      if (!fileDrag(event.dataTransfer)) return;
+      event.preventDefault(); depth.current++; setDragging(true);
+    }} onDragOver={event => {
+      if (!fileDrag(event.dataTransfer)) return;
+      event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setDragging(true);
+    }} onDragLeave={event => {
+      depth.current = Math.max(0, depth.current - 1);
+      if (!depth.current || (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget))) clearDrag();
+    }} onDrop={event => {
+      if (!fileDrag(event.dataTransfer)) return;
+      event.preventDefault(); clearDrag();
+      const result = checkDrop(event.dataTransfer.files, maxBytes);
+      if (result.kind === "refused") setError(result.error);
+      if (result.kind === "accepted") { setError(null); onReport(result.file, false); }
+    }}>
+      {children}
+      {dragging && <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-navy-800 bg-navy-50/80 px-4 text-center text-body font-semibold text-navy-800">{ASK_DROP.dragging}</div>}
+    </div>
+    <ErrorLine error={error} />
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <span className="flex min-w-0 items-start gap-1 text-label text-tx2"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0"><path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5" /></svg>{ASK_DROP.hint}</span>
+      <Button kind="ghost" className="min-h-11" onClick={() => { setError(null); clearDrag(); onReport(null, true); }}>{ASK_DROP.open}</Button>
+    </div>
+  </>;
+}
+
 function AskBox({ d, reload }: { d: CaseDetail61; reload: () => void }) {
   const { session } = useSession();
   const current: AssistantBinding = { run_id: session.run_id, case_id: d.case_id, rec_version: d.rec_version ?? "",
@@ -663,6 +711,7 @@ function AskBox({ d, reload }: { d: CaseDetail61; reload: () => void }) {
   const binding = useReviewedAssistantBinding(current);
   const bindingKey = JSON.stringify(current);
   const [question, setQuestion] = useState("");
+  const [reportStart, setReportStart] = useState<SheetStart | null>(null);
   const [turns, setTurns] = useState<PersonalTurn[]>([]);
   const [rows, setRows] = useState<AssistantToolProgress[]>([]);
   const [stage, setStage] = useState("Checking this stock decision…");
@@ -769,6 +818,8 @@ function AskBox({ d, reload }: { d: CaseDetail61; reload: () => void }) {
   return <section aria-label={ASK_TITLE} className={`mt-4 flex flex-col gap-4 border-t border-line pt-4 ${WRAP}`}>
     <h3 className="m-0 text-title font-semibold">{ASK_TITLE}</h3>
     <p className="m-0 text-label text-tx2">Gemini drafts. Managers send requests and authorize business actions.</p>
+    <AskDropZone maxBytes={session.upload_max_bytes} onReport={(file, focusFile) => setReportStart({ ...decisionStart(d, session), initialFile: file,
+      questionText: question, caseContext: true, focusFile })}>
     <form noValidate onSubmit={event => { event.preventDefault(); void submit(); }} className={`flex flex-col items-start gap-2 ${WRAP}`}>
       <div className="flex flex-wrap gap-2">
         {["Compare these options", "What needs checking?", ...(d.result?.options.some(option => option.run_code) ? ["What if this run is unavailable?"] : [])].map(prompt =>
@@ -790,6 +841,9 @@ function AskBox({ d, reload }: { d: CaseDetail61; reload: () => void }) {
       </div> : !authorized && <p className="m-0 text-body text-tx2">This stock decision needs current calculated options before you can ask. Reload the stock decision.</p>}
       <Button kind="primary" type="submit" busy={ask.busy} disabled={!question.trim() || !authorized || capped}>Ask question</Button>
     </form>
+    </AskDropZone>
+    {reportStart && <ReportSheet start={reportStart} onClose={() => setReportStart(null)}
+      onSubmitted={() => { setReportStart(null); reload(); }} />}
     {[...visible].reverse().map(turn => <AnswerGroup key={turn.output_id} turn={turn} current={current} d={d} reload={reload} />)}
     {error && <p role="alert" className={`m-0 text-body ${WRAP}`}>{capped && error.extra.scope === "daily" ? DAILY_LIMIT : error.message}</p>}
     {retryable && <Button kind="plain" disabled={ask.busy || !authorized} onClick={() => void submit()}>{error.code === "interrupted" ? "Ask again" : "Try again"}</Button>}

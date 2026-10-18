@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import pathlib
 import threading
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -194,6 +196,17 @@ CACHED = 4  # dataset versions kept in memory (a deploy serves one; the build jo
 _lock = threading.Lock()  # one load at a time, so concurrent cold requests load once
 _refs: dict[str, "Ref"] = {}
 _truths: dict[str, dict] = {}
+_overrides: ContextVar[dict[str, Ref]] = ContextVar('reference_overrides', default={})
+
+
+@contextmanager
+def override(dataset_version: str, ref):
+    """Select a reference in this context only; nesting and exceptions restore the prior selection."""
+    token = _overrides.set({**_overrides.get(), dataset_version: ref})
+    try:
+        yield ref
+    finally:
+        _overrides.reset(token)
 
 
 def _read(sql: str, **params) -> list[dict]:
@@ -219,6 +232,9 @@ def _cached(cache: dict, dataset_version: str, load):
 
 def get(dataset_version: str) -> Ref:
     """The reference set of a dataset_version, cached (WR-10: loaded once, on the caller's connection)."""
+    selected = _overrides.get().get(dataset_version)
+    if selected is not None:
+        return selected
     return _cached(_refs, dataset_version, _load_ref)
 
 

@@ -181,6 +181,12 @@ TERM_EXCEPTIONS = {
     ("web/src/aboutview.ts", "Cloud Run serves the app, Cloud SQL for PostgreSQL keeps each workspace, and Cloud Storage holds the release files"): "Phase 11 D-07 names the Cloud Run service",
     ("web/src/aboutview.ts", "Run recorded · not published"): "Phase 11 D-08's locked check-status vocabulary",
     ("web/src/decision/assistant.tsx", "CASE"): "the API's assistant scope value, compared in code and never shown (09-17)",
+    ("web/src/copy.ts", "Report an observation for this case."):
+        "10-UI-SPEC S4 locked title for a report opened from the case ask box",
+    ("web/src/copy.ts", "Run on an earlier assistant version · not representative of the current app"):
+        "10-UI-SPEC S7: a dated evaluation run, not a scheduled truck run",
+    **{("web/src/evalsummary.tsx", text): "10-UI-SPEC S7: evaluation repetitions and failure references"
+       for text in ("Run", "Run 1", "Run 2", "Run 3")},
     ("web/src/pages/board.tsx", "Board"): 'the "Board | Table" layout switch (UI-SPEC "Decision board" toolbar)',
     ("web/src/pages/schedule.tsx", "Work orders"): "the Schedule's tab, mixing transfer and markdown work (UI-SPEC OQ-3)",
     ("web/src/pages/schedule.tsx", "Work order"): "the Schedule's Group by, mixing both kinds (UI-SPEC OQ-3)",

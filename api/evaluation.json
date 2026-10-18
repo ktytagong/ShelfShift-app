@@ -1,0 +1,5 @@
+{
+  "retry_limit": {"value": 2, "unit": "rechecks per stock decision per day", "type": "Policy", "source": "08-CONTEXT D-29 (user, 2026-10-18)", "note": "Recompute current reservations before retry; never bypass a check."},
+  "tie_threshold": {"value": 0.01, "unit": "USD", "type": "Assumption", "source": "08-RESEARCH A8", "note": "a seed whose net differs by less than this from the store rule's is a tie; fixed before any run, never tuned (benchmark-not-target)"},
+  "waste_price_info": {"value": 0.28, "unit": "USD/kg", "type": "Assumption", "source": "PROJECT.md Key Decisions 'Rev 6.3 waste price'", "note": "the five-seed weekcheck's information column only; never a gate (RPT-05)"}
+}

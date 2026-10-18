@@ -52,7 +52,19 @@ def all_ai_caps():
         return db.rows(conn, "SELECT * FROM usage_counts WHERE kind = 'ai' ORDER BY scope, window_start")
 
 
-def test_explicit_job_visits_every_evaluated_case_and_repeated_job_reuses_exact_outputs(schema, template, fake_model, monkeypatch):
+@pytest.fixture
+def brief_only_pass(monkeypatch):
+    from agent import preloaded
+
+    async def omit_preloaded(run_id):
+        return {"test_scope": "brief_only"}
+
+    # These two BRIEF tests retain their business-state assertions. The full
+    # awaited release hook and its allowed previews are tested in test_precompute.
+    monkeypatch.setattr(preloaded, "precompute", omit_preloaded)
+
+
+def test_explicit_job_visits_every_evaluated_case_and_repeated_job_reuses_exact_outputs(schema, template, fake_model, monkeypatch, brief_only_pass):
     from agent import briefs
     fake = install(fake_model, monkeypatch, [])
     run = inactive(schema)
@@ -274,7 +286,7 @@ def test_job_refuses_anything_except_completed_inactive_template(schema, templat
         db.run(conn, "UPDATE demo_runs SET status = 'RETIRED' WHERE run_id = :r", r=run["run_id"])
 
 
-def test_baseline_uses_scoped_tools_checks_numbers_and_stores_only_unsent_drafts(schema, template, fake_model, monkeypatch):
+def test_baseline_uses_scoped_tools_checks_numbers_and_stores_only_unsent_drafts(schema, template, fake_model, monkeypatch, brief_only_pass):
     from api import db
     from tests.api.test_evidence import phantom, story
     run = inactive(schema)

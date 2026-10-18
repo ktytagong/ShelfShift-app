@@ -242,20 +242,28 @@ def judge_case(conn, run: dict) -> dict | None:
     return None
 
 
-def guide_values(conn, run: dict) -> tuple[dict, dict]:
+def guide_values(conn, run: dict, *, case_key: str | None = None) -> tuple[dict, dict]:
     """(the judge's case, the guide's placeholder values) from the template's own codes: `source_store` the case's
     store, `dest_store` and `run_code` its recommended transfer (else its first transfer option on today's run),
     `store` the branch its count fact asks (the store that answers; else the case's store), `product` "Name · Code"
     where a name is mapped (D-03), `lot_id` the case's lot, `weekday` and `date` the business day. A template with no
-    judge's case or no transfer run is a ValueError naming what is missing; nothing is made up."""
+    judge's case or no transfer run is a ValueError naming what is missing; nothing is made up. An explicit
+    case_key is looked up only in this template's live cases and uses its plan in force."""
     ref = refdata.get(run["dataset_version"])
-    case = judge_case(conn, run)
+    case = (judge_case(conn, run) if case_key is None else db.one(
+        conn, "SELECT * FROM cases WHERE run_id=:r AND key=:k AND state=ANY(:s)",
+        r=run["run_id"], k=case_key, s=list(cases.LIVE_STATES)))
     if case is None:
-        raise ValueError("the template has no live story or verify-before-move case")
+        raise ValueError("the template has no matching live guide case")
     rec = cases.active_rec(conn, case)
     if rec is None:
         raise ValueError(f"{case['key']} has no recommendation")
-    plan = cases.parse_plan(rec["result"]["recommended"])
+    if case_key is None:
+        key = rec["result"]["recommended"]
+    else:
+        from . import selection
+        key, _, _ = selection.plan_in_force(case, rec)
+    plan = cases.parse_plan(key)
     if plan.kind == TRANSFER and ref.run_on(plan.run_code, run["day"]) is not None:
         dest, code = plan.dest, plan.run_code
     else:
@@ -271,13 +279,13 @@ def guide_values(conn, run: dict) -> tuple[dict, dict]:
                   "date": f"{d.day} {realtime.MONTHS[d.month - 1]} {d.year}"}
 
 
-def render_guide(conn, template: dict) -> dict:
+def render_guide(conn, template: dict, *, case_key: str | None = None, ambiguous_quote: bool = False) -> dict:
     """The reviewer guide's material from this template (D-19): {template, dataset_version, case, values, samples,
     quote}. Each sample keeps its id, use, kind and file, with its title, text and expected result filled from
     `guide_values`; a placeholder the values lack is a ValueError (the samples and the code disagree). `quote` is the
     run's own fixed cost from the data in the reference currency (the quote PDF and the quote screenshot)."""
     ref = refdata.get(template["dataset_version"])
-    case, values = guide_values(conn, template)
+    case, values = guide_values(conn, template, case_key=case_key)
 
     def fill(text: str) -> str:
         unknown = sorted(set(PLACEHOLDER.findall(text)) - set(values))
@@ -286,12 +294,21 @@ def render_guide(conn, template: dict) -> dict:
         return PLACEHOLDER.sub(lambda m: values[m.group(1)], text)
 
     trip = ref.run_on(values["run_code"], template["day"])
-    return {"template": template["run_id"], "dataset_version": template["dataset_version"], "case": case["key"],
+    guide = {"template": template["run_id"], "dataset_version": template["dataset_version"], "case": case["key"],
             "values": values,
             "samples": [{"id": e["id"], "use": e["use"], "kind": e["kind"], "file": e["file"],
                          "title": fill(e["title"]), "text": fill(e["text"]), "expected": fill(e["expected"])}
                         for e in samples()],
             "quote": {"run_code": values["run_code"], "amount": float(trip.fixed_cost), "currency": ref.currency}}
+    quote = guide["quote"]
+    amount = (f"${quote['amount']:.2f}" if quote["currency"] == "USD"
+              else f"{quote['amount']:.2f} {quote['currency']}")
+    terms = ("; pricing basis, handling inclusion and expiry unknown" if ambiguous_quote
+             else " per trip, handling included")
+    for sample in guide["samples"]:
+        if sample["id"] == "quote-pdf":
+            sample["expected"] = f"a quote for {quote['run_code']}: {amount}{terms} (TRANSPORT)"
+    return guide
 
 
 def _pdf_text(text: str) -> str:
@@ -301,13 +318,14 @@ def _pdf_text(text: str) -> str:
 
 
 def quote_pdf(run_code: str, amount: float, currency: str, *, origin: str | None = None, dest: str | None = None,
-              trip_date: str | None = None) -> bytes:
+              trip_date: str | None = None, ambiguous: bool = False) -> bytes:
     """A minimal one-page PDF of a synthetic carrier quote, written in code (no dependency): the run code (and its
     route and trip date when given), the amount per trip with handling included, and "Synthetic sample". It names no
-    carrier and no retailer."""
+    carrier and no retailer. ambiguous=True omits pricing and handling terms for the evaluation's
+    deliberately incomplete quote; ordinary guide quotes keep their stated terms."""
     route = f"Route: {run_code}" + (f" {origin} to {dest}" if origin and dest else "")
     lines = ["QUOTATION - transport", route] + ([f"Date of trip: {trip_date}"] if trip_date else []) + [
-        f"Price: {amount:.2f} {currency} per trip, handling included",
+        f"Price: {amount:.2f} {currency}" + ("" if ambiguous else " per trip, handling included"),
         "Synthetic sample for the reviewer guide, not a real quote"]
     text = "BT /F1 14 Tf 60 760 Td 20 TL " + " ".join(f"({_pdf_text(x)}) Tj T*" for x in lines) + " ET"
     objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -325,33 +343,54 @@ def quote_pdf(run_code: str, amount: float, currency: str, *, origin: str | None
     return out + f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii")
 
 
+def quote_for_run(run: dict, run_code: str, *, ambiguous: bool = False) -> tuple[dict, bytes]:
+    """The guide and evaluation share these exact dataset-derived quote bytes."""
+    ref = refdata.get(run["dataset_version"])
+    trip = ref.run_on(run_code, run["day"])
+    if trip is None:
+        raise ValueError("the quoted run is not scheduled on the template day")
+    day = ref.date(run["day"])
+    trip_date = f"{cases.weekday(run['day'], ref)} {day.day} {realtime.MONTHS[day.month - 1]} {day.year}"
+    quote = {"run_code": run_code, "amount": float(trip.fixed_cost), "currency": ref.currency}
+    pdf = quote_pdf(run_code, quote["amount"], ref.currency, origin=trip.origin, dest=trip.dest,
+                    trip_date=trip_date, ambiguous=ambiguous)
+    return quote, pdf
+
+
 def main(argv: list[str] | None = None) -> int:
     """python -m api.preload guide --out DIR: the ACTIVE template's guide samples (guide-samples.json) and quote PDF
     (quote.pdf) written into DIR, nothing else and nowhere else; prints the run code the quote screenshot must show.
-    Reads the database only; no cloud call."""
+    --template also accepts an inactive READY template; --case-key selects its live case. The explicit
+    --ambiguous-quote option omits pricing and handling terms. Reads the database only; no cloud call."""
     ap = argparse.ArgumentParser(prog="python -m api.preload", description="The reviewer guide from the template")
     sub = ap.add_subparsers(dest="command", required=True)
     g = sub.add_parser("guide", help="write the guide's samples and quote PDF from the ACTIVE template")
     g.add_argument("--out", required=True, help="the folder to write guide-samples.json and quote.pdf into")
+    g.add_argument("--template", help="read this READY or ACTIVE template without activating it")
+    g.add_argument("--case-key", help="use this live case from the selected template")
+    g.add_argument("--ambiguous-quote", action="store_true",
+                   help="omit pricing basis and handling terms for the evaluation ambiguity scenario")
     args = ap.parse_args(argv)
     from . import sandbox  # it imports this module
     with db.tx() as conn:
-        template = sandbox.active_template(conn)
-        if template is None:
-            print("no ACTIVE template: build one first (python -m api.sandbox build)", file=sys.stderr)
+        template = (sandbox.active_template(conn) if args.template is None else
+                    db.one(conn, "SELECT * FROM demo_runs WHERE run_id=:r", r=args.template))
+        if template is None or template["kind"] != "TEMPLATE" or template["status"] not in ("READY", "ACTIVE"):
+            print("no ready reference template: select a READY or ACTIVE template", file=sys.stderr)
             return 1
         try:
-            guide = render_guide(conn, template)
+            guide = render_guide(conn, template, case_key=args.case_key, ambiguous_quote=args.ambiguous_quote)
+            quote, pdf = quote_for_run(template, guide["quote"]["run_code"], ambiguous=args.ambiguous_quote)
+            if quote != guide["quote"]:
+                raise ValueError("guide quote does not match its dataset run")
         except ValueError as exc:
             print(f"guide not rendered: {exc}", file=sys.stderr)
             return 1
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    q, v = guide["quote"], guide["values"]
-    trip = refdata.get(template["dataset_version"]).run_on(q["run_code"], template["day"])
+    q = guide["quote"]
     (out / GUIDE_FILES[0]).write_text(json.dumps(guide, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (out / GUIDE_FILES[1]).write_bytes(quote_pdf(q["run_code"], q["amount"], q["currency"], origin=trip.origin,
-                                                 dest=trip.dest, trip_date=f"{v['weekday']} {v['date']}"))
+    (out / GUIDE_FILES[1]).write_bytes(pdf)
     print(f"wrote {', '.join(GUIDE_FILES)} to {out} from template {template['run_id']} ({guide['case']})")
     print(f"quote screenshot run code: {q['run_code']}")
     return 0

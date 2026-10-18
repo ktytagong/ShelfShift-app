@@ -111,14 +111,18 @@ web-db:
 # and :14173 driven by headless Chromium. Never run two test-web runs at once. WEB_TESTS narrows the run.
 # test_assistant.py swaps the session's API for one bound to its fake model (09-INTEGRATION), so the full run gives
 # it its own pytest process after the rest; the integrated root is the default binding, an explicit value wins.
+# test_ask_drop.py imports that swap's fixtures (Phase 10), which pytest instantiates once per module, so it needs a
+# process of its own too: next to test_assistant.py its control directory is not the one the session's API reads.
 ASSISTANT_WEB := tests/web/test_assistant.py
+ASK_DROP_WEB := tests/web/test_ask_drop.py
 WEB_PYTEST = ASSISTANT_API_WORKTREE="$${ASSISTANT_API_WORKTREE:-$(CURDIR)}" DATABASE_URL=$(TEST_WEB_DB) $(PY) -m pytest -q -m "web and not live"
 test-web: web-db
 	$(PY) -c "$(CHECK_PY)"
 	test -d web/node_modules || npm --prefix web ci --no-audit --no-fund
 	npm --prefix web run build
-	$(WEB_PYTEST) $(WEB_TESTS) $(if $(filter tests/web,$(WEB_TESTS)),--ignore=$(ASSISTANT_WEB))
+	$(WEB_PYTEST) $(WEB_TESTS) $(if $(filter tests/web,$(WEB_TESTS)),--ignore=$(ASSISTANT_WEB) --ignore=$(ASK_DROP_WEB))
 	$(if $(filter tests/web,$(WEB_TESTS)),$(WEB_PYTEST) $(ASSISTANT_WEB))
+	$(if $(filter tests/web,$(WEB_TESTS)),$(WEB_PYTEST) $(ASK_DROP_WEB))
 
 # The quick check after every change to web/: tsc, the node unit tests and the honesty scan of web/src. It needs no
 # database, no API and no browser, so it passes with Docker stopped.

@@ -1,6 +1,7 @@
 # ShelfShift reviewer guide
 
-This guide covers signing in, the test accounts, one walkthrough, where Gemini works and the two clocks you will see.
+This guide covers signing in, the test accounts, one walkthrough, where Gemini works (decision briefs, Ask and field
+reports) and the two clocks you will see.
 Everything here matches the full version released on 18 Oct 2026 (Gemini decision briefs and Ask,
 and the verify-before-you-move screens).
 
@@ -100,6 +101,20 @@ never approves anything: every figure comes from the engine, and people make eve
    forecast, options and checks, and answers with links to what it used. Your questions are visible only to you.
 4. A daily AI limit protects the shared budget. If it is reached, the box says so and resets at 00:00 Bangkok time;
    everything else keeps working.
+
+**Part 4: Gemini reads field reports.**
+
+1. Sign in as store manager `S223`, open **Business events** and press **Report an observation**.
+2. In **What happened**, type "One chiller at S223 is broken; we can only take half the chilled stock until tomorrow."
+   (or attach a photo or PDF) and press **Submit report**.
+3. Gemini reads the report and fills in **Suggested fields**, each marked **Suggested by Gemini**. Accept each one
+   with **Use suggested value**, or type your own. Where you typed something else, both show.
+4. **Preview impact** shows which open stock decisions would change if the report is confirmed
+   ("Potential impact · unconfirmed"). Gemini never confirms a report; a person does.
+
+More samples (a local event, a carrier quote as a screenshot and as a PDF, a blurry photo, and a message that tries to
+give instructions) are in [docs/guide](guide/README.md), with the account to use, what to enter and what Gemini
+should read.
 
 ## Two clocks
 

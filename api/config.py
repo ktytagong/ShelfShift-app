@@ -19,6 +19,7 @@ these is a code constant; only the hold TTL, the engine timeout and the daily AI
 from __future__ import annotations
 
 import dataclasses
+import math
 import os
 import pathlib
 import tempfile
@@ -73,6 +74,7 @@ GCP = env("GCP", "off") == "on"
 UPLOADS_BUCKET = env("UPLOADS_BUCKET", "")
 UPLOAD_DIR = env("UPLOAD_DIR", "") or os.path.join(tempfile.gettempdir(), "shelfshift-uploads")
 DEMO_SIGNALS_DIR = env("DEMO_SIGNALS_DIR", "") or str(HERE.parent / "data" / "demo_signals")
+EVAL_BUCKET = env("EVAL_BUCKET", "")
 
 # Connection pool (infrastructure, not retailer values): db-f1-micro allows 25 connections in all.
 POOL_SIZE = int(env("POOL_SIZE", "5"))
@@ -152,6 +154,24 @@ def load_settings(path: pathlib.Path | str = SETTINGS_FILE) -> dict:
             _number(f"settings.prune.{key}", s["prune"][key], integer=True)
         _bands(s["reassess"]["urgency_bands"])  # 07-CONTEXT D-28: the urgency band edges (pending retailer)
         _percent("settings.reassess.clearance_pct", s["reassess"]["clearance_pct"])  # D-28: the clearance threshold
+        reading = s["reading"]
+        for key in ("timeout_s", "low_confidence", "max_input_tokens", "max_output_tokens", "max_text_chars", "lease_s"):
+            value = _number(f"settings.reading.{key}", reading[key],
+                            integer=key in ("max_input_tokens", "max_output_tokens", "max_text_chars"))
+            if not math.isfinite(value):
+                raise refconfig.ConfigError(f"settings.reading.{key}: must be finite")
+        if reading["low_confidence"] > 1:
+            raise refconfig.ConfigError("settings.reading.low_confidence: must be at most 1")
+        if reading["thinking_level"] not in ("LOW", "MEDIUM", "HIGH"):
+            raise refconfig.ConfigError("settings.reading.thinking_level: must be LOW, MEDIUM or HIGH")
+        for key in ("runs_per_scenario", "max_calls", "max_tokens", "max_cost_usd",
+                    "price_input_usd_per_mtok", "price_output_usd_per_mtok"):
+            value = _number(f"settings.eval.{key}", s["eval"][key],
+                            integer=key in ("runs_per_scenario", "max_calls", "max_tokens"))
+            if not math.isfinite(value):
+                raise refconfig.ConfigError(f"settings.eval.{key}: must be finite")
+        if s["eval"]["runs_per_scenario"] > 3:
+            raise refconfig.ConfigError("settings.eval.runs_per_scenario: must be at most 3")
     except KeyError as e:
         raise refconfig.ConfigError(f"settings: required value {e.args[0]!r} is missing") from None
     return s
@@ -183,6 +203,8 @@ def _env_or(name: str, value, cast):
 
 SETTINGS = load_settings()
 SETTINGS_BOUNDS = load_bounds()
+READING = dict(SETTINGS["reading"])  # 10-CONTEXT D-02, D-10: starting policy; tune with the 10-20 measurement
+EVAL = dict(SETTINGS["eval"])
 
 HOLD_TTL_MIN = _env_or("HOLD_TTL_MIN", SETTINGS["holds"]["hold_ttl_min"], float)  # real minutes (spec §8)
 ENGINE_TIMEOUT_S = _env_or("ENGINE_TIMEOUT_S", SETTINGS["engine"]["timeout_s"], float)

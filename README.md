@@ -7,7 +7,7 @@ checked before anything moves. The scenario is hypothetical: the sales history i
 lots, expiry and deliveries are simulated. The app and these docs are in English.
 
 **Reviewers: start with the [reviewer guide](docs/reviewer-guide.md).** It covers signing in, the test accounts, a
-walkthrough and where Gemini works.
+walkthrough and where Gemini works. The sample files reviewers can submit are in [docs/guide](docs/guide/README.md).
 
 ## Run it locally (engine-only mode, GCP off)
 
@@ -150,6 +150,39 @@ GCP=off .venv/bin/python -m agent.usage "$RUN_ID" --measurement-source local-fak
 Use the user-observed --measurement-source choice only for records actually observed from a user-run paid Vertex cohort. The source label is an explicit operator declaration, never inferred from model identity or output provenance. Keep fake and paid runs/reports separate; copied template attempts are retained generation records, not independent new provider observations. The JSON contains only aggregate status/reason counts, metric coverage and percentiles, plus public configured limits. It exports no questions, answers, tool inputs/results, session/workspace identifiers, infrastructure identifiers or global-cap numbers.
 
 The deterministic timing fixture is tests/agent/test_usage.py::test_local_usage_benchmark. Its report flag is P09_USAGE_BENCHMARK_REPORT; run it only in a serialized benchmark slot with a disposable local TEST_DB. Normal functional runs skip timing publication. The local table records the measured sample counts and machine context, without a performance claim about the deployed service.
+
+## AI evaluation (user-run)
+
+**Preliminary evaluation · 10 scenarios × 3 runs** measures the assistant and reading services separately from the engine. Review the scenario and reference approval sheet first. Record the human decisions, then commit the approved references and fingerprint through the release approval step before continuing.
+
+Configure GEMINI_MODEL, EVAL_JOB and EVAL_BUCKET in the evaluation job's environment before the checks below. Run preflight from the source checkout containing the committed approval lock, with access to the configured template database.
+
+```sh
+python -m agent.eval approval-sheet
+python -m agent.eval preflight --template "$TEMPLATE"
+```
+
+The user approves the limits before each paid run. Use the same configured image and service identity, one task, no job retries, and the restricted evaluation evidence location. Set the job arguments to the command below with the approved MAX_CALLS, MAX_TOKENS and MAX_COST_USD values; EVAL_ID identifies its retained results.
+
+```sh
+python -m agent.eval run --template "$TEMPLATE" --eval-id "$EVAL_ID" --max-calls "$MAX_CALLS" --max-tokens "$MAX_TOKENS" --max-cost-usd "$MAX_COST_USD"
+```
+
+Execute the configured job once, then export its checklist:
+
+```sh
+gcloud run jobs execute "$EVAL_JOB" --wait
+python -m agent.eval export --eval-id "$EVAL_ID" --out "$REVIEW_FILE"
+```
+
+Fill the exported checklist in a spreadsheet without changing metadata or item keys. Run the export, import and publish commands in the same configured job environment through its argument override. Import the completed review file before publication:
+
+```sh
+python -m agent.eval import --eval-id "$EVAL_ID" --file "$REVIEW_FILE" --reviewer "$REVIEWER"
+python -m agent.eval publish --eval-id "$EVAL_ID"
+```
+
+Published results appear on About after the completeness and protection checks pass. Failed or unfinished runs remain visible. Cached responses and fresh deterministic results with no model call are recorded separately from paid model observations. A budget refusal prevents the next provider attempt; the evaluation leaves reviewer allowances unchanged.
 
 ## Limitations
 

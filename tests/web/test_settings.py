@@ -7,7 +7,7 @@ button; the server refuses a manager's write anyway (06.1-06). No demo wording i
 out_of_bounds shows the server's message under its field; a stale page shows the stale line, reloads and keeps the
 typed text. Nothing is resent on its own.
 
-About: the 05.2-20 article, readable while signed out, plus "Two clocks" and "Operating model"; the footer shows the
+About: the 05.2-20 article, readable while signed out, plus "Two clocks", "Operating model" and "AI evaluation"; the footer shows the
 mark and "Sign in" signed out, "Back to Today" signed in. Dingdong-Inc is named only as the dataset's creator.
 """
 from __future__ import annotations

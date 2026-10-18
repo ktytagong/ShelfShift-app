@@ -33,7 +33,18 @@ def oracle(run, store, manager):
         movements = db.rows(conn, 'SELECT * FROM movements WHERE run_id = :r', r=run['run_id'])
         decisions = db.rows(conn, 'SELECT * FROM decisions WHERE run_id = :r', r=run['run_id'])
         now = db.one(conn, 'SELECT now() AS t')['t']
-    scoped = [c for c in rows if store is None or store in (c['source_branch'], c['plan_dest'])]
+        logs = db.rows(conn, "SELECT case_id, payload FROM activity_log WHERE run_id = :r AND type = 'committed' "
+                       'ORDER BY seq', r=run['run_id'])
+    commitments = {(g['case_id'], g['payload'].get('round')): g['payload'].get('plan') for g in logs}
+
+    def dest(c):
+        """The plan in force's destination: a commitment's (cancelled or not) committed key, else plan_dest."""
+        if c['state'] in ('APPROVED', 'PREPARED', 'EXECUTED', 'OBSERVED') or (
+                c['state'] == 'CLOSED' and c['closed_as'] == 'CANCELLED'):
+            key = commitments.get((c['case_id'], c['round']))
+            return cases.parse_plan(key).dest if key else None
+        return c['plan_dest']
+    scoped = [c for c in rows if store is None or store in (c['source_branch'], dest(c))]
     ids = {c['case_id'] for c in scoped}
     live = [c for c in scoped if c['state'] in ('OPEN', 'WAITING', 'PENDING_APPROVAL')]
     pending = [c for c in live if c['state'] == 'PENDING_APPROVAL']
@@ -49,7 +60,7 @@ def oracle(run, store, manager):
         return ((c['source_branch'] == manager and 'source' not in decided) or
                 (c['plan_dest'] == manager and 'destination' not in decided))
     def moved(kind):
-        return sum(c['plan_dest'] is not None and any(m['case_id'] == c['case_id'] and m['kind'] == kind
+        return sum(dest(c) is not None and any(m['case_id'] == c['case_id'] and m['kind'] == kind
                    for m in movements) for c in committed)
     return {'open': {'count': len(live), 'need_action': sum(yours(c) for c in live)},
             'pending_approval': {'count': len(pending), 'waiting_for_you': sum(yours(c) for c in pending)},
@@ -144,6 +155,11 @@ def test_committed_transfers_count_movements_once_and_keep_is_included(client):
     as_seat(client, None)
     with db.tx() as conn:
         db.run(conn, "UPDATE cases SET state = 'APPROVED' WHERE run_id = :r", r=run['run_id'])
+        # A committed transfer is a commitment record in the case's round, as Expected and Actual bind it.
+        recommended = cases.active_rec(conn, story)['result']['recommended']
+        assert cases.parse_plan(recommended).kind == 'TRANSFER'
+        db.log(conn, run['run_id'], run['day'], 'committed', story['case_id'], plan=recommended,
+               state='APPROVED', round=story['round'])
         for kind in ('DISPATCH', 'DISPATCH', 'RECEIPT'):
             db.run(conn, 'INSERT INTO movements (run_id, movement_id, case_id, action_id, kind, qty, '
                    "recorded_by, role, scenario_day) VALUES (:r, :m, :c, 'test', :k, 1, 'test', 'hq', 0)",
@@ -267,7 +283,8 @@ def published_fixture(run):
 
 
 def test_benchmark_none_then_historical_never_current(client):
-    assert client.get('/api/reports/benchmark').json() == {'status': 'none', 'current': None, 'historical': None}
+    empty = client.get('/api/reports/benchmark').json()
+    assert {k: empty[k] for k in ('status', 'current', 'historical')} == {'status': 'none', 'current': None, 'historical': None}
     with published_fixture(workspace_of(client)) as ident:
         for branch in (client.get('/api/session').json()['branch'], None):
             as_seat(client, branch)
@@ -276,14 +293,17 @@ def test_benchmark_none_then_historical_never_current(client):
             assert result['historical']['benchmark_id'] == ident
             assert set(result['historical']['versions']) == {'engine', 'dataset', 'policy', 'forecast_runs',
                                                            'evaluator', 'settings'}
-            assert result['historical']['differs'] == []
+            assert result['historical']['differs'] == [
+                k for k in ('engine', 'dataset', 'policy', 'forecast_runs', 'evaluator', 'settings')
+                if result['historical']['versions'][k] != result['app'][k]]
             assert 'image_digest' not in result['historical']
         bad = client.get('/api/reports/benchmark?branch=not-a-store')
         assert (bad.status_code, bad.json()['error']) == (400, 'bad_request')
         for status in ('RUNNING', 'VALIDATED', 'FAILED', 'TRIAL'):
             with db.tx() as conn:
                 db.run(conn, 'UPDATE benchmark_runs SET status = :s WHERE benchmark_id = :b', s=status, b=ident)
-            assert client.get('/api/reports/benchmark').json() == {'status': 'none', 'current': None, 'historical': None}
+            empty = client.get('/api/reports/benchmark').json()
+            assert {k: empty[k] for k in ('status', 'current', 'historical')} == {'status': 'none', 'current': None, 'historical': None}
 
 
 REPORT_NAMES = ('open', 'pending_approval', 'unanswered_check', 'committed', 'cancelled')
@@ -295,7 +315,13 @@ def contributing_ids(run, store, report):
               'pending_approval': "c.state = 'PENDING_APPROVAL'",
               'committed': "c.state IN ('APPROVED','PREPARED','EXECUTED','OBSERVED')",
               'cancelled': "c.state = 'CLOSED' AND c.closed_as = 'CANCELLED'"}
-    involvement = '(:all_stores OR c.source_branch = :store OR c.plan_dest = :store)'
+    # The plan in force's destination: a commitment (cancelled or not) keeps its round's committed key.
+    dest = ("CASE WHEN c.state IN ('APPROVED','PREPARED','EXECUTED','OBSERVED') OR (c.state = 'CLOSED' "
+            "AND c.closed_as = 'CANCELLED') THEN (SELECT CASE WHEN g.payload->>'plan' LIKE 'tr:%' "
+            "THEN split_part(g.payload->>'plan', ':', 2) END FROM activity_log g WHERE g.run_id = c.run_id "
+            "AND g.case_id = c.case_id AND g.type = 'committed' AND (g.payload->>'round')::int = c.round "
+            "ORDER BY g.seq DESC LIMIT 1) ELSE c.plan_dest END")
+    involvement = f'(:all_stores OR c.source_branch = :store OR ({dest}) = :store)'
     clause = ("EXISTS (SELECT 1 FROM evidence_requests q WHERE q.run_id = c.run_id AND q.case_id = c.case_id "
               f"AND q.state = 'OPEN' AND ({involvement} OR q.to_branch = :store))" if report == 'unanswered_check'
               else f'({states[report]}) AND {involvement}')

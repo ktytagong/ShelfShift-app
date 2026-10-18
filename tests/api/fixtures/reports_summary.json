@@ -1,0 +1,450 @@
+{
+  "_about": "illustrative, contract-shaped test fixture; not a result",
+  "kind": "SIMULATED",
+  "scenarios": [
+    {
+      "key": "store_rule",
+      "world": "baseline_rule",
+      "label": "Modeled store rule with original records"
+    },
+    {
+      "key": "store_rule_checked",
+      "world": "baseline_checked",
+      "label": "Modeled store rule with equivalent stock checks"
+    },
+    {
+      "key": "shelfshift",
+      "world": "shelfshift",
+      "label": "ShelfShift decisions with those checks"
+    },
+    {
+      "key": "markdowns_only",
+      "world": "do_nothing",
+      "label": "Automatic markdowns only · no transfers or additional intervention"
+    }
+  ],
+  "network": {
+    "stores": 3,
+    "at_risk_lots_by_day": [
+      {
+        "day": 0,
+        "lots": 3
+      },
+      {
+        "day": 1,
+        "lots": 3
+      },
+      {
+        "day": 2,
+        "lots": 3
+      },
+      {
+        "day": 3,
+        "lots": 3
+      },
+      {
+        "day": 4,
+        "lots": 3
+      },
+      {
+        "day": 5,
+        "lots": 3
+      },
+      {
+        "day": 6,
+        "lots": 3
+      }
+    ]
+  },
+  "money": {
+    "by_scenario": {
+      "store_rule": 700,
+      "store_rule_checked": 707,
+      "shelfshift": 714,
+      "markdowns_only": 721
+    },
+    "steps": [
+      {
+        "key": "store_rule",
+        "label": "Modeled store rule",
+        "kind": "total",
+        "value": 700
+      },
+      {
+        "key": "checks_change",
+        "label": "Change from equivalent stock checks",
+        "kind": "change",
+        "value": 7
+      },
+      {
+        "key": "decisions_change",
+        "label": "Change from ShelfShift decisions vs modeled rule",
+        "kind": "change",
+        "value": 7
+      },
+      {
+        "key": "shelfshift",
+        "label": "ShelfShift total",
+        "kind": "total",
+        "value": 714
+      }
+    ],
+    "by_day": [
+      {
+        "day": 0,
+        "store_rule": 100,
+        "store_rule_checked": 101,
+        "shelfshift": 102,
+        "markdowns_only": 103
+      },
+      {
+        "day": 1,
+        "store_rule": 100,
+        "store_rule_checked": 101,
+        "shelfshift": 102,
+        "markdowns_only": 103
+      },
+      {
+        "day": 2,
+        "store_rule": 100,
+        "store_rule_checked": 101,
+        "shelfshift": 102,
+        "markdowns_only": 103
+      },
+      {
+        "day": 3,
+        "store_rule": 100,
+        "store_rule_checked": 101,
+        "shelfshift": 102,
+        "markdowns_only": 103
+      },
+      {
+        "day": 4,
+        "store_rule": 100,
+        "store_rule_checked": 101,
+        "shelfshift": 102,
+        "markdowns_only": 103
+      },
+      {
+        "day": 5,
+        "store_rule": 100,
+        "store_rule_checked": 101,
+        "shelfshift": 102,
+        "markdowns_only": 103
+      },
+      {
+        "day": 6,
+        "store_rule": 100,
+        "store_rule_checked": 101,
+        "shelfshift": 102,
+        "markdowns_only": 103
+      }
+    ]
+  },
+  "footnote_x": 14,
+  "waste": {
+    "by_day": [
+      {
+        "day": 0,
+        "store_rule": 3,
+        "store_rule_checked": 4,
+        "shelfshift": 5,
+        "markdowns_only": 6
+      },
+      {
+        "day": 1,
+        "store_rule": 3,
+        "store_rule_checked": 4,
+        "shelfshift": 5,
+        "markdowns_only": 6
+      },
+      {
+        "day": 2,
+        "store_rule": 3,
+        "store_rule_checked": 4,
+        "shelfshift": 5,
+        "markdowns_only": 6
+      },
+      {
+        "day": 3,
+        "store_rule": 3,
+        "store_rule_checked": 4,
+        "shelfshift": 5,
+        "markdowns_only": 6
+      },
+      {
+        "day": 4,
+        "store_rule": 3,
+        "store_rule_checked": 4,
+        "shelfshift": 5,
+        "markdowns_only": 6
+      },
+      {
+        "day": 5,
+        "store_rule": 3,
+        "store_rule_checked": 4,
+        "shelfshift": 5,
+        "markdowns_only": 6
+      },
+      {
+        "day": 6,
+        "store_rule": 3,
+        "store_rule_checked": 4,
+        "shelfshift": 5,
+        "markdowns_only": 6
+      }
+    ],
+    "totals": {
+      "store_rule": {
+        "units": 21,
+        "kg": 10.5
+      },
+      "store_rule_checked": {
+        "units": 28,
+        "kg": 14
+      },
+      "shelfshift": {
+        "units": 35,
+        "kg": 17.5
+      },
+      "markdowns_only": {
+        "units": 42,
+        "kg": 21
+      }
+    },
+    "change_vs_markdowns_only": {
+      "store_rule": {
+        "units": -21,
+        "kg": -10.5
+      },
+      "store_rule_checked": {
+        "units": -14,
+        "kg": -7
+      },
+      "shelfshift": {
+        "units": -7,
+        "kg": -3.5
+      },
+      "markdowns_only": {
+        "units": 0,
+        "kg": 0
+      }
+    }
+  },
+  "headline": {
+    "store_rule": {
+      "net": 700,
+      "full_price_coverage": null,
+      "shortfall_filled": null,
+      "action_adjusted_fulfillment": null,
+      "incremental_units_sold_vs_markdowns_only": 0,
+      "units_wasted": 21,
+      "kg_wasted": 10.5,
+      "sell_through_moved": null,
+      "reasons": {
+        "full_price_coverage": "not measured in illustrative fixture",
+        "shortfall_filled": "no shortfall fixture",
+        "action_adjusted_fulfillment": "not measured in illustrative fixture",
+        "sell_through_moved": "no transfers fixture"
+      }
+    },
+    "store_rule_checked": {
+      "net": 707,
+      "full_price_coverage": null,
+      "shortfall_filled": null,
+      "action_adjusted_fulfillment": null,
+      "incremental_units_sold_vs_markdowns_only": 0,
+      "units_wasted": 28,
+      "kg_wasted": 14,
+      "sell_through_moved": null,
+      "reasons": {
+        "full_price_coverage": "not measured in illustrative fixture",
+        "shortfall_filled": "no shortfall fixture",
+        "action_adjusted_fulfillment": "not measured in illustrative fixture",
+        "sell_through_moved": "no transfers fixture"
+      }
+    },
+    "shelfshift": {
+      "net": 714,
+      "full_price_coverage": null,
+      "shortfall_filled": null,
+      "action_adjusted_fulfillment": null,
+      "incremental_units_sold_vs_markdowns_only": 0,
+      "units_wasted": 35,
+      "kg_wasted": 17.5,
+      "sell_through_moved": null,
+      "reasons": {
+        "full_price_coverage": "not measured in illustrative fixture",
+        "shortfall_filled": "no shortfall fixture",
+        "action_adjusted_fulfillment": "not measured in illustrative fixture",
+        "sell_through_moved": "no transfers fixture"
+      }
+    },
+    "markdowns_only": {
+      "net": 721,
+      "full_price_coverage": null,
+      "shortfall_filled": null,
+      "action_adjusted_fulfillment": null,
+      "incremental_units_sold_vs_markdowns_only": 0,
+      "units_wasted": 42,
+      "kg_wasted": 21,
+      "sell_through_moved": null,
+      "reasons": {
+        "full_price_coverage": "not measured in illustrative fixture",
+        "shortfall_filled": "no shortfall fixture",
+        "action_adjusted_fulfillment": "not measured in illustrative fixture",
+        "sell_through_moved": "no transfers fixture"
+      }
+    }
+  },
+  "checks": {
+    "store_rule": null,
+    "store_rule_checked": {
+      "requests": 1,
+      "lots_counted": 1,
+      "corrected_up": 0,
+      "corrected_down": 1,
+      "nothing_to_correct": 0
+    },
+    "shelfshift": {
+      "requests": 1,
+      "lots_counted": 1,
+      "corrected_up": 0,
+      "corrected_down": 1,
+      "nothing_to_correct": 0
+    },
+    "markdowns_only": null
+  },
+  "trips": {
+    "store_rule": {
+      "short": 0,
+      "failed": 0,
+      "transport_unshipped": 0
+    },
+    "store_rule_checked": {
+      "short": 0,
+      "failed": 0,
+      "transport_unshipped": 0
+    },
+    "shelfshift": {
+      "short": 0,
+      "failed": 0,
+      "transport_unshipped": 0
+    },
+    "markdowns_only": {
+      "short": 0,
+      "failed": 0,
+      "transport_unshipped": 0
+    }
+  },
+  "closing": {
+    "store_rule": {
+      "on_hand_units": 2,
+      "in_transit_units": 0,
+      "open_transfers": 0,
+      "costs_charged": 0
+    },
+    "store_rule_checked": {
+      "on_hand_units": 2,
+      "in_transit_units": 0,
+      "open_transfers": 0,
+      "costs_charged": 0
+    },
+    "shelfshift": {
+      "on_hand_units": 2,
+      "in_transit_units": 0,
+      "open_transfers": 0,
+      "costs_charged": 0
+    },
+    "markdowns_only": {
+      "on_hand_units": 2,
+      "in_transit_units": 0,
+      "open_transfers": 0,
+      "costs_charged": 0
+    }
+  },
+  "decision_quality": {
+    "limit_breaks": {
+      "store_rule": 0,
+      "store_rule_checked": 0,
+      "shelfshift": 0,
+      "markdowns_only": 0
+    },
+    "opened": 3,
+    "approved": 3,
+    "rejected": 0,
+    "waiting": 0,
+    "left_open": {},
+    "retry_limit": 2,
+    "time_to_decision": null
+  },
+  "forecast_quality": {
+    "forecast_run_id": "illustrative-backtest",
+    "window": {
+      "first_day": -14,
+      "last_day": -1
+    },
+    "cutoff_day": -15,
+    "wape": 0.2,
+    "baseline_wape": 0.3,
+    "bias": 0,
+    "baseline_bias": 0.1,
+    "coverage_80": 0.75,
+    "scored_days": 14,
+    "excluded_stockout_days": 0,
+    "providers": [
+      "illustrative test provider"
+    ],
+    "input_counts": {
+      "recorded": 14
+    },
+    "series_without_in_stock_days": 0
+  },
+  "settings": {
+    "forecast_rule": "latest issued before the day; reuse d3 on days 4..6, required target dates",
+    "closing_rule": "after day 6 world step, before day 7",
+    "checks": {
+      "evidence": [
+        "PHANTOM_STOCK",
+        "STALE_COUNT"
+      ],
+      "cap_per_version": 3,
+      "lot_once_per_day": true,
+      "answers": "exact, from each world's own physical stock"
+    },
+    "cancel_cost": "difference versus scenario 1 plus wholly unshipped ShelfShift transport minus wholly unshipped scenario 1 transport",
+    "keep_fast_path": true,
+    "price_response": {
+      "m20": 1,
+      "m30": 1
+    },
+    "commits": {
+      "retry_limit": 2,
+      "retry_codes": [
+        "conflict",
+        "hold_expired",
+        "stale_version"
+      ],
+      "leave_open": "any other refusal, recorded by reason",
+      "order": "case_id ascending"
+    },
+    "ordering": {
+      "enabled_stores": [],
+      "rule": "no store enabled"
+    },
+    "sensitivity": null
+  },
+  "assumptions": {
+    "markdown_response": {
+      "m20": 1,
+      "m30": 1
+    },
+    "stock_record_errors": "illustrative fixture"
+  },
+  "categories_without_schedule": [],
+  "policy": {
+    "waste_price": 0,
+    "min_sellable_days": 1,
+    "shortlist_step": 0
+  }
+}

@@ -86,6 +86,25 @@ CREATE TABLE IF NOT EXISTS run_policy (
   run_id text, field text, value jsonb NOT NULL,
   PRIMARY KEY (run_id, field));
 
+-- Reading proposals only (10-CONTEXT D-02, D-22, D-24; research Pitfall 1).
+-- run_id first preserves precomputed cloning; a content key is not an ai_outputs key.
+CREATE TABLE IF NOT EXISTS readings (
+  run_id text NOT NULL, reading_id text NOT NULL, input_key text NOT NULL,
+  purpose text NOT NULL CHECK (purpose IN ('REPORT', 'ANSWER')),
+  signal_id text, signal_revision int, request_id text,
+  status text NOT NULL CHECK (status IN ('GENERATING', 'DONE', 'INTERRUPTED', 'FAILED', 'REFUSED')),
+  attempt int NOT NULL DEFAULT 1 CHECK (attempt BETWEEN 1 AND 2),
+  after_confirmation boolean NOT NULL DEFAULT false, kind text,
+  suggestions jsonb NOT NULL DEFAULT '[]', needs_input jsonb NOT NULL DEFAULT '[]',
+  observations jsonb NOT NULL DEFAULT '[]', note boolean NOT NULL DEFAULT false,
+  model_id text NOT NULL, assistant_version text NOT NULL,
+  provenance text NOT NULL CHECK (provenance IN ('LIVE', 'PRECOMPUTED')),
+  reason text, usage jsonb, lease_until timestamptz, created_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(), finished_at timestamptz,
+  PRIMARY KEY (run_id, reading_id));
+CREATE UNIQUE INDEX IF NOT EXISTS one_reading_at_a_time
+  ON readings (run_id, input_key) WHERE status = 'GENERATING';
+
 -- Not keyed by run: the browser session, its seat and its current sandbox
 CREATE TABLE IF NOT EXISTS sessions (
   session_id text PRIMARY KEY,
@@ -271,6 +290,10 @@ ALTER TABLE reported_facts ADD COLUMN IF NOT EXISTS replaced_by text;
 ALTER TABLE reported_facts ADD COLUMN IF NOT EXISTS source text;
 -- An attached file's sha256 (07-CONTEXT D-20): its object name is <run_id>/<sha256>.<ext>, never the client's name
 ALTER TABLE signals ADD COLUMN IF NOT EXISTS file_sha256 text;
+-- Optional reading provenance; confirmation remains a separate human operation (D-24).
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS reading_id text;
+ALTER TABLE signals ADD COLUMN IF NOT EXISTS field_sources jsonb;
+ALTER TABLE reported_facts ADD COLUMN IF NOT EXISTS reading_id text;
 -- The attached file's size in bytes (at most uploads.max_bytes)
 ALTER TABLE signals ADD COLUMN IF NOT EXISTS file_size int;
 -- Whether the file spent the workspace's file allowance (a report's first file, D-20); false for an answer photo or a
@@ -341,6 +364,10 @@ ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS snapshot_id text;
 ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS actor jsonb;
 ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS sources jsonb NOT NULL DEFAULT '[]';
 ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS cards jsonb NOT NULL DEFAULT '[]';
+-- 10-CONTEXT D-23: the deterministic preview key this impact summary was written from.
+ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS input_key text;
+-- SIGNAL attempts have no CASE tuple; preserve honest usage without weakening ai_usage.
+ALTER TABLE ai_outputs ADD COLUMN IF NOT EXISTS signal_usage jsonb;
 -- Install the more precise guard before removing its older, overly broad index.
 CREATE UNIQUE INDEX IF NOT EXISTS one_scoped_generation_at_a_time ON ai_outputs
   (run_id, kind, coalesce(case_id, ''), coalesce(rec_version, ''), coalesce(plan_key, ''),
@@ -465,5 +492,30 @@ CREATE TABLE IF NOT EXISTS evaluation_check_history (
   PRIMARY KEY (sim_run_id, day, world, seq));
 CREATE UNIQUE INDEX IF NOT EXISTS evaluation_one_observation_per_lot_day
   ON evaluation_check_history (sim_run_id, day, world, lot_id) WHERE event_kind = 'observation';
--- Phase 7's DDL, character for character (07-04), so the workspace read runs before Phase 7 merges
-ALTER TABLE evidence_requests ADD COLUMN IF NOT EXISTS due_at timestamptz;
+-- Scored AI eval (10-CONTEXT D-15, D-16, D-17, D-21): global: no run_id column, Pitfall 9.
+-- Workspace clones may be pruned; review, scores and the immutable publication survive them.
+CREATE TABLE IF NOT EXISTS eval_runs (
+  eval_id text PRIMARY KEY, fingerprint text NOT NULL, model_id text, build_sha text, assistant_version text,
+  engine_version text, dataset_version text, template_ref text, started_at timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz, status text NOT NULL CHECK (status IN ('RUNNING', 'COMPLETE', 'CAPPED', 'FAILED', 'DRY')),
+  usage jsonb NOT NULL DEFAULT '{}', caps jsonb NOT NULL DEFAULT '{}',
+  publish_state text NOT NULL DEFAULT 'PRIVATE' CHECK (publish_state IN ('PRIVATE', 'PUBLISHED', 'BLOCKED')),
+  block_reason text, reviewed_by text, reviewed_at timestamptz);
+-- The clone reference is deliberately workspace_run_id, without a foreign key to disposable workspaces.
+CREATE TABLE IF NOT EXISTS eval_attempts (
+  eval_id text REFERENCES eval_runs(eval_id), scenario_id int, run_no int CHECK (run_no BETWEEN 1 AND 3),
+  workspace_run_id text, valid boolean NOT NULL, invalid_reason text, model_calls int, cache_hits int,
+  status text NOT NULL, duration_ms int, evidence_ref text, PRIMARY KEY (eval_id, scenario_id, run_no));
+-- details retains private checklist wording/reference/actual evidence, never dumped into the public view (D-17).
+CREATE TABLE IF NOT EXISTS eval_items (
+  eval_id text, scenario_id int, run_no int, item_id text, grp text NOT NULL CHECK (grp IN ('safety', 'assistant', 'reading')),
+  gate text CHECK (gate IN ('unsourced', 'self_approval', 'hidden_truth')), facet text NOT NULL,
+  scorer text NOT NULL CHECK (scorer IN ('script', 'human')),
+  result text NOT NULL CHECK (result IN ('PASS', 'FAIL', 'NA', 'NOT_SCORED')), note text,
+  reviewed_by text, reviewed_at timestamptz, details jsonb NOT NULL DEFAULT '{}',
+  PRIMARY KEY (eval_id, scenario_id, run_no, item_id),
+  FOREIGN KEY (eval_id, scenario_id, run_no) REFERENCES eval_attempts(eval_id, scenario_id, run_no));
+-- A publication is an immutable summary snapshot, written only after every gate passes under the eval row lock.
+CREATE TABLE IF NOT EXISTS eval_publications (
+  eval_id text PRIMARY KEY REFERENCES eval_runs(eval_id), published_at timestamptz NOT NULL DEFAULT now(),
+  summary jsonb NOT NULL);

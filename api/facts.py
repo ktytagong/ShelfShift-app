@@ -132,11 +132,16 @@ def write(conn, run: dict, *, kind: str, adjustments: list[dict], sku: str | Non
           zone: str | None, valid_from: int, valid_to: int, label: str, confirmed_by: str, observed_at: datetime | None,
           source: str, signal_id: str) -> str:
     """One confirmed reported fact on the workspace's business day (`confirmed_day`), its confirmation time the
-    database's now(); returns its fact_id."""
+    database's insertion-time clock, after the caller's run lock; returns its fact_id.
+
+    A transaction can begin before a different worker acquires that lock first.
+    Transaction-start now() would then reverse the serialized confirmation order.
+    """
     fact_id = f"FACT-{uuid.uuid4().hex[:8]}"
     db.run(conn, "INSERT INTO reported_facts (run_id, fact_id, signal_id, kind, adjustments, sku, valid_from, valid_to, "
-                 "label, confirmed_by, confirmed_day, observed_at, branch, zone, source) VALUES (:r, :f, :s, :k, "
-                 "CAST(:a AS jsonb), :sku, :vf, :vt, :lab, :by, :d, :o, :b, :z, :src)", r=run["run_id"], f=fact_id,
+                 "label, confirmed_by, confirmed_day, observed_at, branch, zone, source, confirmed_at) "
+                 "VALUES (:r, :f, :s, :k, CAST(:a AS jsonb), :sku, :vf, :vt, :lab, :by, :d, :o, :b, :z, :src, "
+                 "clock_timestamp())", r=run["run_id"], f=fact_id,
            s=signal_id, k=kind, a=db.js(adjustments), sku=sku, vf=valid_from, vt=valid_to, lab=label, by=confirmed_by,
            d=run["day"], o=observed_at, b=branch, z=zone, src=source)
     return fact_id

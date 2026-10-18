@@ -10,7 +10,7 @@
   {"id": "quote-screenshot", "use": "report", "kind": "TRANSPORT",
    "title": "Carrier quote for {run_code} (chat screenshot)", "file": "quote-r02-chat.png",
    "text": "Carrier quote for {run_code}, screenshot from the chat.",
-   "expected": "a quote for {run_code}: $25.00 per trip (TRANSPORT)"},
+   "expected": "a quote for {run_code}: $85.00 USD, handling included (TRANSPORT)"},
   {"id": "quote-pdf", "use": "report", "kind": "TRANSPORT",
    "title": "Carrier quote for {run_code} (PDF)", "file": "quote.pdf",
    "text": "Carrier quote for {run_code} attached.",

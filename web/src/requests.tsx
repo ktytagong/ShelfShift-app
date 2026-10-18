@@ -14,10 +14,10 @@
 // check?" (no default), a count blank is null, never 0, and a photo alone never completes a count or a date. Typed
 // values live in the page's draft map keyed by request and answer revision (draftKey), outside the list, so a refetch
 // never clears them; a new revision under a kept draft shows "The answer changed since you looked at it".
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ApiError, form, get, post, type AnswerSignal, type CaseDetail, type CaseState, type ConfirmResult, type LotCount,
-  type Request, type Session,
+  readAnswer, type AnswerReading as AnswerReadingData, type Request, type Session,
 } from "./api.ts";
 import {
   NO_CHECK_TIME, checkTimeObserved, errorAction, lotCountText, responseNote, responseRows, stateIcon, statePill,
@@ -37,10 +37,16 @@ import {
   type TaskItem,
 } from "./taskview.ts";
 import {
-  Button, CheckTime, ConfirmStep, DeadlineBar, Elapsed, ErrorLine, FilePick, Icon, Kv, Lifecycle, Pill, TRY_AGAIN,
+  Button, CheckTime, ConfirmStep, DeadlineBar, Elapsed, ErrorLine, FilePick, Icon, Kv, Lifecycle, Pill, Provenance, TRY_AGAIN,
 } from "./ui.tsx";
 import { RELOAD_DECISION, cityOf, recordedLine, scenarioDateLine, TERMS } from "./vocab.ts";
-import { recordedTime } from "./copy.ts";
+import { ANSWER_COPY, recordedTime } from "./copy.ts";
+import { confirmOptions, readingLines, shouldRetryOnOpen } from "./answerview.ts";
+
+// This screen may mount the same revision several times. A server refusal stays final;
+// the server also serializes competing screens and enforces the two-attempt ceiling.
+const retriedReadings = new Set<string>();
+const inFlightReadings = new Set<string>();
 
 // --- the draft (kept by the page, outside the list) ------------------------------------------------------------------
 
@@ -139,7 +145,7 @@ const viewHref = (caseId: string) => `#/cases/${encodeURIComponent(caseId)}`;
 const fileHref = (signalId: string) => `/api/signals/${encodeURIComponent(signalId)}/file`;
 
 // "Thu 15 Oct 2026" for a printed date, "Mixed dates in this lot" for MIXED.
-const dateText = (v: string | undefined) => (v === undefined ? "Not checked" : v === "MIXED" ? MIXED_DATES : markDate(v));
+const dateText = (v: string | null | undefined) => (v == null ? "Not checked" : v === "MIXED" ? MIXED_DATES : markDate(v));
 
 // --- one request row ------------------------------------------------------------------------------------------------
 
@@ -262,16 +268,44 @@ function summaryRows(r: Request, timeZone: string): [string, string][] {
   return rows;
 }
 
-function StoredAnswer({ r }: { r: Request }) {
+function StoredAnswer({ r, summary = false }: { r: Request; summary?: boolean }) {
+  const { session } = useSession();
   const a = answerOf(r);
   if (a === null) return null;
-  const rows: [string, string][] = r.lot_ids.map((id) => {
+  const rows: [string, string][] = summary ? summaryRows(r, session.time_zone).filter(([k]) => k !== "Reply") : r.lot_ids.map((id) => {
     if (isExpiry(r)) return [`Lot ${id}`, dateText(a.fields.dates?.[id])];
     const c: LotCount = a.fields.counts?.[id] ?? { shelf_units: null, backroom_units: null };
     return [`Lot ${id}`, lotCountText(c)];
   });
-  if (a.text !== "") rows.push(["Reply", a.text]);
-  return <div className="max-w-md"><Kv stacked items={rows} /></div>;
+  const group = (label: string, children: ReactNode) => <div role="group" aria-label={label} className="min-w-0">
+    <h4 className="m-0 text-label font-semibold text-tx2">{label}</h4>{children}</div>;
+  return <div className="flex min-w-0 flex-col gap-2">
+    {group(`Typed by ${r.to_branch}`, <><Kv stacked items={rows} />
+      {!isExpiry(r) && r.lot_ids.every((id) => a.fields.counts?.[id]?.shelf_units == null && a.fields.counts?.[id]?.backroom_units == null)
+        && <span className="text-label text-tx2">Not checked</span>}
+      <p className="m-0 text-label text-tx2">Checked: {recordedLine(a.observed_at ?? a.created_at, session.time_zone)}</p></>)}
+    {a.text !== "" && group(`Reply from ${r.to_branch}`, <p className="m-0 whitespace-pre-wrap break-words">{a.text}</p>)}
+    {a.file != null && group(`Photo from ${r.to_branch}`, <Photo r={r} />)}
+  </div>;
+}
+
+function AnswerReading({ reading, loading, error }: { reading: AnswerReadingData | null; loading: boolean; error: string | null }) {
+  const { session } = useSession();
+  return <div role="group" aria-label="Read by Gemini" className="flex min-w-0 flex-col gap-1 break-words">
+    <h4 className="m-0 text-label font-semibold text-tx2">Read by Gemini</h4>
+    {loading && <p role="status" className="m-0">Reading evidence…</p>}
+    {(error !== null || reading?.status === "FAILED" || reading?.status === "REFUSED" || (reading?.status === "INTERRUPTED" && reading.attempt >= 2)) &&
+      <p className="m-0">{error ?? (reading?.status === "REFUSED" ? ANSWER_COPY.daily : ANSWER_COPY.failed)}</p>}
+    {reading !== null && <>
+      <Provenance reading={reading} recorded={recordedLine(reading.recorded_at, session.time_zone)} />
+      {reading.after_confirmation && <p className="m-0">{ANSWER_COPY.history}</p>}
+      {reading.differs_from_confirmed && <p className="m-0">{ANSWER_COPY.confirmedConflict}</p>}
+      {reading.status === "DONE" && readingLines(reading).map((line, i) => <p key={i} className="m-0">
+        <Icon name={line.kind === "observation" ? "scan" : line.kind === "conflict" ? "alert" : "info"} className="mr-1 inline-block align-text-bottom" />
+        {line.text} {line.kind === "value" && <Pill tone="info" icon="inbox">{ANSWER_COPY.pending}</Pill>}
+      </p>)}
+    </>}
+  </div>;
 }
 
 // The answer's photo: a thumbnail (images) or a link (PDF), labelled so it never reads as a count (VER-04).
@@ -330,6 +364,17 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
   const [result, setResult] = useState<ConfirmResult | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const scope = `${session.run_id}:${session.role}:${session.branch}`;
+  const identity = useRef(scope);
+  identity.current = scope;
+  const [localReading, setLocalReading] = useState<{ scope: string; signal: string; revision: number; value: AnswerReadingData | null; loading: boolean; error: string | null } | null>(null);
+  const [selection, setSelection] = useState<{ key: string; source: "typed" | "reading" } | null>(null);
+  const [dateTick, setDateTick] = useState<string | null>(null);
+  const readingConfirmation = useRef(false);
+  const readOnThisMount = useRef(new Set<string>());
+  const readingEpoch = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const firstRadio = useRef<HTMLInputElement>(null);
 
   const reloadOn = async <T,>(write: () => Promise<T>): Promise<T> => {
@@ -340,8 +385,10 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
       throw e;
     }
   };
-  const confirm = useAction(async (body: { signal: string; revision: number; checked_both?: true }, k: string) => {
-    const payload = body.checked_both ? { revision: body.revision, checked_both: true } : { revision: body.revision };
+  const confirm = useAction(async (body: { signal: string; revision: number; checked_both?: true;
+    value_source?: "typed" | "reading"; reading_id?: string; checked_date?: boolean }, k: string) => {
+    const { signal: _signal, ...payload } = body;
+    readingConfirmation.current = body.value_source === "reading";
     const out = await reloadOn(() => post<ConfirmResult>(`/api/signals/${encodeURIComponent(body.signal)}/confirm`, payload, k));
     setResult(out);
     onAnnounce(out.labels.length > 0 ? out.labels : [unchangedDone(r.lot_ids.join(", "))]);
@@ -358,9 +405,30 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
     data.set("observed", body.observed); // "When did you check?" (07-CONTEXT D-22)
     if (body.file !== null) data.set("file", body.file);
     const out = await reloadOn(() => form<AnswerSignal>(`/api/requests/${encodeURIComponent(r.request_id)}/answer`, data, k));
+    const savedReadKey = `${session.run_id}:${out.signal_id}:${out.revision}`;
+    readOnThisMount.current.add(savedReadKey);
+    const hasSavedEvidence = body.text.trim() !== "" || body.file !== null;
+    if (hasSavedEvidence) inFlightReadings.add(savedReadKey);
     drafts.drop(r.request_id);
     confirm.clear(); // a refused confirm was about the earlier answer, never this one (05-REVIEW WR-13)
     await after();
+    if (hasSavedEvidence) {
+      const epoch = readingEpoch.current;
+      // Two frames let the saved state paint before starting the independent read.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const stamp = { scope, signal: out.signal_id, revision: out.revision };
+        setLocalReading({ ...stamp, value: null, loading: true, error: null });
+        void readAnswer(out.signal_id, out.revision).then((value) => {
+          if (!mounted.current || identity.current !== scope || readingEpoch.current !== epoch) return;
+          setLocalReading({ ...stamp, value, loading: false, error: null });
+          void after();
+        }, (e: unknown) => {
+          if (!mounted.current || identity.current !== scope || readingEpoch.current !== epoch) return;
+          setLocalReading({ ...stamp, value: null, loading: false,
+            error: e instanceof ApiError ? e.message : ANSWER_COPY.failed });
+        }).finally(() => inFlightReadings.delete(savedReadKey));
+      }));
+    }
     return out;
   });
   const recount = useAction(async (body: { rec_version: string; fact_id: string; recount_of: string }, k: string) => {
@@ -371,8 +439,44 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
 
   const open = r.state === "OPEN" || r.state === "ANSWERED";
   const a = answerOf(r);
+  const currentReading = localReading?.scope === scope && localReading?.signal === a?.signal_id && localReading?.revision === a?.revision ? localReading : null;
+  const reading = currentReading?.value?.status === "GENERATING" && a?.reading?.status !== "GENERATING"
+    ? a?.reading ?? currentReading.value : currentReading?.value ?? a?.reading ?? null;
+  const readKey = `${session.run_id}:${a?.signal_id}:${a?.revision}`;
+  const hasEvidence = a !== null && (a.text.trim() !== "" || a.file != null);
+  const manager = session.role === "manager" && session.branch === r.to_branch;
+  useEffect(() => {
+    if (!a || !shouldRetryOnOpen(a.reading, manager, hasEvidence,
+      readOnThisMount.current.has(readKey) || inFlightReadings.has(readKey) || retriedReadings.has(readKey))) return;
+    readOnThisMount.current.add(readKey);
+    retriedReadings.add(readKey);
+    inFlightReadings.add(readKey);
+    const epoch = readingEpoch.current;
+    const stamp = { scope, signal: a.signal_id, revision: a.revision };
+    setLocalReading({ ...stamp, value: null, loading: true, error: null });
+    void readAnswer(a.signal_id, a.revision).then((value) => {
+      if (!mounted.current || identity.current !== scope || readingEpoch.current !== epoch) return;
+      setLocalReading({ ...stamp, value, loading: false, error: null });
+      void after();
+    }, (e: unknown) => {
+      if (!mounted.current || identity.current !== scope || readingEpoch.current !== epoch) return;
+      setLocalReading({ ...stamp, value: null, loading: false,
+        error: e instanceof ApiError ? e.message : ANSWER_COPY.failed });
+    }).finally(() => inFlightReadings.delete(readKey));
+  }, [a, manager, hasEvidence, readKey, scope, after]);
+  // Observe another screen's in-flight work using GET only, never another model request.
+  useEffect(() => {
+    if (a?.reading?.status !== "GENERATING" || currentReading?.loading) return;
+    const timer = window.setTimeout(() => { void after(); }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [a?.reading, currentReading?.loading, after]);
+  const options = confirmOptions(r, reading);
+  const choiceKey = `${readKey}:${reading?.reading_id ?? "typed"}`;
+  const chosen = options.length === 1 ? options[0].source : selection?.key === choiceKey ? selection.source : null;
+  const readingEligible = options.some((o) => o.source === "reading") && open && r.answerable
+    && a?.state === "READ" && (isExpiry(r) || a.day === session.day);
+  const canConfirm = manager && (r.confirmable || readingEligible) && options.length > 0;
   const missing = a !== null && (a.fields.needs_input?.length ?? 0) > 0;
-  const complete = a !== null && a.state === "READ" && !missing;
   const ticked = a !== null && tickedRevision === a.revision;
   const busy = answer.busy || confirm.busy || recount.busy;
   const invalid = invalidFields(confirm.error ?? answer.error);
@@ -436,7 +540,7 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
       className="flex min-w-0 flex-col gap-2">
       {combined && <h4 className="m-0 text-body font-semibold">{partLane(r.part)}</h4>}
       <p data-testid="assigned-line" className="num m-0 text-label text-tx2 break-words">
-        {assignedLine(r.to_branch, r.asked_at == null ? "" : recordedLine(r.asked_at, session.time_zone))}
+        {assignedLine(r.to_branch, (r as EvidenceRequest).sent_at || r.asked_at ? recordedLine((r as EvidenceRequest).sent_at || r.asked_at!, session.time_zone) : "")}
       </p>
       {r.asked_at != null && (
         <p data-testid="timestamps" className="num m-0 text-label text-tx2 break-words">
@@ -449,7 +553,7 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
       )}
       {summary ? (
         <div className="flex flex-col gap-2">
-          <div data-testid="response-summary" className="max-w-md"><Kv stacked items={summaryRows(r, session.time_zone)} /></div>
+          <div data-testid="response-summary" className="min-w-0 max-w-md"><StoredAnswer r={r} summary /></div>
           {a?.simulated_label != null && <span><Pill tone="plan" icon="info">{a.simulated_label}</Pill></span>}
           {responseNote(r) !== null && <p data-testid="response-note" className="m-0"><Pill tone="warn" icon="clock">{responseNote(r)}</Pill></p>}
           <div className="flex flex-wrap items-center gap-4">
@@ -470,8 +574,9 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
           {a?.simulated_label != null && <span><Pill tone="plan" icon="info">{a.simulated_label}</Pill></span>}
         </>
       )}
-      <Photo r={r} />
-      {open && missing && (
+      {hasEvidence && !reading?.after_confirmation &&
+        <AnswerReading reading={reading} loading={currentReading?.loading === true || reading?.status === "GENERATING"} error={currentReading?.error ?? null} />}
+      {open && missing && !readingEligible && (
         <p className="m-0 rounded-md bg-warn-soft px-2 py-1 text-body text-warn">
           {isExpiry(r) ? "A printed date is missing, so the date can't be confirmed." : "Shelf or backroom not checked, so the total can't be confirmed."}
         </p>
@@ -541,11 +646,24 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
           <ErrorLine error={answer.error} action={retryOf(answer)} />
         </form>
       )}
-      {r.state === "ANSWERED" && r.confirmable && complete && a !== null && (
+      {open && canConfirm && a !== null && (
         <div data-testid="confirm-block" className="flex flex-col gap-2 border-t border-line pt-2">
           <p className="num m-0 text-label text-tx2">
             {(isExpiry(r) ? dateSource : countSource)(a.reporter_branch ?? r.to_branch, answerSource)}
           </p>
+          {options.length > 1 && <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0" disabled={busy}>
+            <legend className="text-body font-semibold">{isExpiry(r) ? ANSWER_COPY.dateChoice : ANSWER_COPY.countChoice}</legend>
+            {options.map((option) => <label key={option.source} className="flex min-h-11 items-center gap-2 break-words">
+              <input type="radio" name={`${partId}-confirm-source`} checked={chosen === option.source}
+                onChange={() => { setSelection({ key: choiceKey, source: option.source }); setTickedRevision(null); setDateTick(null); }} />
+              {option.label}</label>)}
+          </fieldset>}
+          {options.length === 1 && chosen === "reading" && <p className="m-0">{options[0].label}</p>}
+          {chosen === null && <p className="m-0 text-label text-tx3">{isExpiry(r) ? ANSWER_COPY.chooseDate : ANSWER_COPY.chooseCount}</p>}
+          {isExpiry(r) && chosen === "reading" && <label className="flex min-h-11 items-center gap-2">
+            <input type="checkbox" checked={dateTick === choiceKey} disabled={busy}
+              onChange={(e) => setDateTick(e.target.checked ? choiceKey : null)} />
+            I checked the printed date on lot {r.lot_ids.join(", ")}</label>}
           {!isExpiry(r) && (
             <label className="flex min-h-11 items-center gap-2 text-body md:min-h-0">
               <input type="checkbox" checked={ticked} disabled={busy} onChange={(e) => setTickedRevision(e.target.checked ? a.revision : null)} />
@@ -553,19 +671,31 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
             </label>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <Button kind="primary" disabled={(!isExpiry(r) && !ticked) || busy} aria-busy={confirm.busy || undefined}
+            <Button kind="primary" disabled={chosen === null || (!isExpiry(r) && !ticked)
+              || (isExpiry(r) && chosen === "reading" && dateTick !== choiceKey) || busy} aria-busy={confirm.busy || undefined}
               className="min-h-11 md:min-h-8"
-              onClick={() => void confirm.run(isExpiry(r) ? { signal: a.signal_id, revision: a.revision }
-                : { signal: a.signal_id, revision: a.revision, checked_both: true })}>
+              onClick={() => void confirm.run({ signal: a.signal_id, revision: a.revision,
+                ...(!isExpiry(r) ? { checked_both: true as const } : {}), value_source: chosen ?? "typed",
+                ...(chosen === "reading" && reading ? { reading_id: reading.reading_id,
+                  ...(isExpiry(r) ? { checked_date: dateTick === choiceKey } : {}) } : {}) })}>
               {isExpiry(r) ? CONFIRM_DATE : CONFIRM_COUNT}
             </Button>
             {confirm.busy && <span className="text-label text-tx2"><Elapsed label="Recomputing the plan" /></span>}
-            <ErrorLine error={confirm.error} action={reloadAction(confirm)} />
           </div>
           {!isExpiry(r) && !ticked && !confirm.busy && <p className="m-0 text-label text-tx3">Tick the box to confirm</p>}
           <p className="m-0 max-w-md text-label text-tx3">{CONFIRM_NOTE_P7}</p>
         </div>
       )}
+      <ErrorLine error={confirm.error} action={readingConfirmation.current && confirm.error?.code === "stale_version"
+        ? { label: RELOAD_DECISION, onClick: () => {
+          readingEpoch.current += 1;
+          setLocalReading(null);
+          setSelection(null);
+          setDateTick(null);
+          setTickedRevision(null);
+          confirm.clear();
+          void after();
+        } } : reloadAction(confirm)} />
       {confirmedText.length > 0 && (
         <div className="flex flex-col gap-1">
           {confirmedText.map((label, i) => (
@@ -577,6 +707,7 @@ function PartBody({ r, combined, caseState, labels, drafts, after, confirmedAt, 
           ))}
         </div>
       )}
+      {hasEvidence && reading?.after_confirmation && <AnswerReading reading={reading} loading={false} error={null} />}
       <History r={r} />
     </section>
   );

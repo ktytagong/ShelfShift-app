@@ -20,13 +20,19 @@ write identical rows.
 """
 from __future__ import annotations
 
+import math
+import sys
+from dataclasses import asdict, replace
+
 from engine import baseline_plan
+from engine.canonical import rec_version, to_dict
 from engine.adjust import effective
-from engine.allocator import ShelfLot
-from engine.model import KEEP, TRANSFER, Bookings, Inbound, Plan, Policy, Run
+from engine.allocator import ShelfLot, allocate
+from engine.model import KEEP, TRANSFER, Bookings, Inbound, Plan, Policy, Run, trip_cost
 from engine.simulate import HorizonError
 from engine.timing import first_sellable_day, markdown_effective_day
-from engine.world import PriceChange, Shipment, step_day
+from engine.world import PriceChange, Shipment, step_day, _add as world_add
+from data.versions import digest
 
 from . import bookings, buildsteps, cases, config, db, inputs, overlay, refdata, screen
 from .errors import ApiError
@@ -45,6 +51,104 @@ TODAY_ACTIONS = "((kind = 'TRANSFER' AND run_day = :d) OR (kind = 'MARKDOWN' AND
 # 05.2-06 D-37 B (user): owning every series of a public dataset would cost about 130 s on Cloud SQL, so a public
 # workspace has no Next day; the synthetic set and the test fixture keep it
 NEXT_DAY_PUBLIC = "Next day is not part of this dataset's workspaces"
+
+
+def observed_step(lots, day, demand, m, product, shipments=(), price_changes=(), arrivals=(), schedule=(), *, expired=None,
+                  sold=None, timing=None):
+    """Observe CPython 3.12's actual trip_cost returns during this synchronous step.
+
+    The hook is current-thread only, chains a compatible existing hook, and is
+    always restored. It observes scalars at the engine boundary; it neither
+    replaces engine functions nor apportions branch totals into trip charges.
+    """
+    if not shipments and sold is None and expired is None:
+        return step_day(lots, day, demand, m, product, shipments, price_changes, arrivals, schedule), []
+    new_ids = [s.new_lot_id for s in shipments]
+    if len(set(new_ids)) != len(new_ids) or set(new_ids) & {l.lot_id for l in lots}:
+        raise ValueError('ambiguous moved-lot identity')
+    prior = sys.getprofile()
+    monitoring_profile = (sys.monitoring.get_tool(sys.monitoring.PROFILER_ID) is not None
+                          and sys.monitoring.get_events(sys.monitoring.PROFILER_ID))
+    if (prior is not None and not callable(prior)) or monitoring_profile:
+        raise ValueError('incompatible profiler: execution charge observation requires a callable hook')
+    identities = {id(sh): n for n, sh in enumerate(shipments)}
+    if len(identities) != len(shipments):
+        raise ValueError('duplicate shipment object identity')
+    captured, active, sales_calls = [], [], {}
+    owner = sys._getframe()
+    def profile(frame, event, arg):
+        if event == 'call' and frame.f_code is step_day.__code__ and frame.f_back is owner:
+            active.append(frame)
+        elif (event == 'return' and frame.f_code is trip_cost.__code__ and active
+              and frame.f_back is active[0]):
+            sh = frame.f_back.f_locals.get('sh')
+            if isinstance(arg, tuple) and len(arg) == 2:
+                captured.append(dict(shipment_index=identities.get(id(sh)),
+                                     shipped_units=frame.f_locals.get('shipped'),
+                                     transport_amount=arg[0], handling_amount=arg[1]))
+        elif (sold is not None and event == 'return' and arg is not None and frame.f_code is allocate.__code__
+              and active and frame.f_back is active[0]):
+            branch = frame.f_back.f_locals['branch']
+            shelf = frame.f_locals['lots']
+            if branch in sales_calls or any(l.branch != branch for l in shelf):
+                raise ValueError('duplicate or ambiguous sales capture')
+            identities_by_lot = {l.lot_id: l for l in shelf}
+            if len(identities_by_lot) != len(shelf) or not set(arg.sold_by_lot) <= set(identities_by_lot):
+                raise ValueError('ambiguous sold-lot identity')
+            sales_calls[branch] = float(arg.sold)
+            for lot_id, units in arg.sold_by_lot.items():
+                sold.append(dict(lot_id=lot_id, branch=branch, sold=float(units)))
+                if timing is not None:
+                    lot = identities_by_lot[lot_id]
+                    timing[lot_id] = dict(branch=lot.branch, expiry_day=lot.expiry_day, sellable_from=lot.sellable_from)
+        elif (expired is not None and event == 'call' and frame.f_code is world_add.__code__
+              and active and frame.f_back is active[0]):
+            caller = frame.f_back.f_locals
+            if frame.f_locals.get('d') is caller['out'].wasted:
+                lot = caller['lot']
+                expired.append(dict(lot_id=lot.lot_id, branch=lot.branch, wasted=frame.f_locals['value']))
+                if timing is not None:
+                    timing[lot.lot_id] = dict(branch=lot.branch, expiry_day=lot.expiry_day, sellable_from=lot.sellable_from)
+        if prior is not None:
+            prior(frame, event, arg)
+    try:
+        sys.setprofile(profile)
+        out = step_day(lots, day, demand, m, product, shipments, price_changes, arrivals, schedule)
+    finally:
+        sys.setprofile(prior)
+    active.clear()
+    # This executes only after success, preserving the engine's original error.
+    if sold is not None:
+        totals = {}
+        for event in sold:
+            if not math.isfinite(event['sold']) or event['sold'] < 0:
+                raise ValueError('invalid sales capture')
+            totals[event['branch']] = totals.get(event['branch'], 0) + event['sold']
+        if (set(sales_calls) != set(demand) or len({e['lot_id'] for e in sold}) != len(sold)
+                or any(abs(sales_calls[b] - out.sold.get(b, 0)) > 1e-8 or
+                       abs(totals.get(b, 0) - out.sold.get(b, 0)) > 1e-8 for b in demand)):
+            raise ValueError('incomplete sales capture: actual sold lots differ from outcome')
+    if expired is not None:
+        if len({e['lot_id'] for e in expired}) != len(expired):
+            raise ValueError('duplicate expiry capture')
+        waste = {}
+        for event in expired:
+            waste[event['branch']] = waste.get(event['branch'], 0) + event['wasted']
+        if any(abs(waste.get(b, 0) - out.wasted.get(b, 0)) > 1e-8 for b in set(waste) | set(out.wasted)):
+            raise ValueError('incomplete expiry capture: actual waste differs from outcome')
+    if [c['shipment_index'] for c in captured] != list(range(len(shipments))):
+        raise ValueError('incomplete charge capture: each shipment requires one ordered actual return')
+    for c, sh in zip(captured, shipments):
+        if (any(not isinstance(c[f], (int, float)) or not math.isfinite(c[f])
+                for f in ('shipped_units', 'transport_amount', 'handling_amount'))
+                or not 0 <= c['shipped_units'] <= sh.qty):
+            raise ValueError('incompatible execution charge capture')
+    for field, source in (('transport_amount', out.transport), ('handling_amount', out.handling)):
+        origins = set(source) | {sh.origin for sh in shipments}
+        if any(not math.isclose(sum(c[field] for c, sh in zip(captured, shipments) if sh.origin == origin),
+                                source.get(origin, 0), rel_tol=0, abs_tol=1e-8) for origin in origins):
+            raise ValueError('execution charges do not reconcile with engine outcomes')
+    return out, captured
 
 
 def insert_lot(conn, run_id: str, world: str, lot: dict, physical: float) -> None:
@@ -70,7 +174,7 @@ def insert_lots(conn, run_id: str, world: str, lots: list[tuple[dict, float]]) -
                    [(run_id, world, lot["lot_id"], physical) for lot, physical in lots])
 
 
-def day_start(conn, run: dict) -> int:
+def day_start(conn, run: dict, worlds=WORLDS) -> int:
     """Today's deliveries with no source case become lots in every world before anything reads the day (D-21).
 
     The record keeps the delivery's quantity; physical stock is truth's figure when it lists the id, else the record.
@@ -78,7 +182,7 @@ def day_start(conn, run: dict) -> int:
     run_id, day = run["run_id"], run["day"]
     truth = refdata.truth(run["dataset_version"])
     moved = 0
-    for world in WORLDS:
+    for world in worlds:
         arriving = db.rows(conn, "SELECT * FROM inbound WHERE run_id = :r AND world = :w AND arrival_day = :d "
                                  "AND source_case_id IS NULL ORDER BY inbound_id", r=run_id, w=world, d=day)
         physical = truth.physical_of([i["inbound_id"] for i in arriving])  # these deliveries only (05.2 D-11)
@@ -111,22 +215,22 @@ def add_markdown(conn, run_id: str, world: str, action_id: str, case_id: str | N
            l=lot_id, s=sku, p=pct, e=effective_day)
 
 
-def baseline_candidates(conn, run: dict) -> list[dict]:
+def baseline_candidates(conn, run: dict, world="baseline_rule") -> list[dict]:
     """The store rule's lots this morning: baseline_rule lots with stock on its own record, never moved, with no
     baseline work order yet, whose ESL-02 window contains today; in the screen's order (expiry day, seed branch order,
     sku, lot_id). Stateless: nothing but the world's own rows decides (research A6)."""
     ref = refdata.get(run["dataset_version"])
     before = config.CASE_OPENING["days_before_first_step"]
-    lots = db.rows(conn, "SELECT l.* FROM lots l WHERE l.run_id = :r AND l.world = 'baseline_rule' AND l.qty > 0 "
+    lots = db.rows(conn, "SELECT l.* FROM lots l WHERE l.run_id = :r AND l.world = :w AND l.qty > 0 "
                          "AND l.moved_from IS NULL AND NOT EXISTS (SELECT 1 FROM world_actions a WHERE a.run_id = "
-                         "l.run_id AND a.world = l.world AND a.lot_id = l.lot_id)", r=run["run_id"])
+                         "l.run_id AND a.world = l.world AND a.lot_id = l.lot_id)", r=run["run_id"], w=world)
     order = {b: i for i, b in enumerate(ref.branches)}
     inside = [l for l in lots if screen.window(l["expiry_day"], ref.schedules[l["sku"]], before)[0] <= run["day"]
               <= l["expiry_day"]]
     return sorted(inside, key=lambda l: (l["expiry_day"], order[l["branch"]], l["sku"], l["lot_id"]))
 
 
-def baseline_morning(conn, run: dict) -> list[str]:
+def baseline_morning(conn, run: dict, world="baseline_rule") -> list[str]:
     """What the store rule does this morning in the baseline_rule world (spec §8; research A6, A17): the same ESL-02
     screen on its own records, then, for each lot that qualifies, the engine's `baseline_plan` with the sandbox Policy,
     the same limits and today's snapshot, and no future data (a HorizonError skips the lot). Its transfers and
@@ -144,14 +248,14 @@ def baseline_morning(conn, run: dict) -> list[str]:
     pending: dict[str, list[Inbound]] = {}  # sku -> deliveries the rule sent today
     acted = []
     reads = inputs.ScreenReads(conn, run)  # safe: the loop writes only world_actions, which build_input never reads
-    for lot in baseline_candidates(conn, run):
+    for lot in baseline_candidates(conn, run, world=world):
         sku, branch = lot["sku"], lot["branch"]
         product = ref.products[sku]
         reach = {branch} | {r.dest for r in inputs.case_runs(ref, branch, day, lot=lot, product=product, policy=policy)}
         extra = Bookings((), tuple(storage.get(product.zone, ())), tuple(trucks), tuple(set_aside), tuple(priced))
         arriving = tuple(i for i in pending.get(sku, ()) if i.branch in reach)
         try:
-            inp = inputs.build_input(conn, run, lot["lot_id"], world="baseline_rule", extra=extra,
+            inp = inputs.build_input(conn, run, lot["lot_id"], world=world, extra=extra,
                                      extra_inbound=arriving, reads=reads)
             if not screen.screen(inp, config.CASE_OPENING)["qualifies"]:
                 continue
@@ -171,11 +275,11 @@ def baseline_morning(conn, run: dict) -> list[str]:
             new_id = f"{lot['lot_id']}@{day}>{plan.dest}"
             pending.setdefault(sku, []).append(Inbound(new_id, plan.dest, float(plan.qty), trip.day, trip.arrives_min,
                                                        lot["expiry_day"], MOVED_SEQ))
-            add_transfer(conn, run_id, "baseline_rule", f"d{day}:{lot['lot_id']}:transfer", None, lot["lot_id"], sku,
+            add_transfer(conn, run_id, world, f"d{day}:{lot['lot_id']}:transfer", None, lot["lot_id"], sku,
                          plan, trip, policy, new_id, branch)
         if plan.pct:
             priced.append(lot["lot_id"])
-            add_markdown(conn, run_id, "baseline_rule", f"d{day}:{lot['lot_id']}:price", None, lot["lot_id"], sku,
+            add_markdown(conn, run_id, world, f"d{day}:{lot['lot_id']}:price", None, lot["lot_id"], sku,
                          plan.pct, markdown_effective_day(eff))
         acted.append(lot["lot_id"])
     return acted
@@ -208,6 +312,119 @@ def _by_sku(skus, rows) -> dict[str, list[dict]]:
     return out
 
 
+def execution_inputs(conn, run, world):
+    """Freeze every due action before the first product can consume shared bookings.
+
+    This is observation only. Invalid inputs are saved as failed evidence; the
+    simulator still executes its original orders and the publication gate refuses
+    the result. Existing physical execution inputs never enter a recommendation.
+    """
+    from . import metrics
+    rid, day = run['run_id'], run['day']
+    ref = refdata.get(run['dataset_version'])
+    actions = db.rows(conn, "SELECT * FROM world_actions WHERE run_id=:r AND world=:w AND kind='TRANSFER' "
+                           "AND state IN ('PLANNED','DISPATCHED','DONE') ORDER BY sku,action_id", r=rid, w=world)
+    due = [a for a in actions if a['state'] == 'PLANNED' and a['run_day'] == day]
+    if not due:
+        return {}
+    source_ids = sorted({a['lot_id'] for a in actions} | {a['new_lot_id'] for a in actions})
+    source = {r['lot_id']: r for r in db.rows(conn, 'SELECT l.*,t.qty AS physical_units FROM lots l '
+        'LEFT JOIN truth_lots t USING(run_id,world,lot_id) WHERE l.run_id=:r AND l.world=:w '
+        'AND l.lot_id=ANY(:ids)', r=rid, w=world, ids=source_ids)}
+    previous = {r['action_id']: r['effective_input'] for r in db.rows(conn,
+        'SELECT action_id,effective_input FROM benchmark_transfer_audit WHERE sim_run_id=:r AND world=:w', r=rid, w=world)}
+    reservations = inputs.plain(db.rows(conn, 'SELECT case_id,round,kind,bucket,day,qty,state FROM reservations '
+        f'WHERE run_id=:r AND {inputs.LIVE} ORDER BY case_id,round,kind,bucket,day', r=rid)) if world == 'shelfshift' else []
+    prepared = {(r['case_id'], r['payload'].get('round')): r['payload'].get('rec_version') for r in db.rows(conn,
+        "SELECT case_id,payload FROM activity_log WHERE run_id=:r AND type='prepared' ORDER BY seq", r=rid)}
+    benchmark_row = db.one(conn, 'SELECT benchmark_id FROM benchmark_runs WHERE sim_run_id=:r', r=rid)
+    policy = inputs.sandbox_policy(conn, run, ref)
+    result, remaining = {}, {}
+    for action in due:
+        src = source.get(action['lot_id'])
+        round_ = None
+        if action['case_id']:
+            suffix = action['action_id'].removeprefix(action['case_id'] + '#').removesuffix(':transfer')
+            round_ = int(suffix) if suffix.isdigit() else None
+        snap = dict(schema_version=1, action=inputs.plain(action), round=round_, raw_input=None,
+                    effective_input=None, execution_input_version=None,
+                    rec_version=prepared.get((action['case_id'], round_)), booking_rows=reservations,
+                    source=dict(recorded_units=src['qty'] if src else 0,
+                                physical_units=(src['physical_units'] if src['physical_units'] is not None else src['qty']) if src else 0,
+                                expiry_day=src['expiry_day'] if src else None,
+                                set_aside_units=sum(r['qty'] for r in reservations if r['kind'] == 'SOURCE_LOT'
+                                                    and r['bucket'] == action['lot_id'])), input_errors=[])
+        available = remaining.setdefault(action['lot_id'], snap['source']['physical_units'])
+        snap['source']['available_before'] = available if src and src['expiry_day'] >= day else 0
+        remaining[action['lot_id']] = max(0, available - min(action['qty'], snap['source']['available_before']))
+        try:
+            extra, pending = None, ()
+            if world != 'shelfshift':
+                storage, trucks, units, arriving = [], [], [], []
+                reach = {action['origin']} | {r.dest for r in inputs.case_runs(ref, action['origin'], day,
+                                                    lot=src, product=ref.products[action['sku']], policy=policy)}
+                for other in actions:
+                    if other['action_id'] == action['action_id']:
+                        continue
+                    old = previous.get(other['action_id'], {})
+                    lot = source.get(other['new_lot_id'] if other['state'] == 'DONE' else other['lot_id'])
+                    if other['state'] == 'DONE' and lot is None:
+                        continue  # the destination no longer holds stock from this transfer
+                    expiry = lot['expiry_day'] if lot else old.get('source', {}).get('expiry_day')
+                    trip = ref.run_on(other['run_code'], other['run_day'])
+                    if trip is None or expiry is None:
+                        continue
+                    product = ref.products[other['sku']]
+                    totes = math.ceil((lot['qty'] if other['state'] == 'DONE' else other['qty']) / product.units_per_tote)
+                    arrival = trip.day + trip.arrives_min // 1440
+                    if product.zone == ref.products[action['sku']].zone:
+                        storage.extend((other['dest'], d, totes) for d in range(max(day, arrival), expiry + 1))
+                    if other['state'] == 'PLANNED' and other['run_day'] >= day:
+                        units.append((other['lot_id'], other['qty']))
+                    if other['state'] == 'PLANNED' and other['run_day'] == day:
+                        trucks.append((other['run_code'], totes))
+                        if other['sku'] == action['sku'] and other['dest'] in reach:
+                            arriving.append(Inbound(other['new_lot_id'], other['dest'], other['qty'],
+                                                    trip.day, trip.arrives_min, expiry, MOVED_SEQ))
+                extra = Bookings((), tuple(storage), tuple(trucks), tuple(units), ())
+                pending = tuple(arriving)
+            raw = inputs.build_input(conn, run, action['lot_id'], world=world, exclude_case=action['case_id'],
+                                     extra=extra, extra_inbound=pending)
+            if action['case_id']:
+                case = db.one(conn, 'SELECT adopted FROM cases WHERE run_id=:r AND case_id=:c', r=rid, c=action['case_id'])
+                overrides, _ = inputs.adopted_in_effect(case['adopted'] if case else (), raw.runs,
+                                                       {l.branch for l in raw.lots})
+                raw = replace(raw, overrides=overrides)
+            snap['raw_input'], snap['effective_input'] = to_dict(raw), to_dict(effective(raw))
+            snap['execution_input_version'] = rec_version(raw)
+            if not action['case_id']:
+                snap['rec_version'] = snap['execution_input_version']
+        except (LookupError, ValueError, TypeError, HorizonError) as error:
+            snap['input_errors'].append(f'{type(error).__name__}: {error}')
+        snap['plan'] = asdict(Plan(TRANSFER, qty=int(action['qty']) if float(action['qty']).is_integer()
+                                  else action['qty'], dest=action['dest'], run_code=action['run_code']))
+        snap['constraint_reasons'] = metrics.constraint_reasons(snap)
+        result[action['action_id']] = dict(snapshot=snap, benchmark_id=benchmark_row['benchmark_id'] if benchmark_row else None)
+    return result
+
+
+def record_execution(conn, run, world, actions, evidence, charges):
+    """Append immutable action/round-bound evidence; duplicate execution cannot overwrite it."""
+    columns = ('sim_run_id', 'benchmark_id', 'world', 'day', 'action_id', 'rec_version', 'run_code',
+               'planned_units', 'shipped_units', 'destination', 'effective_input', 'constraint_reasons',
+               'charge_id', 'transport_amount', 'handling_amount')
+    for action, charge in zip(actions, charges):
+        item = evidence[action['action_id']]
+        snap = item['snapshot']
+        identity = digest('charge-', run['run_id'], world, action['action_id'], snap['round'], snap['rec_version'])
+        db.run(conn, 'INSERT INTO benchmark_transfer_audit (' + ','.join(columns) + ') VALUES '
+            '(:r,:b,:w,:d,:a,:v,:rc,:planned,:shipped,:dest,CAST(:input AS jsonb),CAST(:reasons AS jsonb),:charge,:t,:h)',
+            r=run['run_id'], b=item['benchmark_id'], w=world, d=run['day'], a=action['action_id'], v=snap['rec_version'],
+            rc=action['run_code'], planned=action['qty'], shipped=charge['shipped_units'], dest=action['dest'],
+            input=db.js(snap), reasons=db.js(snap['constraint_reasons']), charge=identity,
+            t=charge['transport_amount'], h=charge['handling_amount'])
+
+
 def step_world(conn, run: dict, world: str, truth: dict) -> None:
     """Step one world one day, product by product, through engine.world.step_day; store its output as returned.
 
@@ -227,6 +444,13 @@ def step_world(conn, run: dict, world: str, truth: dict) -> None:
     run_id, day = run["run_id"], run["day"]
     policy = inputs.sandbox_policy(conn, run, ref)  # one Policy per sandbox in every world (D-09; research A17)
     m = {20: truth.price_response["m20"], 30: truth.price_response["m30"]}
+    benchmark_run = db.one(conn, 'SELECT benchmark_id FROM benchmark_runs WHERE sim_run_id=:r', r=run_id)
+    evidence = execution_inputs(conn, run, world) if benchmark_run else None
+    # read once per world step (per product before the batching): the step adds no transfer and changes no id
+    moved_actions = {a['new_lot_id']: a['action_id'] for a in db.rows(conn,
+        "SELECT action_id,new_lot_id FROM world_actions WHERE run_id=:r AND world=:w AND kind='TRANSFER'",
+        r=run_id, w=world)} if benchmark_run else {}
+    moved_ids = set(moved_actions)
     seq = 0
     for skus in inputs.product_batches(ref):
         batch = list(skus)
@@ -293,9 +517,16 @@ def step_world(conn, run: dict, world: str, truth: dict) -> None:
             # the stores that carry the product today, taken before step_day mutates lots
             carrying = (set(hidden) | {l.branch for l in lots} | {a.branch for a in arrivals}
                         | {sh.dest for sh in shipments} | {sh.origin for sh in shipments})
-            tracked = [l for l in lots if ">" in l.lot_id]
-            out = step_day(lots, day, demand, m, product, tuple(shipments), prices, arrivals,
-                           schedule=ref.schedules[sku])
+            tracked = [l for l in lots if ">" in l.lot_id] if not benchmark_run else []
+            expired, sold, timing = [], [], {}
+            if benchmark_run:
+                out, charges = observed_step(lots, day, demand, m, product, tuple(shipments), prices, arrivals,
+                                             schedule=ref.schedules[sku], expired=expired, sold=sold, timing=timing)
+                record_execution(conn, run, world, [a for a in actions if a['kind'] == 'TRANSFER'], evidence,
+                                 charges)
+            else:
+                out = step_day(lots, day, demand, m, product, tuple(shipments), prices, arrivals,
+                               schedule=ref.schedules[sku])
             for name in OUTCOME_FIELDS:  # an outcome outside the carrying set is a bug, never dropped silently
                 for b, value in getattr(out, name).items():
                     if value and b not in carrying:
@@ -309,11 +540,23 @@ def step_world(conn, run: dict, world: str, truth: dict) -> None:
             events = [("SHORT_SHIPMENT", s) for s in out.short_shipments]
             events += [("RECORD_CORRECTION", c) for c in out.record_corrections]
             shipped = {s["lot_id"]: s["shipped"] for s in out.short_shipments}
-            events += [("TRANSFER_RECEIVED", {"lot_id": sh.new_lot_id, "branch": sh.dest,
-                                              "qty": shipped.get(sh.lot_id, sh.qty)})
-                       for sh in shipments if shipped.get(sh.lot_id, sh.qty) > 0]
-            events += [("TRANSFER_EXPIRED", {"lot_id": l.lot_id, "branch": l.branch, "wasted": l.qty})
-                       for l in tracked if l not in lots]
+            if benchmark_run:
+                events += [('BENCHMARK_LOT_DAY', dict(schema_version=1, branches=sorted(demand),
+                                                    sold=sold, expired=expired, timing=timing))]
+                events += [("TRANSFER_RECEIVED", {"lot_id": sh.new_lot_id, "branch": sh.dest,
+                                                  "qty": c['shipped_units']})
+                           for sh, c in zip(shipments, charges) if c['shipped_units'] > 0]
+                expired_moved = {e['lot_id']: e for e in expired if e['lot_id'] in moved_ids}
+                events += [('TRANSFER_EXPIRED', dict(event, action_id=moved_actions.get(event['lot_id'])))
+                           for event in expired_moved.values()]
+                events += [('TRANSFER_SOLD', dict(event, action_id=moved_actions[event['lot_id']]))
+                           for event in sold if event['lot_id'] in moved_ids]
+            else:
+                events += [("TRANSFER_RECEIVED", {"lot_id": sh.new_lot_id, "branch": sh.dest,
+                                                  "qty": shipped.get(sh.lot_id, sh.qty)})
+                           for sh in shipments if shipped.get(sh.lot_id, sh.qty) > 0]
+                events += [("TRANSFER_EXPIRED", {"lot_id": l.lot_id, "branch": l.branch, "wasted": l.qty})
+                           for l in tracked if l not in lots]
             for kind, payload in events:
                 event_rows.append((run_id, world, day, seq, kind, db.js({**payload, "sku": sku})))
                 seq += 1
@@ -407,7 +650,7 @@ def _lifecycle_after(conn, run: dict) -> None:
     cases.close_gone(conn, run)  # a case that never executed closes at the end of the day its lot went, released
 
 
-def advance_day(conn, run_id: str, expected_version: int) -> dict:
+def advance_day(conn, run_id: str, expected_version: int, worlds=WORLDS) -> dict:
     """Spec §8 order, in the caller's transaction. A stale expected_version answers the current state unchanged.
 
     A workspace (SANDBOX) first takes its own copy of every series it still reads through its template
@@ -429,7 +672,7 @@ def advance_day(conn, run_id: str, expected_version: int) -> dict:
         _lifecycle_before(conn, run)  # only PREPARED plans execute
     with buildsteps.step(run, "baseline_morning"):
         baseline_morning(conn, run)  # the store rule acts on its own records before its world steps
-    for world in WORLDS:
+    for world in worlds:
         with buildsteps.step(run, f"step_world {world}"):
             step_world(conn, run, world, truth)
     with buildsteps.step(run, "lifecycle_after"):
@@ -438,18 +681,18 @@ def advance_day(conn, run_id: str, expected_version: int) -> dict:
     run = db.one(conn, "UPDATE demo_runs SET day = day + 1, version = version + 1 WHERE run_id = :r RETURNING *",
                  r=run_id)
     with buildsteps.step(run, "day_start"):  # labelled with the new day
-        day_start(conn, run)
+        day_start(conn, run, worlds=worlds)
     if run["day"] <= ref.last_review_day:  # the only morning that reopens a waiting case (G-05-13)
         with buildsteps.step(run, "cases_morning"):
             cases_morning(conn, run)
     return {"advanced": True, "day": run["day"], "version": run["version"]}
 
 
-def cases_morning(conn, run: dict) -> None:
+def cases_morning(conn, run: dict, *, eager=None) -> None:
     """The case part of a new demo day, after the day start (spec §8 Advance day): WAITING cases due today reopen,
     a case whose lot is gone closes before anything reads it, live cases re-evaluate (an INVALIDATED one first
     returns to OPEN with re_review), executed cases still at risk get their second look, then the ESL-02 screen opens
-    new cases."""
+    new cases. `eager` passes through to cases.open_cases (True: the benchmark's every at-risk lot, D-07)."""
     run_id = run["run_id"]
     # a case that stops waiting no longer has a wait reason (WR-05: evaluate_case never writes reason)
     db.run(conn, "UPDATE cases SET state = 'OPEN', reason = NULL WHERE run_id = :r AND state = 'WAITING' "
@@ -463,4 +706,4 @@ def cases_morning(conn, run: dict) -> None:
             case = {**case, "state": "OPEN", "re_review": True, "reason": None}
         cases.evaluate_case(conn, run, case)
     cases.second_looks(conn, run)  # an executed case still at risk reopens from the data (spec §8 Second look)
-    cases.open_cases(conn, run)
+    cases.open_cases(conn, run, eager=eager)

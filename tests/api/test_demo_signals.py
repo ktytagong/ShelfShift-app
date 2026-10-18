@@ -5,8 +5,9 @@ lot and run written as a {placeholder} that the release template fills with the 
 the folder must pass the upload rules (spec §4: PNG, JPEG or PDF by content, at most 5 MB) and carry no metadata
 segment that can hold a location (an APP1 Exif or XMP segment in a JPEG, an eXIf chunk in a PNG).
 
-The three team photos are the user's own (D-19); with DEMO_SIGNALS_STRICT=1 their presence is required, otherwise
-the presence test skips and names what is missing. This file uses no database fixture.
+The three team photos are the user's own (D-19) and the quote screenshot follows the user's design (D-34, D-37);
+with DEMO_SIGNALS_STRICT=1 their presence is required, otherwise the presence test skips and names what is missing.
+This file uses no database fixture.
 """
 from __future__ import annotations
 
@@ -27,7 +28,7 @@ SAMPLES = FOLDER / "samples.json"
 SEED = ROOT / "data" / "reference" / "seed.json"
 
 MAX_BYTES = config.UPLOAD_MAX_BYTES  # spec §4 "up to 5 MB": the uploads.max_bytes setting (07-07)
-REQUIRED_PHOTOS = ("milk-slot.jpg", "crates-expiry.jpg", "blurry.jpg")
+REQUIRED_ASSETS = ("milk-slot.jpg", "crates-expiry.jpg", "blurry.jpg", "quote-r02-chat.png")  # the photos, the quote (D-34)
 FIELDS = {"id", "use", "kind", "title", "text", "file", "expected"}
 USES = {"report", "answer"}
 KINDS = {"CAPACITY", "DEMAND_EVENT", "TRANSPORT", "STOCK_COUNT", "EXPIRY", "CONDITION", "NONE"}
@@ -168,7 +169,9 @@ def test_samples_are_english_and_use_placeholders():
     assert by_id["irrelevant"]["kind"] == by_id["injection"]["kind"] == "NONE"
     assert {by_id[key]["file"] for key in ("photo-only", "photo-and-count")} == {"milk-slot.jpg"}
     assert by_id["crate-expiry"]["file"] == "crates-expiry.jpg" and by_id["blurry-photo"]["file"] == "blurry.jpg"
-    assert "$25.00" in by_id["quote-screenshot"]["expected"] and "$125.00" in by_id["quote-pdf"]["expected"]
+    # the screenshot's reading is the picture's own words (07-CONTEXT D-34: $85.00 USD, handling included)
+    assert "$85.00 USD, handling included" in by_id["quote-screenshot"]["expected"]
+    assert "$125.00" in by_id["quote-pdf"]["expected"]
 
 
 def test_the_rules_refuse_a_large_file_a_renamed_text_file_and_a_jpeg_with_exif(tmp_path):
@@ -198,8 +201,8 @@ def test_every_asset_passes_the_upload_rules():
 
 
 def test_required_assets_are_present():
-    missing = [name for name in REQUIRED_PHOTOS if not (FOLDER / name).is_file()]
+    missing = [name for name in REQUIRED_ASSETS if not (FOLDER / name).is_file()]
     if os.environ.get("DEMO_SIGNALS_STRICT") == "1":
-        assert missing == [], f"missing team photos: {', '.join(missing)}"
+        assert missing == [], f"missing team images: {', '.join(missing)}"
     elif missing:
-        pytest.skip(f"team photos not placed yet: {', '.join(missing)} (set DEMO_SIGNALS_STRICT=1 to require them)")
+        pytest.skip(f"team images not placed yet: {', '.join(missing)} (set DEMO_SIGNALS_STRICT=1 to require them)")
